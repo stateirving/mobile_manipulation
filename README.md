@@ -1,15 +1,20 @@
 # Mobile Manipulation
 A ROS-based framework for mobile manipulation research, featuring MPC-based control, robot simulation, and planning utilities.
 
-> [!IMPORTANT] **Migration to ROS2 and pixi**
+> [!IMPORTANT] 
+> The instructions in this readme are not yet updated for ROS2 and pixi. Use the following commands.
 >
-> The instructions below are outdated.
+> Make sure submodules are cloned
+> `git submodule update --init --recursive`
 >
 > For installation, simply install the pixi environment:
 > `pixi shell`
 > 
 > The following commands were tested:
 > 
+> - Build packages
+>   - `colcon build && source install/setup.bash`
+>
 > - Compile MPC Controller
 >   - `python3 mm_control/scripts/generate_acados_code.py --config $(ros2 pkg prefix mm_run)/share/mm_run/config/simple_experiment.yaml`
 > 
@@ -17,7 +22,6 @@ A ROS-based framework for mobile manipulation research, featuring MPC-based cont
 >   - `python3 mm_run/scripts/experiment.py --config $(ros2 pkg prefix mm_run)/share/mm_run/config/simple_experiment.yaml --GUI`
 > 
 > - Run Controller and Simulation Asynchronously (ROS Nodes)
->   - `colcon build && source install/setup.bash`
 >   - `ros2 launch mm_run run_pybullet_sim.launch.py config:=$(ros2 pkg prefix mm_run)/share/mm_run/config/simple_experiment.yaml`
 
 ## Package Overview
