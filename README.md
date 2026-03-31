@@ -1,7 +1,7 @@
 # Mobile Manipulation
 A ROS-based framework for mobile manipulation research, featuring MPC-based control, robot simulation, and planning utilities.
 
-> **Migration to ROS2 and pixi**
+> [!IMPORTANT] **Migration to ROS2 and pixi**
 >
 > The instructions below are outdated.
 >
@@ -18,7 +18,7 @@ A ROS-based framework for mobile manipulation research, featuring MPC-based cont
 > 
 > - Run Controller and Simulation Asynchronously (ROS Nodes)
 >   - `colcon build && source install/setup.bash`
->   - `ros2 launch mm_run run_pybullet_sim.launch config:=$(ros2 pkg prefix mm_run)/share/mm_run/config/simple_experiment.yaml`
+>   - `ros2 launch mm_run run_pybullet_sim.launch.py config:=$(ros2 pkg prefix mm_run)/share/mm_run/config/simple_experiment.yaml`
 
 ## Package Overview
 - **mm_assets**: Robot and scene URDF/mesh files
