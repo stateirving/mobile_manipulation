@@ -1,7 +1,7 @@
 # Mobile Manipulation
 A ROS-based framework for mobile manipulation research, featuring MPC-based control, robot simulation, and planning utilities.
 
-> [!INFO] Migration to ROS2 and pixi
+> **Migration to ROS2 and pixi**
 >
 > The instructions below are outdated.
 >
