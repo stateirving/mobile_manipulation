@@ -36,7 +36,10 @@ class MPCBase:
         self.nx = self.ssSymMdl["nx"]
         self.nu = self.ssSymMdl["nu"]
         self.DoF = self.robot.DoF
-        self.home = mm.load_home_position(config.get("home", "default"))
+        if "robot" in config and "x0" in config["robot"]:
+            self.home = np.array(config["robot"]["x0"], dtype=float)
+        else:
+            self.home = mm.load_home_position(config.get("home", "default"))
 
         self.params = config
         self.dt = self.params["dt"]

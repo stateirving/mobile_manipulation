@@ -1,4 +1,5 @@
 from typing import Dict, List
+from pathlib import Path
 
 import casadi as cs
 import numpy as np
@@ -73,11 +74,17 @@ class PinocchioInterface:
         """
         # 1. build robot model
         urdf_path = parsing.parse_and_compile_urdf(config["robot"]["urdf"])
+        package_dirs = [str(Path(urdf_path).parent)]
         self.model = pin.buildModelFromUrdf(urdf_path)
-        self.collision_model = pin.buildGeomFromUrdf(self.model, urdf_path, pin.GeometryType.COLLISION, package_dirs="/")
+        self.collision_model = pin.buildGeomFromUrdf(
+            self.model,
+            urdf_path,
+            pin.GeometryType.COLLISION,
+            package_dirs=package_dirs,
+        )
 
         self.model, self.collision_model, self.visual_model = pin.buildModelsFromUrdf(
-            urdf_path
+            urdf_path, package_dirs=package_dirs
         )
 
 
@@ -91,9 +98,14 @@ class PinocchioInterface:
                 scene_urdf_path,
                 pin.GeometryType.COLLISION,
                 self.collision_model,
+                package_dirs=[str(Path(scene_urdf_path).parent)],
             )
             pin.buildGeomFromUrdf(
-                self.model, scene_urdf_path, pin.GeometryType.VISUAL, self.visual_model
+                self.model,
+                scene_urdf_path,
+                pin.GeometryType.VISUAL,
+                self.visual_model,
+                package_dirs=[str(Path(scene_urdf_path).parent)],
             )
         self.addGroundCollisionObject()
 
@@ -267,6 +279,12 @@ class CasadiModelInterface:
         self.scene = Scene(config)
         self.pinocchio_interface = PinocchioInterface(config)
 
+        collisions_enabled = (
+            config.get("self_collision_avoidance_enabled", False)
+            or config.get("static_obstacles_collision_avoidance_enabled", False)
+            or config.get("self_collision_emergency_stop", False)
+        )
+
         self.collision_pairs = {
             "self": [],
             "static_obstacles": {},
@@ -277,19 +295,20 @@ class CasadiModelInterface:
             "static_obstacles": {},
             "dynamic_obstacles": {},
         }
-        self._setupCollisionPair(config)
-        self._setupCollisionPairDetailed()
 
         self.signedDistanceSymMdls = {}  # keyed by collision pair (tuple)
         self.signedDistanceSymMdlsPerGroup = {
             "static_obstacles": {},
             "dynamic_obstacles": {},
         }
-        # nested dictionary, keyed by group name
-        # obstacle groups are also a dictionary, keyed by obstacle name
-        self._setupSelfCollisionSymMdl()
-        self._setupStaticObstaclesCollisionSymMdl()
-        self._setupPinocchioCollisionMdl()
+        if collisions_enabled:
+            self._setupCollisionPair(config)
+            self._setupCollisionPairDetailed()
+            # nested dictionary, keyed by group name
+            # obstacle groups are also a dictionary, keyed by obstacle name
+            self._setupSelfCollisionSymMdl()
+            self._setupStaticObstaclesCollisionSymMdl()
+            self._setupPinocchioCollisionMdl()
 
     def _addCollisionPairFromTwoGroups(self, group1, group2):
         """Add all possible collision link pairs, one from each group.
@@ -635,11 +654,16 @@ class MobileManipulator3D:
             config (dict): Configuration dictionary with robot parameters.
         """
         urdf_path = parsing.parse_and_compile_urdf(config["robot"]["urdf"])
-        self.model = pin.buildModelsFromUrdf(urdf_path)[0]
+        package_dirs = [str(Path(urdf_path).parent)]
+        # create Pinocchio model to get robot info such as number of joints, link names, and for collision checking
+        self.model = pin.buildModelsFromUrdf(urdf_path, package_dirs=package_dirs)[0]
+        # create Casadi model for symbolic kinematics and dynamics functions
         self.cmodel = cpin.Model(self.model)
+        # create Casadi data for kinematics and dynamics computations
         self.cdata = self.cmodel.createData()
 
         self.numjoint = self.model.nq
+        # DoF includes both joint DoF and 3 DoF for the mobile base position (x, y, theta)
         self.DoF = self.numjoint + 3
         self.dt = config["robot"]["time_discretization_dt"]
         self.ub_x = parsing.parse_array(config["robot"]["limits"]["state"]["upper"])
@@ -656,6 +680,8 @@ class MobileManipulator3D:
         self.qa_sym = cs.SX.sym("qa", self.numjoint)
         self.q_sym = cs.vertcat(self.qb_sym, self.qa_sym)
 
+        # 用关节变量 qa 计算机器人所有 link/frame 相对于 base_link 的空间位姿，
+        # 并存到 cdata 中，供后续取用（比如末端位置、碰撞检测等）
         cpin.framesForwardKinematics(self.cmodel, self.cdata, self.qa_sym)
 
         # create self.kinSymMdls dict:{robot links name: cs function of its forward kinematics function}
@@ -802,14 +828,24 @@ class MobileManipulator3D:
         Returns:
             casadi.Function: Forward kinematics function returning (position, rotation).
         """
-        # TODO: Should we handle base through pinocchio by adopting the cartesian base urdf file?
         if link_name == self.base_link_name:
+            base_pos = cs.vertcat(self.qb_sym[0], self.qb_sym[1], 0)
+            base_rot = cs.SX.eye(3)
+            if not base_frame:
+                ctheta = cs.cos(self.qb_sym[2])
+                stheta = cs.sin(self.qb_sym[2])
+                base_rot[0, 0] = ctheta
+                base_rot[0, 1] = -stheta
+                base_rot[1, 0] = stheta
+                base_rot[1, 1] = ctheta
+            else:
+                base_pos = cs.SX.zeros(3)
             return cs.Function(
                 link_name + "_fcn",
                 [self.q_sym],
-                [self.qb_sym[:2], self.qb_sym[2]],
+                [base_pos, base_rot],
                 ["q"],
-                ["pos2", "heading"],
+                ["pos", "rot"],
             )
 
         Hwb = cs.SX.eye(4)  # T related to movement of base

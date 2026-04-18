@@ -16,6 +16,8 @@ setup(
         ('share/' + package_name + '/thing/meshes/ur10/collision', glob('thing/meshes/ur10/collision/*')),
         ('share/' + package_name + '/thing/meshes/ur10/visual', glob('thing/meshes/ur10/visual/*')),
         ('share/' + package_name + '/thing/xacro', glob('thing/xacro/*')),
+        ('share/' + package_name + '/stretch', glob('stretch/*.urdf')),
+        ('share/' + package_name + '/stretch/meshes', glob('stretch/meshes/*')),
         ('share/' + package_name + '/scenes', glob('scenes/*.sh')),
         ('share/' + package_name + '/scenes/xacro', glob('scenes/xacro/*')),
         ('share/' + package_name + '/scenes/meshes', glob('scenes/meshes/*.dae')),

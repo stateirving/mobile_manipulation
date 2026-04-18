@@ -1,0 +1,61 @@
+# Minimal experiment config for Stretch in PyBullet.
+# First pass: empty scene and collision avoidance disabled.
+
+planner:
+  tasks:
+    - name: Base Waypoint
+      planner_type: WaypointPlanner
+      base_pose: [3.5, 0.4, 3.14]
+      tracking_pos_err_tol: 0.2
+
+    - name: EE Waypoint
+      planner_type: WaypointPlanner
+      ee_pose: [1.0, 0.0, 0.9, 3.14, 0, 0]
+      hold_period: 1.0
+      tracking_pos_err_tol: 0.08
+
+controller:
+  self_collision_avoidance_enabled: False
+  static_obstacles_collision_avoidance_enabled: False
+  self_collision_emergency_stop: False
+
+  acados:
+    name: "StretchExperiment"
+
+  cost_params:
+    EEPose:
+      Qk: [3, 3, 3, 1, 1, 1]
+      P: [1, 1, 1, 0.5, 0.5, 0.5]
+    EEVel:
+      Qk: [0, 0, 0, 0, 0, 0]
+      P: [0, 0, 0, 0, 0, 0]
+    BasePose:
+      Qk: [3, 3, 1]
+      P: [1, 1, 0.5]
+    BaseVel:
+      Qk: [0, 0, 0]
+      P: [0, 0, 0]
+    Effort:
+      Qqa: [0, 0, 0, 0, 0, 0, 0, 0]
+      Qqb: [0, 0, 0]
+      Qva: [0.01, 0.01, 0.01, 0.01, 0.01, 0.01, 0.01, 0.01]
+      Qvb: [0.01, 0.01, 0.01]
+      Qua: [0.01, 0.01, 0.01, 0.01, 0.01, 0.01, 0.01, 0.01]
+      Qub: [0.01, 0.01, 0.01]
+
+simulation:
+  duration: 10
+
+include:
+  - package: "mm_run"
+    path: "config/sim/simulation.yaml"
+  - package: "mm_run"
+    path: "config/controller/MPC.yaml"
+  - package: "mm_run"
+    path: "config/scene/empty.yaml"
+  - package: "mm_run"
+    path: "config/robot/stretch.yaml"
+
+logging:
+  log_dir: "stretch_experiment"
+  log_level: 10

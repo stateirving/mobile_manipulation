@@ -1,0 +1,122 @@
+simulation:
+  robot:
+    # [x, y, yaw, lift, arm_l3, arm_l2, arm_l1, arm_l0, wrist_yaw, wrist_pitch, wrist_roll]
+    home: [0, 0, 0, 0.6, 0.05, 0.05, 0.05, 0.05, 0, 0, 0]
+    dims:
+      q: 11
+      v: 11
+      x: 22
+      u: 11
+    noise:
+      measurement:
+        q_std_dev: 0
+        v_std_dev: 0
+      process:
+        v_std_dev: 0
+    joint_names:
+      - "x_to_world_joint"
+      - "y_to_x_joint"
+      - "base_to_y_joint"
+      - "joint_lift"
+      - "joint_arm_l3"
+      - "joint_arm_l2"
+      - "joint_arm_l1"
+      - "joint_arm_l0"
+      - "joint_wrist_yaw"
+      - "joint_wrist_pitch"
+      - "joint_wrist_roll"
+    tool_joint_name: "joint_grasp_center"
+    base_joint_name: "base_to_y_joint"
+    link_names:
+      - "base_link"
+      - "link_mast"
+      - "link_lift"
+      - "link_arm_l4"
+      - "link_arm_l3"
+      - "link_arm_l2"
+      - "link_arm_l1"
+      - "link_arm_l0"
+      - "link_wrist_yaw"
+      - "link_wrist_yaw_bottom"
+      - "link_wrist_pitch"
+      - "link_wrist_roll"
+      - "link_gripper_s3_body"
+      - "link_grasp_center"
+    tool_link_name: "link_grasp_center"
+    base_link_name: "base_link"
+    base_type: omnidirectional
+    urdf:
+      package: "mm_assets"
+      path: "stretch/stretch_sim.urdf"
+      includes: []
+      args: {}
+
+controller:
+  robot:
+    dims:
+      q: 11
+      v: 11
+      x: 22
+      u: 11
+    x0: [0, 0, 0, 0.6, 0.05, 0.05, 0.05, 0.05, 0, 0, 0]
+
+    limits:
+      input:
+        lower: [-1.0, -1.0, -0.75, -0.3, -0.2, -0.2, -0.2, -0.2, -1.5, -1.5, -1.5]
+        upper: [1.0, 1.0, 0.75, 0.3, 0.2, 0.2, 0.2, 0.2, 1.5, 1.5, 1.5]
+      state:
+        lower: [-10, -10, -2.pi, 0.0, 0.0, 0.0, 0.0, 0.0, -3.2, -1.57, -3.2,
+                -1.0, -1.0, -0.75, -0.5, -0.3, -0.3, -0.3, -0.3, -2.0, -2.0, -2.0]
+        upper: [10, 10, 2.pi, 1.1, 0.15, 0.15, 0.15, 0.15, 3.2, 1.57, 3.2,
+                1.0, 1.0, 0.75, 0.5, 0.3, 0.3, 0.3, 0.3, 2.0, 2.0, 2.0]
+    time_discretization_dt: 0.1
+
+    link_names:
+      - "base_link"
+      - "link_mast"
+      - "link_lift"
+      - "link_arm_l4"
+      - "link_arm_l3"
+      - "link_arm_l2"
+      - "link_arm_l1"
+      - "link_arm_l0"
+      - "link_wrist_yaw"
+      - "link_wrist_yaw_bottom"
+      - "link_wrist_pitch"
+      - "link_wrist_roll"
+      - "link_gripper_s3_body"
+      - "link_grasp_center"
+    tool_link_name: "link_grasp_center"
+    base_link_name: "base_link"
+    base_type: omnidirectional
+
+    tool_vicon_name: "StretchTool"
+
+    # Placeholder grouping for Stretch.
+    # First pass should keep collision avoidance disabled in the experiment config.
+    collision_link_names:
+      base:
+        - "base_link"
+      rack:
+        - "link_lift"
+      upper_arm:
+        - "link_arm_l4"
+        - "link_arm_l3"
+      forearm:
+        - "link_arm_l2"
+        - "link_arm_l1"
+        - "link_arm_l0"
+      wrist:
+        - "link_wrist_yaw"
+        - "link_wrist_yaw_bottom"
+        - "link_wrist_pitch"
+        - "link_wrist_roll"
+      tool:
+        - "link_gripper_s3_body"
+        - "link_grasp_center"
+
+    urdf:
+      package: "mm_assets"
+      path: "stretch/stretch_ctrl.urdf"
+      includes: []
+      args: {}

@@ -395,14 +395,17 @@ class ControlEffortCostFunction(CostFunctions):
         ss_mdl = robot_mdl.ssSymMdl
         self.params = params
         super().__init__(ss_mdl["nx"], ss_mdl["nu"], "ControlEffort")
+        # The first 3 DoF are always the planar base (x, y, yaw).
+        # The remaining DoF belong to the manipulator chain and vary by robot.
+        self.arm_dof = ss_mdl["nu"] - 3
 
         self.p_dict = {
             "Qqb": cs.MX.sym("Qqb_" + self.name, 3),
-            "Qqa": cs.MX.sym("Qqa_" + self.name, 6),
+            "Qqa": cs.MX.sym("Qqa_" + self.name, self.arm_dof),
             "Qvb": cs.MX.sym("Qvb_" + self.name, 3),
-            "Qva": cs.MX.sym("Qva_" + self.name, 6),
+            "Qva": cs.MX.sym("Qva_" + self.name, self.arm_dof),
             "Qub": cs.MX.sym("Qub_" + self.name, 3),
-            "Qua": cs.MX.sym("Qua_" + self.name, 6),
+            "Qua": cs.MX.sym("Qua_" + self.name, self.arm_dof),
         }
         self.p_struct = casadi_sym_struct(self.p_dict)
         self.p_sym = self.p_struct.cat

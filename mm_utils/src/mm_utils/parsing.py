@@ -230,6 +230,9 @@ def parse_and_compile_urdf(d, max_runs=10, compare_existing=True):
         ValueError: If URDF file does not converge after max_runs iterations.
     """
 
+    if not d.get("includes"):
+        return parse_ros_path(d)
+
     s = """
     <?xml version="1.0" ?>
     <robot name="thing" xmlns:xacro="http://www.ros.org/wiki/xacro">

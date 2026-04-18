@@ -38,10 +38,13 @@ class ControllerROSNode(Node):
     def __init__(self, argv=None):
         super().__init__("controller_ros")
         np.set_printoptions(precision=3, suppress=True)
+        # Parse command line arguments
         parser = argparse.ArgumentParser()
+        # main yaml configuration file
         parser.add_argument(
             "-c", "--config", required=True, help="Path to configuration file."
         )
+        # optional controller and planner config files to overwrite yaml settings in the main config file
         parser.add_argument(
             "--ctrl_config",
             type=str,
@@ -52,6 +55,7 @@ class ControllerROSNode(Node):
             type=str,
             help="planner config. This overwrites the yaml settings in config if not set to default",
         )
+        # optional argument to specify a sub folder in the logging directory to save data from this run
         parser.add_argument(
             "--logging_sub_folder",
             type=str,
@@ -74,16 +78,18 @@ class ControllerROSNode(Node):
             config["logging"]["log_dir"] = os.path.join(
                 config["logging"]["log_dir"], args.logging_sub_folder
             )
-
+        
         self.ctrl_config = config["controller"]
         self.planner_config = config["planner"].copy()
         self.get_logger().info(f"Controller type: {self.ctrl_config['type']}")
 
         # controller
+        # Dynamically get the controller class from the MPC module based on the type specified in the config
         control_class = getattr(MPC, self.ctrl_config["type"], None)
         if control_class is None:
             raise ValueError(f"Unknown controller type: {self.ctrl_config['type']}")
 
+        # Initialize the controller with the provided configuration
         self.controller = control_class(self.ctrl_config)
 
         self.ctrl_rate = self.ctrl_config["ctrl_rate"]
@@ -94,18 +100,24 @@ class ControllerROSNode(Node):
         ch = logging.StreamHandler()
         formatter = logging.Formatter(
             "%(asctime)s - %(name)s - %(levelname)s - %(message)s"
+            # 2026-04-12 10:00:00,123 - Planner - INFO - xxx
         )
         ch.setFormatter(formatter)
+        # set two loggers for planner and controller with the same stream handler
         self.planner_log = logging.getLogger("Planner")
+        # Set the logging level based on the configuration (e.g., DEBUG, INFO, WARNING, ERROR)
         self.planner_log.setLevel(config["logging"]["log_level"])
+        # Add the stream handler to the logger
         self.planner_log.addHandler(ch)
         self.controller_log = logging.getLogger("Controller")
         self.controller_log.setLevel(config["logging"]["log_level"])
         self.controller_log.addHandler(ch)
 
         # init logger
+        # Make a deep copy of the config
         self.logger = DataLogger(copy.deepcopy(config), name="control")
 
+        # log config parameters
         self.logger.add("sim_timestep", config["simulation"]["timestep"])
         self.logger.add("duration", config["simulation"]["duration"])
 
@@ -125,6 +137,8 @@ class ControllerROSNode(Node):
         self.session_timestamp = self.get_parameter("experiment_timestamp").value
 
         # ROS2 Related
+        # create robot ros2 interface, vicon tool ros2 interface, and joystick ros2 interface
+        # /home/miao/repo/mobile_manipulation/mobile_manipulation_central/src/mobile_manipulation_central/ros_interface.py
         self.robot_interface = MobileManipulatorROSInterface(self)
         self.vicon_tool_interface = ViconObjectInterface(
             self, self.ctrl_config["robot"]["tool_vicon_name"]
