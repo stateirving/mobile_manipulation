@@ -200,3 +200,37 @@ class ControlBoxConstraints(NonlinearConstraint):
         self.g_fcn = cs.Function(
             "g_" + self.name, [self.x_sym, self.u_sym, self.p_sym], [self.g_eqn]
         )
+
+
+class NonholonomicBaseConstraint(NonlinearConstraint):
+    def __init__(self, robot_mdl, lateral_velocity_tol=1e-4, name="nonholonomic_base"):
+        """Constrain body-frame lateral velocity to stay near zero.
+
+        The state still stores planar world-frame base velocity [vx, vy, wyaw].
+        For a nonholonomic base we enforce:
+            v_lat = -sin(yaw) * vx + cos(yaw) * vy ~= 0
+        using a pair of inequalities with a small tolerance band.
+
+        Args:
+            robot_mdl (MobileManipulator3D): Robot model.
+            lateral_velocity_tol (float): Allowed absolute body-frame lateral velocity.
+            name (str): Name of this constraint.
+        """
+        nx = robot_mdl.ssSymMdl["nx"]
+        nu = robot_mdl.ssSymMdl["nu"]
+        ng = 2
+        p_dict = {}
+        super().__init__(nx, nu, ng, None, p_dict, name)
+
+        yaw = self.x_sym[2]
+        vx = self.x_sym[robot_mdl.DoF]
+        vy = self.x_sym[robot_mdl.DoF + 1]
+        v_lat = -cs.sin(yaw) * vx + cs.cos(yaw) * vy
+
+        self.g_eqn = cs.vertcat(
+            v_lat - lateral_velocity_tol,
+            -v_lat - lateral_velocity_tol,
+        )
+        self.g_fcn = cs.Function(
+            "g_" + self.name, [self.x_sym, self.u_sym, self.p_sym], [self.g_eqn]
+        )

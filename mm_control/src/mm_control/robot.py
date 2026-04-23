@@ -670,6 +670,8 @@ class MobileManipulator3D:
         self.lb_x = parsing.parse_array(config["robot"]["limits"]["state"]["lower"])
         self.ub_u = parsing.parse_array(config["robot"]["limits"]["input"]["upper"])
         self.lb_u = parsing.parse_array(config["robot"]["limits"]["input"]["lower"])
+        self._sync_joint_position_limits_from_urdf()
+        self.base_type = config["robot"].get("base_type", "omnidirectional").lower()
 
         self.link_names = config["robot"]["link_names"]
         self.tool_link_name = config["robot"]["tool_link_name"]
@@ -694,6 +696,18 @@ class MobileManipulator3D:
         self._setupJacobianSymMdl()
         # create self.manipulability_fcn
         self._setupManipulabilitySymMdl()
+
+    def _sync_joint_position_limits_from_urdf(self):
+        """Overwrite joint position bounds with values read from the URDF.
+
+        Only the arm joint position slice is synchronized here. Base position,
+        state velocity bounds, and input bounds remain YAML-configurable since
+        they encode controller design choices rather than raw URDF limits.
+        """
+        joint_lb = np.asarray(self.model.lowerPositionLimit).reshape(-1)
+        joint_ub = np.asarray(self.model.upperPositionLimit).reshape(-1)
+        self.lb_x[3 : 3 + self.numjoint] = joint_lb
+        self.ub_x[3 : 3 + self.numjoint] = joint_ub
 
     def _setupSSSymMdlDI(self):
         """Create State-space symbolic model for MM"""

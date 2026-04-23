@@ -152,8 +152,12 @@ def main():
                 fill_value="extrapolate",
             )
             u = v_interp(sim.timestep)
+            print(f"------------------------------Interpolated velocity command at t={t:.3f}s: {u}")
         else:
             raise ValueError(f"Unknown cmd_vel_type: {ctrl_config['cmd_vel_type']}")
+        
+        # u = np.zeros(sim_config["robot"]["dims"]["v"])  # zero velocity command for testing
+        # u[0] = 1  # set forward velocity command for testing
 
         robot.command_velocity(u)
         t, _ = sim.step(t)

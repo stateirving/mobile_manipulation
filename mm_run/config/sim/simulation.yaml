@@ -1,7 +1,8 @@
 simulation:
   timestep: 0.03
   duration: 25.
-  gravity: [0, 0, -9.81]
+  # gravity: [0, 0, -9.81]
+  gravity: [0, 0, 0]
 
   robot:
     home: [0.0, 0.0, 0, 1.5708, -0.7854,  1.5708, -0.7854,  1.5708, 1.3100] # default

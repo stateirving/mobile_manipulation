@@ -5,6 +5,7 @@ import numpy as np
 from numpy.typing import NDArray
 from scipy.interpolate import interp1d
 
+from mm_control.MPCConstraints import NonholonomicBaseConstraint
 from mm_control.MPCBase import MPCBase
 from mm_control.MPCCostFunctions import CostFunctionRegistry
 from mm_utils.math import wrap_pi_array
@@ -64,6 +65,9 @@ class MPC(MPCBase):
 
         # Add collision costs/constraints
         constraints = []
+        if self.robot.base_type == "nonholonomic":
+            constraints.append(NonholonomicBaseConstraint(self.robot))
+
         for name in self.collision_link_names:
             # fmt: off
             is_static = name in self.model_interface.scene.collision_link_names["static_obstacles"]

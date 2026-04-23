@@ -44,7 +44,7 @@ simulation:
       - "link_grasp_center"
     tool_link_name: "link_grasp_center"
     base_link_name: "base_link"
-    base_type: omnidirectional
+    base_type: nonholonomic
     urdf:
       package: "mm_assets"
       path: "stretch/stretch_sim.urdf"
@@ -65,9 +65,9 @@ controller:
         lower: [-1.0, -1.0, -0.75, -0.3, -0.2, -0.2, -0.2, -0.2, -1.5, -1.5, -1.5]
         upper: [1.0, 1.0, 0.75, 0.3, 0.2, 0.2, 0.2, 0.2, 1.5, 1.5, 1.5]
       state:
-        lower: [-10, -10, -2.pi, 0.0, 0.0, 0.0, 0.0, 0.0, -3.2, -1.57, -3.2,
+        lower: [-10, -10, -2.pi, 0.0, 0.0, 0.0, 0.0, 0.0, -1.75, -1.57, -3.14,
                 -1.0, -1.0, -0.75, -0.5, -0.3, -0.3, -0.3, -0.3, -2.0, -2.0, -2.0]
-        upper: [10, 10, 2.pi, 1.1, 0.15, 0.15, 0.15, 0.15, 3.2, 1.57, 3.2,
+        upper: [10, 10, 2.pi, 1.1, 0.13, 0.13, 0.13, 0.13, 4.0, 0.56, 3.14,
                 1.0, 1.0, 0.75, 0.5, 0.3, 0.3, 0.3, 0.3, 2.0, 2.0, 2.0]
     time_discretization_dt: 0.1
 
@@ -88,7 +88,7 @@ controller:
       - "link_grasp_center"
     tool_link_name: "link_grasp_center"
     base_link_name: "base_link"
-    base_type: omnidirectional
+    base_type: nonholonomic
 
     tool_vicon_name: "StretchTool"
 

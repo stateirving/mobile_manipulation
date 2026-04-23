@@ -43,6 +43,27 @@ controller:
       mu: 0.0001
       zeta: 0.005
 
+  # cost_params:
+  #   EEPose:
+  #     Qk: [3, 3, 3, 1, 1, 1]
+  #     P: [1, 1, 1, 0.5, 0.5, 0.5]
+  #   EEVel:
+  #     Qk: [0, 0, 0, 0, 0, 0]
+  #     P: [0, 0, 0, 0, 0, 0]
+  #   BasePose:
+  #     Qk: [3, 3, 1]
+  #     P: [1, 1, 0.5]
+  #   BaseVel:
+  #     Qk: [0, 0, 0]
+  #     P: [0, 0, 0]
+  #   Effort:
+  #     Qqa: [0, 0, 0, 0, 0, 0, 0, 0]
+  #     Qqb: [0, 0, 0]
+  #     Qva: [0.01, 0.01, 0.01, 0.01, 0.01, 0.01, 0.01, 0.01]
+  #     Qvb: [0.01, 0.01, 0.01]
+  #     Qua: [0.01, 0.01, 0.01, 0.01, 0.01, 0.01, 0.01, 0.01]
+  #     Qub: [0.01, 0.01, 0.01]
+
   # Simplified cost function parameters (6 core cost types)
   # The system automatically maps these to specific cost instances based on planner types
   cost_params:
@@ -100,7 +121,7 @@ controller:
       hessian_approx: "GAUSS_NEWTON"
       integrator_type: "IRK"
       print_level: 0
-      nlp_solver_type: "SQP_RTI"  #SQP_RTI, SQP
+      nlp_solver_type: "SQP"  #SQP_RTI, SQP
       globalization: "MERIT_BACKTRACKING"
       qp_solver_iter_max: 100
       nlp_solver_tol_comp: 1.e-06
