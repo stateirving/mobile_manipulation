@@ -82,6 +82,10 @@ class ControllerROSNode(Node):
         self.ctrl_config = config["controller"]
         self.planner_config = config["planner"].copy()
         self.get_logger().info(f"Controller type: {self.ctrl_config['type']}")
+        self.collision_emergency_stop_margin = self.ctrl_config.get(
+            "collision_emergency_stop_margin",
+            {"self": 0.05, "static_obstacles": 0.05},
+        )
 
         # controller
         # Dynamically get the controller class from the MPC module based on the type specified in the config
@@ -139,7 +143,17 @@ class ControllerROSNode(Node):
         # ROS2 Related
         # create robot ros2 interface, vicon tool ros2 interface, and joystick ros2 interface
         # /home/miao/repo/mobile_manipulation/mobile_manipulation_central/src/mobile_manipulation_central/ros_interface.py
-        self.robot_interface = MobileManipulatorROSInterface(self)
+        joint_names = self.ctrl_config["robot"].get(
+            "joint_names", config.get("simulation", {}).get("robot", {}).get("joint_names")
+        )
+        if joint_names is None:
+            raise KeyError(
+                "Missing robot.joint_names in both controller and simulation config"
+            )
+        arm_joint_names = joint_names[3:]
+        self.robot_interface = MobileManipulatorROSInterface(
+            self, arm_joint_names=arm_joint_names
+        )
         self.vicon_tool_interface = ViconObjectInterface(
             self, self.ctrl_config["robot"]["tool_vicon_name"]
         )
@@ -158,6 +172,10 @@ class ControllerROSNode(Node):
                 "self"
             ]
             self.ground_collision_func = casadi_kin_dyn.signedDistanceSymMdlsPerGroup[
+                "static_obstacles"
+            ]["ground"]
+            self.self_collision_pairs = casadi_kin_dyn.collision_pairs["self"]
+            self.ground_collision_pairs = casadi_kin_dyn.collision_pairs[
                 "static_obstacles"
             ]["ground"]
 
@@ -186,7 +204,7 @@ class ControllerROSNode(Node):
         )
 
         # publish mpc predicted input trajectory at a higher rate
-        self.cmd_vel = np.zeros(9)
+        self.cmd_vel = np.zeros(self.ctrl_config["robot"]["dims"]["u"])
         self.mpc_plan = None
         self.mpc_plan_time_stamp = 0
         dt_pub = 1.0 / self.cmd_vel_pub_rate
@@ -548,9 +566,30 @@ class ControllerROSNode(Node):
             if self.ctrl_config["self_collision_emergency_stop"]:
                 signed_dist_self = self.self_collision_func(q).full().flatten()
                 signed_dist_ground = self.ground_collision_func(q).full().flatten()
+                min_self_idx = int(np.argmin(signed_dist_self))
+                min_ground_idx = int(np.argmin(signed_dist_ground))
+                min_self_dist = float(signed_dist_self[min_self_idx])
+                min_ground_dist = float(signed_dist_ground[min_ground_idx])
 
-                if min(signed_dist_self) < 0.05 or min(signed_dist_ground) < 0.05:
-                    self.controller_log.warning("Self Collision Detected. Braking!!!!")
+                if (
+                    min_self_dist < self.collision_emergency_stop_margin["self"]
+                    or min_ground_dist
+                    < self.collision_emergency_stop_margin["static_obstacles"]
+                ):
+                    if min_self_dist < self.collision_emergency_stop_margin["self"]:
+                        pair = self.self_collision_pairs[min_self_idx]
+                        self.controller_log.warning(
+                            "Self Collision Detected. pair=%s dist=%.4f. Braking!!!!",
+                            pair,
+                            min_self_dist,
+                        )
+                    else:
+                        pair = self.ground_collision_pairs[min_ground_idx]
+                        self.controller_log.warning(
+                            "Ground Collision Detected. pair=%s dist=%.4f. Braking!!!!",
+                            pair,
+                            min_ground_dist,
+                        )
                     self.cmd_vel_timer.cancel()
 
                     self.robot_interface.brake()

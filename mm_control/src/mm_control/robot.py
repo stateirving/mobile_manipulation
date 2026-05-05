@@ -15,6 +15,50 @@ from mm_utils import parsing
 import hppfcl as fcl  # isort: skip
 
 
+DEFAULT_SELF_COLLISION_GROUP_SPECS = [
+    ("base", ["wrist", "tool"], None),
+    ("upper_arm", ["wrist", "tool"], 2),
+    ("forearm", ["tool", "rack"], 2),
+]
+DEFAULT_DETAILED_SELF_COLLISION_GROUP_SPECS = [
+    ("base", ["wrist", "tool"], None),
+    ("upper_arm", ["wrist", "tool"], None),
+    ("forearm", ["tool", "rack"], None),
+    ("tool", ["rack"], None),
+    ("wrist", ["rack"], None),
+]
+DEFAULT_STATIC_OBSTACLE_TARGETS = ["base", "wrist", "forearm", "upper_arm"]
+DEFAULT_GROUND_TARGETS = ["tool"]
+DEFAULT_DETAILED_GROUND_TARGETS = ["wrist", "tool", "forearm"]
+
+
+def rotation_matrix_from_rpy(rpy):
+    """Return a 3x3 rotation matrix from roll, pitch, yaw."""
+    roll, pitch, yaw = [float(v) for v in rpy]
+    cr, sr = np.cos(roll), np.sin(roll)
+    cp, sp = np.cos(pitch), np.sin(pitch)
+    cy, sy = np.cos(yaw), np.sin(yaw)
+    return np.array(
+        [
+            [cy * cp, cy * sp * sr - sy * cr, cy * sp * cr + sy * sr],
+            [sy * cp, sy * sp * sr + cy * cr, sy * sp * cr - cy * sr],
+            [-sp, cp * sr, cp * cr],
+        ]
+    )
+
+
+def get_robot_collision_groups(robot_config):
+    """Resolve collision groups from the new collision model or the legacy config."""
+    collision_model = robot_config.get("collision_model", {})
+    groups = collision_model.get("groups")
+    if groups:
+        return {name: list(link_names) for name, link_names in groups.items()}
+    return {
+        name: list(link_names)
+        for name, link_names in robot_config.get("collision_link_names", {}).items()
+    }
+
+
 def signed_distance_sphere_sphere(c1, c2, r1, r2):
     """Signed distance between two spheres.
 
@@ -109,7 +153,9 @@ class PinocchioInterface:
             )
         self.addGroundCollisionObject()
 
-        self.collision_link_names = config["robot"]["collision_link_names"].copy()
+        self.collision_link_names = get_robot_collision_groups(config["robot"])
+        self.custom_collision_objects = {}
+        self._addConfiguredCollisionObjects(config["robot"])
         if config["scene"]["enabled"]:
             self.collision_link_names.update(config["scene"]["collision_link_names"])
 
@@ -136,6 +182,10 @@ class PinocchioInterface:
         """
         objs = []
         for name in link_names:
+            if name in self.custom_collision_objects:
+                objs.append(self.custom_collision_objects[name])
+                continue
+
             o_id = self.collision_model.getGeometryId(name + "_0")
             if o_id >= self.collision_model.ngeoms:
                 o = None
@@ -189,6 +239,11 @@ class PinocchioInterface:
             signed_dist = signed_distance_sphere_cylinder(
                 tf1[0], tf2[0], o1.geometry.radius, o2.geometry.radius
             )
+        else:
+            raise NotImplementedError(
+                "Unsupported signed-distance geometry pair: "
+                f"{o1.geometry.getNodeType()} vs {o2.geometry.getNodeType()}"
+            )
 
         return signed_dist
 
@@ -224,6 +279,10 @@ class PinocchioInterface:
             id2 = self.collision_model.getGeometryId(
                 pair[1] + "_0" if expand_name else pair[1]
             )
+            if id1 >= self.collision_model.ngeoms or id2 >= self.collision_model.ngeoms:
+                raise ValueError(
+                    f"Collision pair {pair} references a geometry object that does not exist"
+                )
             self.collision_model.addCollisionPair(pin.CollisionPair(id1, id2))
 
     def removeAllCollisionPairs(self):
@@ -241,6 +300,48 @@ class PinocchioInterface:
         ground_geom_obj.meshColor = np.ones((4))
 
         self.addCollisionObjects([ground_geom_obj])
+
+    def _addConfiguredCollisionObjects(self, robot_config):
+        """Add config-defined collision primitives to the Pinocchio collision model."""
+        collision_model = robot_config.get("collision_model", {})
+        for name, spec in collision_model.get("objects", {}).items():
+            geom_obj = self._buildConfiguredCollisionObject(name, spec)
+            self.addCollisionObjects([geom_obj])
+            self.custom_collision_objects[name] = geom_obj
+
+    def _buildConfiguredCollisionObject(self, name, spec):
+        """Create a Pinocchio GeometryObject from a collision primitive spec."""
+        geometry_type = spec["type"].lower()
+        translation = np.asarray(spec.get("translation", [0.0, 0.0, 0.0]), dtype=float)
+        rotation = rotation_matrix_from_rpy(spec.get("rpy", [0.0, 0.0, 0.0]))
+        placement = pin.SE3(rotation, translation)
+
+        if geometry_type == "sphere":
+            geometry = fcl.Sphere(float(spec["radius"]))
+        elif geometry_type == "cylinder":
+            geometry = fcl.Cylinder(float(spec["radius"]), float(spec["length"]))
+        elif geometry_type == "halfspace":
+            normal = np.asarray(spec.get("normal", [0.0, 0.0, 1.0]), dtype=float)
+            geometry = fcl.Halfspace(normal, float(spec.get("offset", 0.0)))
+        else:
+            raise ValueError(
+                f"Unsupported configured collision primitive type '{geometry_type}' for {name}"
+            )
+
+        parent_link = spec.get("parent_link")
+        if parent_link is None:
+            raise ValueError(f"Configured collision object '{name}' is missing parent_link")
+
+        frame_id = self.model.getFrameId(parent_link)
+        if frame_id >= len(self.model.frames):
+            raise ValueError(
+                f"Configured collision object '{name}' references unknown parent_link '{parent_link}'"
+            )
+
+        parent_joint = self.model.frames[frame_id].parentJoint
+        geom_obj = pin.GeometryObject(name + "_0", parent_joint, geometry, placement)
+        geom_obj.meshColor = np.ones((4))
+        return geom_obj
 
     def computeDistances(self, q):
         """Compute distances for all collision pairs.
@@ -328,121 +429,142 @@ class CasadiModelInterface:
 
         return pairs
 
+    def _expandCollisionTargets(self, target):
+        """Expand a collision target which may be a group name or an object name."""
+        if isinstance(target, str):
+            return self.robot.collision_link_names.get(target, [target])
+
+        expanded_targets = []
+        for item in target:
+            expanded_targets.extend(self._expandCollisionTargets(item))
+        return expanded_targets
+
+    def _expandCollisionPairSpecs(self, pair_specs):
+        """Expand pair specs expressed in group or object names into explicit pairs."""
+        pairs = []
+        for spec in pair_specs:
+            if len(spec) != 2:
+                raise ValueError(f"Collision pair spec must contain exactly two items: {spec}")
+            left_targets = self._expandCollisionTargets(spec[0])
+            right_targets = self._expandCollisionTargets(spec[1])
+            pairs.extend(self._addCollisionPairFromTwoGroups(left_targets, right_targets))
+        return pairs
+
+    def _expandObstaclePairTargets(self, obstacle, targets):
+        """Expand obstacle collision targets into explicit pairs."""
+        expanded_pairs = []
+        for target in targets:
+            expanded_pairs.extend(
+                self._addCollisionPairFromTwoGroups(
+                    [obstacle], self._expandCollisionTargets(target)
+                )
+            )
+        return expanded_pairs
+
+    def _buildDefaultSelfCollisionPairs(self, detailed=False):
+        """Build default self-collision pairs from generic group-level rules."""
+        group_specs = (
+            DEFAULT_DETAILED_SELF_COLLISION_GROUP_SPECS
+            if detailed
+            else DEFAULT_SELF_COLLISION_GROUP_SPECS
+        )
+        pairs = []
+        for group_name, targets, limit in group_specs:
+            link_group = list(self.robot.collision_link_names.get(group_name, []))
+            if limit is not None:
+                link_group = link_group[:limit]
+            if not link_group:
+                continue
+            target_group = self._expandCollisionTargets(targets)
+            if not target_group:
+                continue
+            pairs.extend(self._addCollisionPairFromTwoGroups(link_group, target_group))
+        return pairs
+
+    def _buildDefaultStaticObstaclePairs(self, obstacle, detailed=False):
+        """Build default obstacle collision pairs from generic group-level rules."""
+        target_specs = (
+            DEFAULT_DETAILED_GROUND_TARGETS
+            if detailed and obstacle == "ground"
+            else DEFAULT_GROUND_TARGETS
+            if obstacle == "ground"
+            else DEFAULT_STATIC_OBSTACLE_TARGETS
+        )
+        return self._expandObstaclePairTargets(obstacle, target_specs)
+
     def _setupCollisionPair(self, config):
         """Setup collision pairs from configuration.
 
         Args:
             config (dict): Configuration dictionary.
         """
-        if config["robot"].get("collision_pairs", False) and config["robot"][
-            "collision_pairs"
-        ].get("self", False):
-            self.collision_pairs["self"] = config["robot"]["collision_pairs"]["self"]
+        robot_config = config["robot"]
+        collision_model = robot_config.get("collision_model", {})
+        legacy_collision_pairs = robot_config.get("collision_pairs", {})
+        if legacy_collision_pairs.get("self", False):
+            self.collision_pairs["self"] = legacy_collision_pairs["self"]
+        elif collision_model.get("self_collision_pairs", False):
+            self.collision_pairs["self"] = self._expandCollisionPairSpecs(
+                collision_model["self_collision_pairs"]
+            )
         else:
-            # base
-            self.collision_pairs["self"] = [
-                ["ur10_arm_forearm_collision_link", "base_collision_link"]
-            ]
-            self.collision_pairs["self"] += self._addCollisionPairFromTwoGroups(
-                self.robot.collision_link_names["base"],
-                self.robot.collision_link_names["wrist"]
-                + self.robot.collision_link_names["tool"],
-            )
-            # upper arm
-            self.collision_pairs["self"] += self._addCollisionPairFromTwoGroups(
-                self.robot.collision_link_names["upper_arm"][:2],
-                self.robot.collision_link_names["wrist"]
-                + self.robot.collision_link_names["tool"],
-            )
-            # forearm
-            self.collision_pairs["self"] += self._addCollisionPairFromTwoGroups(
-                self.robot.collision_link_names["forearm"][:2],
-                self.robot.collision_link_names["tool"]
-                + self.robot.collision_link_names["rack"],
-            )
+            self.collision_pairs["self"] = self._buildDefaultSelfCollisionPairs()
 
         for obstacle in self.scene.collision_link_names.get("static_obstacles", []):
-            if (
-                config["robot"].get("collision_pairs", False)
-                and config["robot"]["collision_pairs"].get("static_obstacles", False)
-                and config["robot"]["collision_pairs"]["static_obstacles"].get(
-                    obstacle, False
-                )
-            ):
+            if legacy_collision_pairs.get("static_obstacles", {}).get(obstacle, False):
                 self.collision_pairs["static_obstacles"][obstacle] = (
-                    self._addCollisionPairFromTwoGroups(
-                        [obstacle],
-                        config["robot"]["collision_pairs"]["static_obstacles"][
-                            obstacle
-                        ],
+                    self._expandObstaclePairTargets(
+                        obstacle,
+                        legacy_collision_pairs["static_obstacles"][obstacle],
+                    )
+                )
+            elif collision_model.get("static_obstacle_pairs", {}).get(obstacle, False):
+                self.collision_pairs["static_obstacles"][obstacle] = (
+                    self._expandObstaclePairTargets(
+                        obstacle,
+                        collision_model["static_obstacle_pairs"][obstacle],
                     )
                 )
             else:
-                if obstacle == "ground":
-                    self.collision_pairs["static_obstacles"][obstacle] = (
-                        self._addCollisionPairFromTwoGroups(
-                            [obstacle], self.robot.collision_link_names["tool"]
-                        )
-                    )
-                else:
-                    self.collision_pairs["static_obstacles"][obstacle] = (
-                        self._addCollisionPairFromTwoGroups(
-                            [obstacle],
-                            self.robot.collision_link_names["base"]
-                            + self.robot.collision_link_names["wrist"]
-                            + self.robot.collision_link_names["forearm"]
-                            + self.robot.collision_link_names["upper_arm"],
-                        )
-                    )
+                self.collision_pairs["static_obstacles"][obstacle] = (
+                    self._buildDefaultStaticObstaclePairs(obstacle)
+                )
 
     def _setupCollisionPairDetailed(self):
         """Setup detailed collision pairs for self-collision and obstacles."""
-        # base
-        self.collision_pairs_detailed["self"] = [
-            ["ur10_arm_forearm_collision_link", "base_collision_link"]
-        ]
-        self.collision_pairs_detailed["self"] += self._addCollisionPairFromTwoGroups(
-            self.robot.collision_link_names["base"],
-            self.robot.collision_link_names["wrist"]
-            + self.robot.collision_link_names["tool"],
-        )
-        # upper arm
-        self.collision_pairs_detailed["self"] += self._addCollisionPairFromTwoGroups(
-            self.robot.collision_link_names["upper_arm"],
-            self.robot.collision_link_names["wrist"]
-            + self.robot.collision_link_names["tool"],
-        )
-        # forearm
-        self.collision_pairs_detailed["self"] += self._addCollisionPairFromTwoGroups(
-            self.robot.collision_link_names["forearm"],
-            self.robot.collision_link_names["tool"] + ["rack_collision_link"],
-        )
-
-        self.collision_pairs_detailed["self"] += self._addCollisionPairFromTwoGroups(
-            self.robot.collision_link_names["tool"]
-            + self.robot.collision_link_names["wrist"],
-            ["rack_collision_link"],
-        )
+        collision_model = self.robot.config.get("collision_model", {})
+        legacy_collision_pairs = self.robot.config.get("collision_pairs", {})
+        if collision_model.get("pinocchio_self_collision_pairs", False):
+            self.collision_pairs_detailed["self"] = self._expandCollisionPairSpecs(
+                collision_model["pinocchio_self_collision_pairs"]
+            )
+        elif legacy_collision_pairs.get("self", False):
+            self.collision_pairs_detailed["self"] = legacy_collision_pairs["self"]
+        else:
+            self.collision_pairs_detailed["self"] = self._buildDefaultSelfCollisionPairs(
+                detailed=True
+            )
 
         for obstacle in self.scene.collision_link_names.get("static_obstacles", []):
-            if obstacle == "ground":
+            if collision_model.get("pinocchio_static_obstacle_pairs", {}).get(
+                obstacle, False
+            ):
                 self.collision_pairs_detailed["static_obstacles"][obstacle] = (
-                    self._addCollisionPairFromTwoGroups(
-                        [obstacle],
-                        self.robot.collision_link_names["wrist"]
-                        + self.robot.collision_link_names["tool"]
-                        + self.robot.collision_link_names["forearm"],
+                    self._expandObstaclePairTargets(
+                        obstacle,
+                        collision_model["pinocchio_static_obstacle_pairs"][obstacle],
+                    )
+                )
+            elif legacy_collision_pairs.get("static_obstacles", {}).get(obstacle, False):
+                self.collision_pairs_detailed["static_obstacles"][obstacle] = (
+                    self._expandObstaclePairTargets(
+                        obstacle,
+                        legacy_collision_pairs["static_obstacles"][obstacle],
                     )
                 )
             else:
                 self.collision_pairs_detailed["static_obstacles"][obstacle] = (
-                    self._addCollisionPairFromTwoGroups(
-                        [obstacle],
-                        self.robot.collision_link_names["base"]
-                        + self.robot.collision_link_names["wrist"]
-                        + self.robot.collision_link_names["forearm"]
-                        + self.robot.collision_link_names["upper_arm"],
-                    )
+                    self._buildDefaultStaticObstaclePairs(obstacle, detailed=True)
                 )
 
     def _setupSelfCollisionSymMdl(self):
@@ -451,8 +573,9 @@ class CasadiModelInterface:
         for pair in self.collision_pairs["self"]:
             os = self.pinocchio_interface.getGeometryObject(pair)
             if None in os:
-                print(f"either {pair[0]} or {pair[1]} isn't a collision geometry")
-                continue
+                raise ValueError(
+                    f"Collision pair {pair} references a collision object that does not exist"
+                )
 
             sd_sym = self.pinocchio_interface.getSignedDistance(
                 os[0],
@@ -466,6 +589,8 @@ class CasadiModelInterface:
             )
             self.signedDistanceSymMdls[tuple(pair)] = sd_fcn
 
+        if not sd_syms:
+            raise ValueError("No valid self-collision pairs were configured")
         self.signedDistanceSymMdlsPerGroup["self"] = cs.Function(
             "sd_self", [self.robot.q_sym], [cs.vertcat(*sd_syms)]
         )
@@ -477,8 +602,9 @@ class CasadiModelInterface:
             for pair in pairs:
                 os = self.pinocchio_interface.getGeometryObject(pair)
                 if None in os:
-                    print(f"either {pair[0]} or {pair[1]} isn't a collision geometry")
-                    continue
+                    raise ValueError(
+                        f"Collision pair {pair} references a collision object that does not exist"
+                    )
 
                 sd_sym = self.pinocchio_interface.getSignedDistance(
                     os[0],
@@ -492,6 +618,10 @@ class CasadiModelInterface:
                 )
                 self.signedDistanceSymMdls[tuple(pair)] = sd_fcn
 
+            if not sd_syms:
+                raise ValueError(
+                    f"No valid collision pairs were configured for static obstacle '{obstacle}'"
+                )
             self.signedDistanceSymMdlsPerGroup["static_obstacles"][obstacle] = (
                 cs.Function(
                     "sd_" + obstacle, [self.robot.q_sym], [cs.vertcat(*sd_syms)]
@@ -655,6 +785,7 @@ class MobileManipulator3D:
         """
         urdf_path = parsing.parse_and_compile_urdf(config["robot"]["urdf"])
         package_dirs = [str(Path(urdf_path).parent)]
+        self.config = config["robot"]
         # create Pinocchio model to get robot info such as number of joints, link names, and for collision checking
         self.model = pin.buildModelsFromUrdf(urdf_path, package_dirs=package_dirs)[0]
         # create Casadi model for symbolic kinematics and dynamics functions
@@ -665,18 +796,27 @@ class MobileManipulator3D:
         self.numjoint = self.model.nq
         # DoF includes both joint DoF and 3 DoF for the mobile base position (x, y, theta)
         self.DoF = self.numjoint + 3
-        self.dt = config["robot"]["time_discretization_dt"]
-        self.ub_x = parsing.parse_array(config["robot"]["limits"]["state"]["upper"])
-        self.lb_x = parsing.parse_array(config["robot"]["limits"]["state"]["lower"])
-        self.ub_u = parsing.parse_array(config["robot"]["limits"]["input"]["upper"])
-        self.lb_u = parsing.parse_array(config["robot"]["limits"]["input"]["lower"])
+        self.dt = self.config["time_discretization_dt"]
+        self.ub_x = parsing.parse_array(self.config["limits"]["state"]["upper"])
+        self.lb_x = parsing.parse_array(self.config["limits"]["state"]["lower"])
+        self.ub_u = parsing.parse_array(self.config["limits"]["input"]["upper"])
+        self.lb_u = parsing.parse_array(self.config["limits"]["input"]["lower"])
         self._sync_joint_position_limits_from_urdf()
-        self.base_type = config["robot"].get("base_type", "omnidirectional").lower()
+        self.base_type = self.config.get("base_type", "omnidirectional").lower()
+        self.nonholonomic_mode = (
+            self.config.get("nonholonomic_mode", "constraint").lower()
+        )
+        self.nonholonomic_lateral_damping = float(
+            self.config.get("nonholonomic_lateral_damping", 20.0)
+        )
 
-        self.link_names = config["robot"]["link_names"]
-        self.tool_link_name = config["robot"]["tool_link_name"]
-        self.base_link_name = config["robot"]["base_link_name"]
-        self.collision_link_names = config["robot"]["collision_link_names"]
+        self.link_names = self.config["link_names"]
+        self.tool_link_name = self.config["tool_link_name"]
+        self.base_link_name = self.config["base_link_name"]
+        self.collision_link_names = get_robot_collision_groups(self.config)
+        self.collision_object_specs = self.config.get("collision_model", {}).get(
+            "objects", {}
+        )
 
         self.qb_sym = cs.SX.sym("qb", 3)
         self.qa_sym = cs.SX.sym("qa", self.numjoint)
@@ -712,9 +852,7 @@ class MobileManipulator3D:
     def _setupSSSymMdlDI(self):
         """Create State-space symbolic model for MM"""
         self.va_sym = cs.SX.sym("va", self.numjoint)
-        self.vb_sym = cs.SX.sym(
-            "vb", 3
-        )  # Assuming nonholonomic vehicle, velocity in world frame
+        self.vb_sym = cs.SX.sym("vb", 3)
         self.v_sym = cs.vertcat(self.vb_sym, self.va_sym)
 
         self.x_sym = cs.vertcat(self.q_sym, self.v_sym)
@@ -722,10 +860,17 @@ class MobileManipulator3D:
 
         nx = self.x_sym.size()[0]
         nu = self.u_sym.size()[0]
+        use_nonholonomic_dynamics = (
+            self.base_type == "nonholonomic" and self.nonholonomic_mode == "dynamics"
+        )
         self.ssSymMdl = {
             "x": self.x_sym,
             "u": self.u_sym,
-            "mdl_type": ["linear", "time_invariant"],
+            "mdl_type": (
+                ["nonlinear", "time_invariant"]
+                if use_nonholonomic_dynamics
+                else ["linear", "time_invariant"]
+            ),
             "nx": nx,
             "nu": nu,
             "ub_x": list(self.ub_x),
@@ -734,19 +879,35 @@ class MobileManipulator3D:
             "lb_u": list(self.lb_u),
         }
 
-        A = cs.DM.zeros((nx, nx))
-        G = cs.DM.eye(self.DoF)
-        A[: self.DoF, self.DoF :] = G
-        B = cs.DM.zeros((nx, nu))
-        B[self.DoF :, :] = cs.DM.eye(nu)
+        if use_nonholonomic_dynamics:
+            theta = self.qb_sym[2]
+            c = cs.cos(theta)
+            s = cs.sin(theta)
+            vx, vy = self.vb_sym[0], self.vb_sym[1]
+            ax, ay = self.u_sym[0], self.u_sym[1]
 
-        xdot = A @ self.x_sym + B @ self.u_sym
+            v_lat = -s * vx + c * vy
+            a_fwd = c * ax + s * ay
+            a_lat = -s * ax + c * ay - self.nonholonomic_lateral_damping * v_lat
+            a_base = cs.vertcat(c * a_fwd - s * a_lat, s * a_fwd + c * a_lat)
+
+            qdot = self.v_sym
+            vdot = cs.vertcat(a_base, self.u_sym[2:])
+            xdot = cs.vertcat(qdot, vdot)
+        else:
+            A = cs.DM.zeros((nx, nx))
+            G = cs.DM.eye(self.DoF)
+            A[: self.DoF, self.DoF :] = G
+            B = cs.DM.zeros((nx, nu))
+            B[self.DoF :, :] = cs.DM.eye(nu)
+            xdot = A @ self.x_sym + B @ self.u_sym
+            self.ssSymMdl["A"] = A
+            self.ssSymMdl["B"] = B
+
         fmdl = cs.Function(
             "ss_fcn", [self.x_sym, self.u_sym], [xdot], ["x", "u"], ["xdot"]
         )
         self.ssSymMdl["fmdl"] = fmdl.expand()
-        self.ssSymMdl["A"] = A
-        self.ssSymMdl["B"] = B
         self.ssSymMdl["fmdlk"] = self._discretizefmdl(self.ssSymMdl, self.dt)
 
     def _setupRobotKinSymMdl(self):
@@ -761,7 +922,42 @@ class MobileManipulator3D:
 
         for collision_group, link_list in self.collision_link_names.items():
             for name in link_list:
-                self.collisionLinkKinSymMdls[name] = self._getFk(name)
+                if name in self.collision_object_specs:
+                    self.collisionLinkKinSymMdls[name] = self._getCollisionObjectFk(
+                        name, self.collision_object_specs[name]
+                    )
+                else:
+                    self.collisionLinkKinSymMdls[name] = self._getFk(name)
+
+    def _getCollisionObjectFk(self, object_name, spec):
+        """Create symbolic FK for a configured collision primitive."""
+        parent_link = spec.get("parent_link")
+        if parent_link is None:
+            raise ValueError(
+                f"Configured collision object '{object_name}' is missing parent_link"
+            )
+
+        if parent_link in self.kinSymMdls:
+            parent_fk = self.kinSymMdls[parent_link]
+        else:
+            parent_fk = self._getFk(parent_link)
+
+        parent_pos, parent_rot = parent_fk(self.q_sym)
+        translation = cs.DM(
+            np.asarray(spec.get("translation", [0.0, 0.0, 0.0]), dtype=float)
+        )
+        rotation = cs.DM(
+            rotation_matrix_from_rpy(spec.get("rpy", [0.0, 0.0, 0.0]))
+        )
+        object_pos = parent_pos + parent_rot @ translation
+        object_rot = parent_rot @ rotation
+        return cs.Function(
+            object_name + "_fcn",
+            [self.q_sym],
+            [object_pos, object_rot],
+            ["q"],
+            ["pos", "rot"],
+        )
 
     def _setupJacobianSymMdl(self):
         """Create jacobian symbolic model for MM links keyed by link name
@@ -896,9 +1092,9 @@ class MobileManipulator3D:
         Returns:
             dict: Discretized state-space model dictionary.
         """
+        x_sym = ss_mdl["x"]
+        u_sym = ss_mdl["u"]
         if "linear" in ss_mdl["mdl_type"]:
-            x_sym = ss_mdl["x"]
-            u_sym = ss_mdl["u"]
             A = ss_mdl["A"]
             B = ss_mdl["B"]
             nx = x_sym.size()[0]
@@ -912,10 +1108,15 @@ class MobileManipulator3D:
             Bd = Md[:nx, nx:]
 
             xk1_eqn = Ad @ x_sym + Bd @ u_sym
-            fdsc_fcn = cs.Function(
-                "fmdlk", [x_sym, u_sym], [xk1_eqn], ["xk", "uk"], ["xk1"]
-            )
+        else:
+            fmdl = ss_mdl["fmdl"]
+            k1 = fmdl(x_sym, u_sym)
+            k2 = fmdl(x_sym + 0.5 * dt * k1, u_sym)
+            k3 = fmdl(x_sym + 0.5 * dt * k2, u_sym)
+            k4 = fmdl(x_sym + dt * k3, u_sym)
+            xk1_eqn = x_sym + (dt / 6.0) * (k1 + 2 * k2 + 2 * k3 + k4)
 
+        fdsc_fcn = cs.Function("fmdlk", [x_sym, u_sym], [xk1_eqn], ["xk", "uk"], ["xk1"])
         return fdsc_fcn
 
     @staticmethod
@@ -932,12 +1133,10 @@ class MobileManipulator3D:
             ndarray: State trajectory x_bar, shape [N+1, nx].
         """
         N = u_bar.shape[0]
-        # For linear system, discreet time model is exact
-        if "linear" in ssSymMdl["mdl_type"]:
-            fk = ssSymMdl["fmdlk"]
-            f_pred = fk.mapaccum(N)
-            x_bar = f_pred(xo, u_bar.T)
-            x_bar = np.hstack((np.expand_dims(xo, -1), x_bar)).T
+        fk = ssSymMdl["fmdlk"]
+        f_pred = fk.mapaccum(N)
+        x_bar = f_pred(xo, u_bar.T)
+        x_bar = np.hstack((np.expand_dims(xo, -1), x_bar)).T
 
         return x_bar
 

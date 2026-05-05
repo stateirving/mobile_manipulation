@@ -91,30 +91,50 @@ controller:
 
     tool_vicon_name: "ThingContainer"
 
-    collision_link_names:
-      base:
-        - "base_collision_link"
-        # - "base_collision_link_front"
-        #- "base_collision_link_back"
+    collision_model:
+      groups:
+        base:
+          - "base_collision_link"
+          # - "base_collision_link_front"
+          # - "base_collision_link_back"
+        rack:
+          # - "rack_collision_link"
+          - "rack_collision_link_sphere_1"
+          - "rack_collision_link_sphere_2"
+        upper_arm:
+          - "ur10_arm_upper_arm_collision_link"
+          - "ur10_arm_upper_arm_collision_sphere_link1"
+          - "ur10_arm_upper_arm_collision_sphere_link2"
+          - "ur10_arm_upper_arm_collision_sphere_link3"
+        forearm:
+          - "ur10_arm_forearm_collision_link"
+          - "ur10_arm_forearm_collision_sphere_link1"
+          - "ur10_arm_forearm_collision_sphere_link2"
+        wrist:
+          - "ur10_arm_wrist1_collision_link"
+          - "ur10_arm_wrist3_collision_link"
+        tool:
+          - "gripped_object_collision_link"
 
-      rack:
-        # - "rack_collision_link"
-        - "rack_collision_link_sphere_1"
-        - "rack_collision_link_sphere_2"
-      upper_arm:
-        - "ur10_arm_upper_arm_collision_link"
-        - "ur10_arm_upper_arm_collision_sphere_link1"
-        - "ur10_arm_upper_arm_collision_sphere_link2"
-        - "ur10_arm_upper_arm_collision_sphere_link3"
-      forearm:
-        - "ur10_arm_forearm_collision_link"
-        - "ur10_arm_forearm_collision_sphere_link1"
-        - "ur10_arm_forearm_collision_sphere_link2"
-      wrist:
-        - "ur10_arm_wrist1_collision_link"
-        - "ur10_arm_wrist3_collision_link"
-      tool:
-        - "gripped_object_collision_link"
+      self_collision_pairs:
+        - ["base_collision_link", "ur10_arm_forearm_collision_link"]
+        - ["base_collision_link", "ur10_arm_wrist3_collision_link"]
+        - ["ur10_arm_wrist3_collision_link", "ur10_arm_upper_arm_collision_link"]
+        - ["ur10_arm_wrist3_collision_link", "rack_collision_link_sphere_1"]
+        - ["ur10_arm_wrist3_collision_link", "rack_collision_link_sphere_2"]
+
+      pinocchio_self_collision_pairs:
+        - ["base_collision_link", "ur10_arm_forearm_collision_link"]
+        - ["base_collision_link", "ur10_arm_wrist3_collision_link"]
+        - ["ur10_arm_wrist3_collision_link", "ur10_arm_upper_arm_collision_link"]
+        - ["ur10_arm_wrist3_collision_link", "rack_collision_link_sphere_1"]
+        - ["ur10_arm_wrist3_collision_link", "rack_collision_link_sphere_2"]
+
+      static_obstacle_pairs:
+        ground: ["tool"]
+
+      pinocchio_static_obstacle_pairs:
+        ground: ["forearm", "wrist", "tool"]
 
 
     urdf:

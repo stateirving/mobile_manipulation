@@ -6,26 +6,26 @@ controller:
   dt: 0.1
   robot:
     time_discretization_dt: 0.1
-  prediction_horizon: 1.0
-  ctrl_rate: 10 #hz
-  cmd_vel_pub_rate: 100 # hz
+  prediction_horizon: 1.5
+  ctrl_rate: 7 #hz
+  cmd_vel_pub_rate: 20 # hz
   cmd_vel_type: "interpolation"         # integration: publish vel by integrating from acc_bar
                                         # interpolation: publish vel by interpolating vel_bar
   soft_cst: True
-  self_collision_avoidance_enabled: True
+  self_collision_avoidance_enabled: False
   static_obstacles_collision_avoidance_enabled: False
   cst_tol_schedule_enabled: False
   ee_pose_tracking_enabled: True
 
-  self_collision_emergency_stop: True
+  self_collision_emergency_stop: False
 
   collision_constraint_type:
     self: "SignedDistanceConstraint"
     static_obstacles: "SignedDistanceConstraint"
 
   collision_constraints_softened:
-    self: False
-    static_obstacles: False
+    self: True
+    static_obstacles: True
 
   collision_safety_margin:
     self: 0.25
@@ -43,48 +43,27 @@ controller:
       mu: 0.0001
       zeta: 0.005
 
-  # cost_params:
-  #   EEPose:
-  #     Qk: [3, 3, 3, 1, 1, 1]
-  #     P: [1, 1, 1, 0.5, 0.5, 0.5]
-  #   EEVel:
-  #     Qk: [0, 0, 0, 0, 0, 0]
-  #     P: [0, 0, 0, 0, 0, 0]
-  #   BasePose:
-  #     Qk: [3, 3, 1]
-  #     P: [1, 1, 0.5]
-  #   BaseVel:
-  #     Qk: [0, 0, 0]
-  #     P: [0, 0, 0]
-  #   Effort:
-  #     Qqa: [0, 0, 0, 0, 0, 0, 0, 0]
-  #     Qqb: [0, 0, 0]
-  #     Qva: [0.01, 0.01, 0.01, 0.01, 0.01, 0.01, 0.01, 0.01]
-  #     Qvb: [0.01, 0.01, 0.01]
-  #     Qua: [0.01, 0.01, 0.01, 0.01, 0.01, 0.01, 0.01, 0.01]
-  #     Qub: [0.01, 0.01, 0.01]
-
   # Simplified cost function parameters (6 core cost types)
   # The system automatically maps these to specific cost instances based on planner types
   cost_params:
     # End-effector pose cost (used for both Vec3 position and SE3 pose, world and base frames)
     EEPose:
-      Qk: [3, 3, 3, 3, 3, 3]  # For SE3: [x, y, z, roll, pitch, yaw]. For Vec3: first 3 used
-      P: [1, 1, 1, 1, 1, 1]    # Terminal weights (same structure)
+      Qk: [5, 5, 5, 0, 0, 0]  # Position-only tracking
+      P: [50, 50, 50, 0, 0, 0]
     # End-effector velocity cost (6D: 3D linear + 3D angular for SE3 compatibility)
     EEVel:
-      Qk: [1, 1, 1, 1, 1, 1]  # [vx, vy, vz, ωx, ωy, ωz]
-      P: [1, 1, 1, 1, 1, 1]    # Terminal weights [vx, vy, vz, ωx, ωy, ωz]
+      Qk: [7.5, 7.5, 7.5, 0, 0, 0]  # Linear velocity tracking only
+      P: [10, 10, 10, 0, 0, 0]
     # Base pose cost (always SE2: [x, y, yaw])
     # Set yaw weight (3rd element) to 0 to disable yaw tracking
     BasePose:
-      Qk: [3, 3, 3]  # [x, y, yaw] - set yaw weight to 0 to disable yaw tracking
-      P: [1, 1, 1]    # Terminal weights [x, y, yaw]
+      Qk: [2, 2, 0]
+      P: [40, 40, 0]
     # Base velocity cost (always 3D: [vx, vy, vyaw])
     # Set vyaw weight (3rd element) to 0 to disable yaw velocity tracking
     BaseVel:
-      Qk: [1, 1, 1]  # [vx, vy, vyaw] - set vyaw weight to 0 to disable yaw velocity tracking
-      P: [1, 1, 1]    # Terminal weights [vx, vy, vyaw]
+      Qk: [0.05, 0.05, 0]
+      P: [0.05, 0.05, 0]
     # Control effort cost (always included)
     Effort:
       Qqa: [0, 0, 0, 0, 0, 0]
@@ -97,8 +76,8 @@ controller:
     Regularization:
       eps: 1.0e-06
     slack:
-      z: 10  # linear term
-      Z: 1    # quadratic term
+      z: 500
+      Z: 500000
 
   # Line search parameters
   beta: 0.5
@@ -112,24 +91,25 @@ controller:
       recompile: False
     raise_exception_on_failure: False
     use_custom_hess: True
-    use_terminal_cost: False
+    use_terminal_cost: True
     ocp_solver_options:
-      qp_solver: "FULL_CONDENSING_HPIPM"
+      qp_solver: "PARTIAL_CONDENSING_HPIPM"
       # FULL_CONDENSING_QPOASES
       # PARTIAL_CONDENSING_HPIPM, FULL_CONDENSING_QPOASES, FULL_CONDENSING_HPIPM,
       # PARTIAL_CONDENSING_QPDUNES, PARTIAL_CONDENSING_OSQP, FULL_CONDENSING_DAQP
       hessian_approx: "GAUSS_NEWTON"
-      integrator_type: "IRK"
+      regularize_method: "PROJECT"
+      integrator_type: "DISCRETE"
       print_level: 0
       nlp_solver_type: "SQP"  #SQP_RTI, SQP
       globalization: "MERIT_BACKTRACKING"
-      qp_solver_iter_max: 100
-      nlp_solver_tol_comp: 1.e-06
+      qp_solver_iter_max: 20
+      nlp_solver_tol_comp: 1.0e-03
       nlp_solver_tol_stat: 1.0e-03
       nlp_solver_tol_eq: 1.0e-02
       nlp_solver_tol_ineq: 1.0e-02
-      nlp_solver_max_iter: 100
-      qp_solver_warm_start: 2
+      nlp_solver_max_iter: 10
+      qp_solver_warm_start: 0
       nlp_solver_ext_qp_res: 0
     slack_enabled:
       x: True

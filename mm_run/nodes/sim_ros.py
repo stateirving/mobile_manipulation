@@ -93,8 +93,18 @@ def main(argv=None):
     logger.add("nx", sim_config["robot"]["dims"]["x"])
     logger.add("nu", sim_config["robot"]["dims"]["u"])
 
-    # ros interface
-    ros_interface = SimulatedMobileManipulatorROSInterface(node)
+    # The ROS interface historically assumes a 3-DoF mobile base plus an arm
+    # published on the legacy /ur10 topics. Prefer simulation joint names,
+    # but tolerate configs that only define them under controller.robot.
+    joint_names = sim_config["robot"].get(
+        "joint_names", config.get("controller", {}).get("robot", {}).get("joint_names")
+    )
+    if joint_names is None:
+        raise KeyError("Missing robot.joint_names in both simulation and controller config")
+    arm_joint_names = joint_names[3:]
+    ros_interface = SimulatedMobileManipulatorROSInterface(
+        node, arm_joint_names=arm_joint_names
+    )
     ros_interface.publish_time(t)
 
     vicon_tool_interface = SimulatedViconObjectInterface(

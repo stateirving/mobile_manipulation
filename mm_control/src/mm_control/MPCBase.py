@@ -15,7 +15,7 @@ from mm_control.MPCCostFunctions import CostFunctions, SoftConstraintsRBFCostFun
 from mm_control.robot import CasadiModelInterface as ModelInterface
 from mm_control.robot import MobileManipulator3D as MM
 from mm_utils.casadi_struct import casadi_sym_struct
-from mm_utils.parsing import parse_ros_path
+from mm_utils.parsing import parse_array, parse_ros_path
 
 INF = 1e5
 
@@ -37,7 +37,7 @@ class MPCBase:
         self.nu = self.ssSymMdl["nu"]
         self.DoF = self.robot.DoF
         if "robot" in config and "x0" in config["robot"]:
-            self.home = np.array(config["robot"]["x0"], dtype=float)
+            self.home = parse_array(config["robot"]["x0"])
         else:
             self.home = mm.load_home_position(config.get("home", "default"))
 
@@ -274,9 +274,16 @@ class MPCBase:
         model.x = cs.MX.sym("x", self.nx)
         model.u = cs.MX.sym("u", self.nu)
         model.xdot = cs.MX.sym("xdot", self.nx)
-
-        model.f_impl_expr = model.xdot - self.ssSymMdl["fmdl"](model.x, model.u)
-        model.f_expl_expr = self.ssSymMdl["fmdl"](model.x, model.u)
+        integrator_type = (
+            self.params["acados"]["ocp_solver_options"]
+            .get("integrator_type", "IRK")
+            .upper()
+        )
+        if integrator_type == "DISCRETE":
+            model.disc_dyn_expr = self.ssSymMdl["fmdlk"](model.x, model.u)
+        else:
+            model.f_impl_expr = model.xdot - self.ssSymMdl["fmdl"](model.x, model.u)
+            model.f_expl_expr = self.ssSymMdl["fmdl"](model.x, model.u)
         model.name = name
 
         # Get params from costs and constraints
@@ -340,8 +347,12 @@ class MPCBase:
             model.cost_expr_ext_cost_e = cost_expr_e
             if self.params["acados"]["use_custom_hess"]:
                 cost_hess_expr_e = sum(custom_hess_expr[:num_terminal_cost])
+                # Stage custom Hessians are defined over [u, x], while terminal
+                # Hessians in acados must be state-only with shape (nx, nx).
                 cost_hess_expr_e = cs.substitute(cost_hess_expr_e, model.u, [])
-                model.cost_expr_ext_cost_custom_hess_e = cost_hess_expr_e
+                model.cost_expr_ext_cost_custom_hess_e = cost_hess_expr_e[
+                    self.nu :, self.nu :
+                ]
 
     def _setup_constraints(self, ocp, model, constraints):
         """Setup all constraints (control, state, nonlinear) and return slack variable counts.

@@ -1,4 +1,5 @@
 from glob import glob
+from os.path import isfile
 from setuptools import find_packages, setup
 
 package_name = "mm_run"
@@ -11,7 +12,7 @@ setup(
         ("share/ament_index/resource_index/packages", ["resource/" + package_name]),
         ("share/" + package_name, ["package.xml"]),
         ("share/" + package_name + "/launch", glob("launch/*")),
-        ("share/" + package_name + "/nodes", glob("nodes/*")),
+        ("share/" + package_name + "/nodes", [p for p in glob("nodes/*") if isfile(p)]),
         ("share/" + package_name + "/rviz", glob("rviz/*")),
         ("share/" + package_name + "/config/controller", glob("config/controller/*")),
         ("share/" + package_name + "/config/robot", glob("config/robot/*")),

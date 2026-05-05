@@ -65,7 +65,10 @@ class MPC(MPCBase):
 
         # Add collision costs/constraints
         constraints = []
-        if self.robot.base_type == "nonholonomic":
+        if (
+            self.robot.base_type == "nonholonomic"
+            and self.robot.nonholonomic_mode != "dynamics"
+        ):
             constraints.append(NonholonomicBaseConstraint(self.robot))
 
         for name in self.collision_link_names:

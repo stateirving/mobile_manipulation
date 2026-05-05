@@ -1,7 +1,7 @@
 simulation:
   robot:
     # [x, y, yaw, lift, arm_l3, arm_l2, arm_l1, arm_l0, wrist_yaw, wrist_pitch, wrist_roll]
-    home: [0, 0, 0, 0.6, 0.05, 0.05, 0.05, 0.05, 0, 0, 0]
+    home: [0, 0, 0, 0.8, 0.0, 0.0, 0.0, 0.1, 1.5, 0.0, 0.0]
     dims:
       q: 11
       v: 11
@@ -45,6 +45,8 @@ simulation:
     tool_link_name: "link_grasp_center"
     base_link_name: "base_link"
     base_type: nonholonomic
+    nonholonomic_mode: dynamics
+    nonholonomic_lateral_damping: 20.0
     urdf:
       package: "mm_assets"
       path: "stretch/stretch_sim.urdf"
@@ -58,7 +60,19 @@ controller:
       v: 11
       x: 22
       u: 11
-    x0: [0, 0, 0, 0.6, 0.05, 0.05, 0.05, 0.05, 0, 0, 0]
+    joint_names:
+      - "x_to_world_joint"
+      - "y_to_x_joint"
+      - "base_to_y_joint"
+      - "joint_lift"
+      - "joint_arm_l3"
+      - "joint_arm_l2"
+      - "joint_arm_l1"
+      - "joint_arm_l0"
+      - "joint_wrist_yaw"
+      - "joint_wrist_pitch"
+      - "joint_wrist_roll"
+    x0: [0, 0, 0, 0.8, 0.0, 0.0, 0.0, 0.1, 1.5, 0.0, 0.0]
 
     limits:
       input:
@@ -89,31 +103,105 @@ controller:
     tool_link_name: "link_grasp_center"
     base_link_name: "base_link"
     base_type: nonholonomic
+    nonholonomic_mode: dynamics
+    nonholonomic_lateral_damping: 20.0
 
     tool_vicon_name: "StretchTool"
 
-    # Placeholder grouping for Stretch.
-    # First pass should keep collision avoidance disabled in the experiment config.
-    collision_link_names:
-      base:
-        - "base_link"
-      rack:
-        - "link_lift"
-      upper_arm:
-        - "link_arm_l4"
-        - "link_arm_l3"
-      forearm:
-        - "link_arm_l2"
-        - "link_arm_l1"
-        - "link_arm_l0"
-      wrist:
-        - "link_wrist_yaw"
-        - "link_wrist_yaw_bottom"
-        - "link_wrist_pitch"
-        - "link_wrist_roll"
-      tool:
-        - "link_gripper_s3_body"
-        - "link_grasp_center"
+    collision_model:
+      groups:
+        base:
+          - "base_body_collision"
+        rack:
+          - "lift_collision"
+        upper_arm:
+          - "arm_l4_collision"
+          - "arm_l3_collision"
+        forearm:
+          - "arm_l2_collision"
+          - "arm_l1_collision"
+          - "arm_l0_collision"
+        wrist:
+          - "wrist_yaw_collision"
+          - "wrist_pitch_collision"
+          - "wrist_roll_collision"
+        tool:
+          - "gripper_body_collision"
+
+      objects:
+        base_body_collision:
+          parent_link: "base_link"
+          type: "sphere"
+          radius: 0.24
+          translation: [0.0, 0.0, 0.12]
+        lift_collision:
+          parent_link: "link_lift"
+          type: "sphere"
+          radius: 0.10
+          translation: [0.0, 0.0, 0.10]
+        arm_l4_collision:
+          parent_link: "link_arm_l4"
+          type: "sphere"
+          radius: 0.07
+          translation: [0.0, 0.0, 0.0]
+        arm_l3_collision:
+          parent_link: "link_arm_l3"
+          type: "sphere"
+          radius: 0.07
+          translation: [0.0, 0.0, 0.0]
+        arm_l2_collision:
+          parent_link: "link_arm_l2"
+          type: "sphere"
+          radius: 0.065
+          translation: [0.0, 0.0, 0.0]
+        arm_l1_collision:
+          parent_link: "link_arm_l1"
+          type: "sphere"
+          radius: 0.065
+          translation: [0.0, 0.0, 0.0]
+        arm_l0_collision:
+          parent_link: "link_arm_l0"
+          type: "sphere"
+          radius: 0.065
+          translation: [0.0, 0.0, 0.0]
+        wrist_yaw_collision:
+          parent_link: "link_wrist_yaw"
+          type: "sphere"
+          radius: 0.06
+          translation: [0.0, 0.0, 0.0]
+        wrist_pitch_collision:
+          parent_link: "link_wrist_pitch"
+          type: "sphere"
+          radius: 0.06
+          translation: [0.0, 0.0, 0.0]
+        wrist_roll_collision:
+          parent_link: "link_wrist_roll"
+          type: "sphere"
+          radius: 0.055
+          translation: [0.0, 0.0, 0.0]
+        gripper_body_collision:
+          parent_link: "link_gripper_s3_body"
+          type: "sphere"
+          radius: 0.08
+          translation: [0.0, 0.0, 0.0]
+
+      self_collision_pairs:
+        - ["base", "wrist"]
+        - ["base", "tool"]
+        - ["upper_arm", "tool"]
+        - ["forearm", "rack"]
+
+      pinocchio_self_collision_pairs:
+        - ["base", "wrist"]
+        - ["base", "tool"]
+        - ["upper_arm", "tool"]
+        - ["forearm", "rack"]
+
+      static_obstacle_pairs:
+        ground: ["tool"]
+
+      pinocchio_static_obstacle_pairs:
+        ground: ["forearm", "wrist", "tool"]
 
     urdf:
       package: "mm_assets"

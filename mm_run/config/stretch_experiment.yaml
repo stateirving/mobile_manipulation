@@ -3,48 +3,81 @@
 
 planner:
   tasks:
-    - name: Base Waypoint
-      planner_type: WaypointPlanner
-      base_pose: [2, 2, 3.14]
-      tracking_pos_err_tol: 0.2
-
+    # Sequential-task baseline (ST), kept for reference:
+    # - name: Base Waypoint
+    #   planner_type: WaypointPlanner
+    #   base_pose: [0, 0.5, 3.14]
+    #   tracking_pos_err_tol: 0.2
+    #
     # - name: EE Waypoint
     #   planner_type: WaypointPlanner
-    #   ee_pose: [1.0, 0.0, 0.9, 3.14, 0, 0]
+    #   ee_pose: [1.0, 1.0, 0.9, 3.14, 0, 0]
+    #   ee_mask: [true, true, true, false, false, false]
     #   hold_period: 1.0
-    #   tracking_pos_err_tol: 0.08
+    #   tracking_pos_err_tol: 0.15
+
+    - name: HT Goal
+      planner_type: WaypointPlanner
+      base_pose: [0, 0.5, 3.14]
+      base_mask: [true, true, false]
+      ee_pose: [1.0, 1.0, 0.9, 3.14, 0, 0]
+      ee_mask: [true, true, true, false, false, false]
+      hold_period: 1.0
+      tracking_pos_err_tol: 0.15
 
 controller:
-  self_collision_avoidance_enabled: False
-  static_obstacles_collision_avoidance_enabled: False
-  self_collision_emergency_stop: False
+  # self_collision_avoidance_enabled: False
+  # static_obstacles_collision_avoidance_enabled: False
+  # self_collision_emergency_stop: False
+  self_collision_avoidance_enabled: True
+  static_obstacles_collision_avoidance_enabled: True
+  self_collision_emergency_stop: True
+  collision_emergency_stop_margin:
+    self: 0.0
+    static_obstacles: 0.05
+  collision_safety_margin:
+    self: 0.01
+    static_obstacles: 0.05
 
   acados:
     name: "StretchExperiment"
 
   cost_params:
     EEPose:
-      Qk: [3, 3, 3, 1, 1, 1]
-      P: [1, 1, 1, 0.5, 0.5, 0.5]
+      # Stretch reaches are position-dominant; mask out orientation tracking.
+      Qk: [3.0, 3.0, 3.0, 0.0, 0.0, 0.0]
+      P: [20.0, 20.0, 20.0, 0.0, 0.0, 0.0]
     EEVel:
-      Qk: [0, 0, 0, 0, 0, 0]
-      P: [0, 0, 0, 0, 0, 0]
+      # Do not penalize EE angular velocity for this position-only task.
+      Qk: [2.0, 2.0, 2.0, 0.0, 0.0, 0.0]
+      P: [4.0, 4.0, 4.0, 0.0, 0.0, 0.0]
     BasePose:
-      Qk: [3, 3, 1]
-      P: [1, 1, 0.5]
+      # Mapped from legacy BasePos2: planar position tracking only.
+      Qk: [2.0, 2.0, 0.5]
+      P: [40.0, 40.0, 5.0]
     BaseVel:
-      Qk: [0, 0, 0]
-      P: [0, 0, 0]
+      # Mapped from legacy BaseVel2: planar velocity tracking only.
+      Qk: [0.05, 0.05, 0.1]
+      P: [0.05, 0.05, 0.1]
     Effort:
-      Qqa: [0, 0, 0, 0, 0, 0, 0, 0]
-      Qqb: [0, 0, 0]
-      Qva: [0.01, 0.01, 0.01, 0.01, 0.01, 0.01, 0.01, 0.01]
-      Qvb: [0.01, 0.01, 0.01]
-      Qua: [0.01, 0.01, 0.01, 0.01, 0.01, 0.01, 0.01, 0.01]
-      Qub: [0.01, 0.01, 0.01]
+      # Stretch arm order:
+      # [lift, arm_l3, arm_l2, arm_l1, arm_l0, wrist_yaw, wrist_pitch, wrist_roll]
+      # Legacy camera/gripper-specific weights are omitted because this model has no
+      # separate camera/gripper DoF in controller state/input.
+      Qqa: [0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0]
+      Qqb: [0.0, 0.0, 0.0]
+      Qva: [0.0, 0.0, 0.0, 0.0, 0.0, 0.0005, 0.005, 0.005]
+      Qvb: [0.05, 0.05, 0.1]
+      Qua: [0.005, 0.0005, 0.0005, 0.0005, 0.0005, 0.0, 0.0, 0.0005]
+      Qub: [0.05, 0.05, 0.05]
+    Regularization:
+      eps: 1.0e-06
+    slack:
+      z: 500
+      Z: 500000
 
 simulation:
-  duration: 10
+  duration: 60
 
 include:
   - package: "mm_run"
