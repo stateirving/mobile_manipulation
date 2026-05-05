@@ -18,7 +18,7 @@ planner:
 
     - name: HT Goal
       planner_type: WaypointPlanner
-      base_pose: [0, 0.5, 3.14]
+      base_pose: [1.5, 0.5, 3.14]
       base_mask: [true, true, false]
       ee_pose: [1.0, 1.0, 0.9, 3.14, 0, 0]
       ee_mask: [true, true, true, false, false, false]
