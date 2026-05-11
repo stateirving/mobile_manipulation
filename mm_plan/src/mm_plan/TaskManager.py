@@ -177,3 +177,31 @@ class TaskManager:
         print(
             f"TaskManager: {self.planner_num} tasks, currently on task {self.curr_task_id + 1}"
         )
+
+    def getVisualizationTargets(self):
+        """Collect all planner targets for one-time simulation visualization.
+
+        Returns:
+            tuple:
+                - base_targets: array of shape (N, 3) or None
+                - ee_targets: array of shape (M, 6) or None
+        """
+        base_targets = []
+        ee_targets = []
+
+        for planner in self.planners:
+            if planner.has_base_ref:
+                if planner.ref_type == RefType.PATH:
+                    base_targets.extend(planner.base_plan["p"])
+                else:
+                    base_targets.append(planner.base_target)
+
+            if planner.has_ee_ref:
+                if planner.ref_type == RefType.PATH:
+                    ee_targets.extend(planner.ee_plan["p"])
+                else:
+                    ee_targets.append(planner.ee_target)
+
+        base_targets = np.asarray(base_targets) if base_targets else None
+        ee_targets = np.asarray(ee_targets) if ee_targets else None
+        return base_targets, ee_targets

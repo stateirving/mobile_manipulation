@@ -3,6 +3,7 @@ import pybullet as pyb
 import pybullet_data
 from pyb_utils.frame import debug_frame_world
 from spatialmath.base import rotz
+from scipy.spatial.transform import Rotation as Rot
 
 from mm_simulator.camera import VideoManager
 from mm_simulator.robot import SimulatedRobot
@@ -455,6 +456,7 @@ class BulletSimulation:
             cli_args (argparse.Namespace, optional): Command-line arguments. Defaults to None.
         """
         self.config = config
+        self.gui = config["gui"]
 
         self.timestep = config["timestep"]
         self.duration = config["duration"]
@@ -518,9 +520,140 @@ class BulletSimulation:
 
         # ghost objects
         self.ghosts = []
+        self.target_marker_ids = {"base": [], "ee": []}
 
         # used to change color when object goes non-statically stable
         self.static_stable = True
+
+    def _clear_target_marker(self, marker_type):
+        for item_id in self.target_marker_ids[marker_type]:
+            pyb.removeUserDebugItem(item_id)
+        self.target_marker_ids[marker_type] = []
+
+    def _draw_cross_marker(self, position, color, size=0.12, line_width=3):
+        position = np.asarray(position, dtype=float)
+        offsets = (
+            np.array([size, 0.0, 0.0]),
+            np.array([0.0, size, 0.0]),
+            np.array([0.0, 0.0, size]),
+        )
+
+        marker_ids = []
+        for offset in offsets:
+            marker_ids.append(
+                pyb.addUserDebugLine(
+                    list(position - offset),
+                    list(position + offset),
+                    lineColorRGB=color,
+                    lineWidth=line_width,
+                )
+            )
+        return marker_ids
+
+    def _draw_frame_marker(self, position, orientation, size=0.15, line_width=2):
+        position = np.asarray(position, dtype=float)
+        rotation = Rot.from_quat(orientation).as_matrix()
+        axis_colors = ([1.0, 0.55, 0.0], [0.0, 0.75, 0.35], [0.2, 0.55, 1.0])
+
+        marker_ids = []
+        for axis_idx, axis_color in enumerate(axis_colors):
+            axis_vector = rotation[:, axis_idx] * size
+            marker_ids.append(
+                pyb.addUserDebugLine(
+                    list(position),
+                    list(position + axis_vector),
+                    lineColorRGB=axis_color,
+                    lineWidth=line_width,
+                )
+            )
+        return marker_ids
+
+    def _draw_polyline(self, points, color, line_width=2):
+        points = np.asarray(points, dtype=float)
+        marker_ids = []
+        for idx in range(len(points) - 1):
+            marker_ids.append(
+                pyb.addUserDebugLine(
+                    list(points[idx]),
+                    list(points[idx + 1]),
+                    lineColorRGB=color,
+                    lineWidth=line_width,
+                )
+            )
+        return marker_ids
+
+    def import_target_markers(self, base_targets=None, ee_targets=None):
+        if not self.gui:
+            return
+
+        self._clear_target_marker("base")
+        self._clear_target_marker("ee")
+
+        if base_targets is not None:
+            base_targets = np.atleast_2d(np.asarray(base_targets, dtype=float))
+            base_positions = np.column_stack(
+                [base_targets[:, 0], base_targets[:, 1], np.full(base_targets.shape[0], 0.05)]
+            )
+            self.target_marker_ids["base"].extend(
+                self._draw_polyline(base_positions, color=[1.0, 0.2, 0.2], line_width=2)
+            )
+            for idx, base_target in enumerate(base_targets):
+                base_position = np.array([base_target[0], base_target[1], 0.05])
+                self.target_marker_ids["base"].extend(
+                    self._draw_cross_marker(
+                        base_position, color=[1.0, 0.2, 0.2], size=0.12, line_width=2
+                    )
+                )
+                if base_target.shape[0] >= 3:
+                    yaw = base_target[2]
+                    heading = np.array([np.cos(yaw), np.sin(yaw), 0.0])
+                    self.target_marker_ids["base"].append(
+                        pyb.addUserDebugLine(
+                            list(base_position),
+                            list(base_position + 0.22 * heading),
+                            lineColorRGB=[1.0, 0.2, 0.2],
+                            lineWidth=3,
+                        )
+                    )
+                if idx == 0:
+                    self.target_marker_ids["base"].append(
+                        pyb.addUserDebugText(
+                            "base targets",
+                            list(base_position + np.array([0.0, 0.0, 0.12])),
+                            textColorRGB=[1.0, 0.2, 0.2],
+                            textSize=1.2,
+                        )
+                    )
+
+        if ee_targets is not None:
+            ee_targets = np.atleast_2d(np.asarray(ee_targets, dtype=float))
+            ee_positions = ee_targets[:, :3]
+            self.target_marker_ids["ee"].extend(
+                self._draw_polyline(ee_positions, color=[0.2, 0.55, 1.0], line_width=2)
+            )
+            frame_stride = max(1, len(ee_targets) // 12)
+            for idx, ee_target in enumerate(ee_targets):
+                self.target_marker_ids["ee"].extend(
+                    self._draw_cross_marker(
+                        ee_target[:3], color=[0.2, 0.55, 1.0], size=0.06, line_width=2
+                    )
+                )
+                if ee_target.shape[0] >= 6 and (idx % frame_stride == 0 or idx == len(ee_targets) - 1):
+                    ee_orientation = Rot.from_euler("xyz", ee_target[3:6]).as_quat()
+                    self.target_marker_ids["ee"].extend(
+                        self._draw_frame_marker(
+                            ee_target[:3], ee_orientation, size=0.12, line_width=2
+                        )
+                    )
+                if idx == 0:
+                    self.target_marker_ids["ee"].append(
+                        pyb.addUserDebugText(
+                            "ee targets",
+                            list(ee_target[:3] + np.array([0.0, 0.0, 0.08])),
+                            textColorRGB=[0.2, 0.55, 1.0],
+                            textSize=1.2,
+                        )
+                    )
 
     def settle(self, duration):
         """Run simulation while doing nothing.

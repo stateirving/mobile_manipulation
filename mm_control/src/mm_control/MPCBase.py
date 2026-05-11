@@ -4,8 +4,8 @@ from pathlib import Path
 from typing import Tuple
 
 import casadi as cs
-import mobile_manipulation_central as mm
 import numpy as np
+import yaml
 from acados_template import AcadosModel, AcadosOcp, AcadosOcpSolver
 from numpy.typing import NDArray
 
@@ -39,7 +39,9 @@ class MPCBase:
         if "robot" in config and "x0" in config["robot"]:
             self.home = parse_array(config["robot"]["x0"])
         else:
-            self.home = mm.load_home_position(config.get("home", "default"))
+            home_path = parse_ros_path({"package": "mm_assets", "path": "config/home.yaml"})
+            with open(home_path) as f:
+                self.home = np.array(yaml.safe_load(f)[config.get("home", "default")])
 
         self.params = config
         self.dt = self.params["dt"]

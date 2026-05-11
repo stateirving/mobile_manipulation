@@ -17,6 +17,7 @@
   <depend>mm_control</depend>
   <depend>mm_plan</depend>
   <depend>mm_utils</depend>
+  <depend>mm_assets</depend>
 
   <export>
     <build_type>ament_python</build_type>

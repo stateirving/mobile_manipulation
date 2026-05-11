@@ -1,0 +1,268 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!--
+This "no-wheel" version of the Thing exists because it is more convenient for
+simulation and some control frameworks.
+
+First, the wheels can cause potentially undesirable collisions with the ground
+in simulation. Since we are typically not controlling the wheels directly (but
+rather the planar twist), we don't want the wheels registered as actuated
+joints.
+-->
+
+<robot name="thing_no_wheels" xmlns:xacro="http://wiki.ros.org/xacro">
+  <material name="dark_grey">
+    <color rgba="0.2 0.2 0.2 1.0"/>
+  </material>
+  <material name="light_grey">
+    <color rgba="0.4 0.4 0.4 1.0"/>
+  </material>
+  <material name="red">
+    <color rgba="0.8 0.0 0.0 1.0"/>
+  </material>
+  <material name="white">
+    <color rgba="0.9 0.9 0.9 1.0"/>
+  </material>
+  <material name="yellow">
+    <color rgba="0.8 0.8 0.0 1.0"/>
+  </material>
+  <material name="black">
+    <color rgba="0.15 0.15 0.15 1.0"/>
+  </material>
+  <material name="seethrough">
+    <color rgba="1.0 0.0 0.0 0.25"/>
+  </material>
+
+  <xacro:arg name="kinematics_params" default="$(find mm_assets)/config/ur10/kinematics_parameters.yaml"/>
+  <xacro:arg name="visual_params" default="$(find mm_assets)/config/ur10/visual_parameters.yaml"/>
+  <xacro:arg name="transform_params" default="$(find mm_assets)/config/null_transforms.yaml"/>
+
+  <!-- Load the base and tool transforms -->
+  <xacro:property name="transform_params_file" value="$(arg transform_params)" />
+  <xacro:property name="config_transform_parameters" value="${xacro.load_yaml(transform_params_file)}"/>
+
+  <!-- Macro to use a transform from `config_transform_parameters` as the origin. -->
+  <xacro:macro name="transformed_origin" params="name">
+    <xacro:property name="T" value="${config_transform_parameters[name]}" />
+    <origin rpy="${T['rpy'][0]} ${T['rpy'][1]} ${T['rpy'][2]}"
+            xyz="${T['xyz'][0]} ${T['xyz'][1]} ${T['xyz'][2]}"/>
+  </xacro:macro>
+
+  <link name="base_link">
+    <inertial>
+      <mass value="0.01"/>
+      <inertia ixx="0.01" ixy="0" ixz="0" iyy="0.01" iyz="0" izz="0.01"/>
+      <origin rpy="0 0 0" xyz="0 0 0"/>
+    </inertial>
+  </link>
+
+  <!-- Note the z-offset to raise the base off the ground, to avoid collision issues in simulation. Without this, there are vibrations and other artifacts from resolving the ground collision that result in significant error in the balanced object. We include it in general for the real robot as well for consistency, to be resolved by calibration. -->
+  <joint name="dummy_base_link_joint" type="fixed">
+    <origin rpy="0 0 0" xyz="0 0 0.01"/>
+    <parent link="base_link"/>
+    <child link="dummy_base_link"/>
+  </joint>
+  <link name="dummy_base_link"/>
+
+  <!-- Transform between base and arm can be calibrated and is loaded from parameters. -->
+  <joint name="base_link_joint" type="fixed">
+    <xacro:transformed_origin name="base_to_arm_transform" />
+    <parent link="dummy_base_link"/>
+    <child link="chassis_link"/>
+  </joint>
+
+  <link name="chassis_link">
+    <visual>
+      <geometry>
+        <mesh filename="file://$(find mm_assets)/thing/meshes/ridgeback/body.stl"/>
+      </geometry>
+      <material name="black"/>
+    </visual>
+    <collision>
+      <origin xyz="0 0 0"/>
+      <geometry>
+        <mesh filename="file://$(find mm_assets)/thing/meshes/ridgeback/body-collision.stl"/>
+      </geometry>
+    </collision>
+    <inertial>
+      <origin rpy="1.57079632679 0 1.57079632679" xyz="0.012 0.002 0.067"/>
+      <mass value="165.304"/>
+      <inertia ixx="4.4744" ixy="0.03098" ixz="0.003647" iyy="7.1624" iyz="0.1228" izz="4.6155"/>
+    </inertial>
+  </link>
+  <joint name="right_side_cover_link_joint" type="fixed">
+    <origin rpy="0 0 0" xyz="0 0 0"/>
+    <parent link="chassis_link"/>
+    <child link="right_side_cover_link"/>
+  </joint>
+  <joint name="left_side_cover_link_joint" type="fixed">
+    <origin rpy="0 0 0" xyz="0 0 0"/>
+    <parent link="chassis_link"/>
+    <child link="left_side_cover_link"/>
+  </joint>
+  <link name="left_side_cover_link">
+    <visual>
+      <origin rpy="0 0 3.14159265359" xyz="0 0 0"/>
+      <geometry>
+        <mesh filename="file://$(find mm_assets)/thing/meshes/ridgeback/side-cover.stl"/>
+      </geometry>
+      <material name="yellow"/>
+    </visual>
+  </link>
+  <link name="right_side_cover_link">
+    <visual>
+      <origin rpy="0 0 0" xyz="0 0 0"/>
+      <geometry>
+        <mesh filename="file://$(find mm_assets)/thing/meshes/ridgeback/side-cover.stl"/>
+      </geometry>
+      <material name="yellow"/>
+    </visual>
+  </link>
+  <joint name="front_cover_link_joint" type="fixed">
+    <origin rpy="0 0 0" xyz="0 0 0"/>
+    <parent link="chassis_link"/>
+    <child link="front_cover_link"/>
+  </joint>
+  <link name="front_cover_link">
+    <visual>
+      <origin rpy="0 0 0" xyz="0 0 0"/>
+      <geometry>
+        <mesh filename="file://$(find mm_assets)/thing/meshes/ridgeback/end-cover.stl"/>
+      </geometry>
+      <material name="black"/>
+    </visual>
+  </link>
+  <joint name="rear_cover_link_joint" type="fixed">
+    <origin rpy="0 0 0" xyz="0 0 0"/>
+    <parent link="chassis_link"/>
+    <child link="rear_cover_link"/>
+  </joint>
+  <link name="rear_cover_link">
+    <visual>
+      <origin rpy="0 0 3.14159265359" xyz="0 0 0"/>
+      <geometry>
+        <mesh filename="file://$(find mm_assets)/thing/meshes/ridgeback/end-cover.stl"/>
+      </geometry>
+      <material name="black"/>
+    </visual>
+  </link>
+  <joint name="front_lights_link_joint" type="fixed">
+    <origin rpy="0 0 0" xyz="0 0 0"/>
+    <parent link="chassis_link"/>
+    <child link="front_lights_link"/>
+  </joint>
+  <joint name="rear_lights_link_joint" type="fixed">
+    <origin rpy="0 0 0" xyz="0 0 0"/>
+    <parent link="chassis_link"/>
+    <child link="rear_lights_link"/>
+  </joint>
+  <link name="front_lights_link">
+    <visual>
+      <origin rpy="0 0 0" xyz="0 0 0"/>
+      <geometry>
+        <mesh filename="file://$(find mm_assets)/thing/meshes/ridgeback/lights.stl"/>
+      </geometry>
+      <material name="white"/>
+    </visual>
+  </link>
+  <link name="rear_lights_link">
+    <visual>
+      <origin rpy="0 0 3.14159265359" xyz="0 0 0"/>
+      <geometry>
+        <mesh filename="file://$(find mm_assets)/thing/meshes/ridgeback/lights.stl"/>
+      </geometry>
+      <material name="red"/>
+    </visual>
+  </link>
+  <joint name="top_link_joint" type="fixed">
+    <origin rpy="0 0 0" xyz="0 0 0"/>
+    <parent link="chassis_link"/>
+    <child link="top_link"/>
+  </joint>
+  <link name="top_link">
+    <visual>
+      <origin rpy="0 0 0" xyz="0 0 0"/>
+      <geometry>
+        <mesh filename="file://$(find mm_assets)/thing/meshes/ridgeback/top.stl"/>
+      </geometry>
+      <material name="black"/>
+    </visual>
+    <collision>
+      <origin rpy="0 0 0" xyz="0 0 0"/>
+      <geometry>
+        <mesh filename="file://$(find mm_assets)/thing/meshes/ridgeback/top.stl"/>
+      </geometry>
+    </collision>
+  </link>
+
+  <link name="arch_link">
+    <visual>
+      <geometry>
+        <mesh filename="file://$(find mm_assets)/thing/meshes/tor11_mech.dae"/>
+      </geometry>
+      <material name="LightGrey">
+        <color rgba="0.7 0.7 0.7 1.0"/>
+      </material>
+    </visual>
+  </link>
+  <joint name="arch_joint" type="fixed">
+    <origin rpy="0 0 1.57079632679" xyz="0 0 0.278"/>
+    <parent link="top_link"/>
+    <child link="arch_link"/>
+  </joint>
+
+  <!-- UR10 arm -->
+  <xacro:include filename="$(find mm_assets)/thing/xacro/ur_inc/ur10_macro.xacro"/>
+  <xacro:ur10_robot
+    prefix="ur10_arm_"
+    visual_parameters_file="$(arg visual_params)"
+    kinematics_parameters_file="$(arg kinematics_params)"
+  />
+
+  <!-- Join arm to the base -->
+  <joint name="ur10_arm_base_joint" type="fixed">
+    <parent link="arch_link"/>
+    <child link="ur10_arm_base_link"/>
+    <origin rpy="0.0 0.0 3.14159265359" xyz="0.01 -0.27 0.375"/>
+  </joint>
+
+  <!-- Frame coincident with all-zeros TCP on UR controller -->
+  <link name="gripper">
+    <visual>
+      <origin rpy="0 0 0" xyz="0 0 0.145"/>
+      <geometry>
+        <cylinder length="0.290" radius="0.01"/>
+      </geometry>
+      <material name="black"/>
+    </visual>
+    <collision>
+      <origin rpy="0 0 0" xyz="0 0 0.145"/>
+      <geometry>
+        <cylinder length="0.290" radius="0.01"/>
+      </geometry>
+    </collision>
+  </link>
+
+  <joint name="tool_gripper_joint" type="fixed">
+    <origin rpy="0 0 0.2617993877991494" xyz="0 0.0 0"/>
+    <parent link="ur10_arm_tool0"/>
+    <child link="gripper"/>
+  </joint>
+
+  <link name="ft_sensor"></link>
+
+  <joint name="tool_ft_sensor_joint" type="fixed">
+    <origin rpy="0 0 0" xyz="0 0 0.02"/>
+    <parent link="ur10_arm_tool0"/>
+    <child link="ft_sensor"/>
+  </joint>
+
+  <!-- Frame for a gripped object or tool. Its pose is specified in the `transform_params` config file. -->
+  <!-- Something like this should be added in your own project's URDF and customized to your needs. -->
+  <!-- <link name="gripped_object" /> -->
+  <!-- <joint name="gripped_object_joint" type="fixed"> -->
+  <!--   <xacro:transformed_origin name="gripped_object_transform" /> -->
+  <!--   <parent link="gripper"/> -->
+  <!--   <child link="gripped_object"/> -->
+  <!-- </joint> -->
+
+</robot>

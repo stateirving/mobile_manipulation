@@ -14,7 +14,7 @@
 
   <!-- TF -->
   <include file="$(find mm_run)/launch/thing_description.launch">
-    <arg name="visual_params" value="$(find ur_description)/config/ur10/visual_parameters.yaml"/>
+    <arg name="visual_params" value="$(find mm_assets)/config/ur10/visual_parameters.yaml"/>
   </include>
 
   <node pkg="robot_state_publisher" type="robot_state_publisher" name="ur10_state_publisher" ns="ur10"/>

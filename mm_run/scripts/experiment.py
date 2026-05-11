@@ -91,6 +91,8 @@ def main():
 
     # Task Manager (simplified - only sequential execution)
     sot = TaskManager(planner_config)
+    base_targets, ee_targets = sot.getVisualizationTargets()
+    sim.import_target_markers(base_targets=base_targets, ee_targets=ee_targets)
 
     # set py logger level
     ch = logging.StreamHandler()

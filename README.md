@@ -20,6 +20,8 @@ A ROS-based framework for mobile manipulation research, featuring MPC-based cont
 > 
 > - Run Controller with PyBullet Simulation (Synchronous)
 >   - `python3 mm_run/scripts/experiment.py --config $(ros2 pkg prefix mm_run)/share/mm_run/config/simple_experiment.yaml --GUI`
+>
+> The two commands above no longer depend on `mobile_manipulation_central` or `ur_description`. Legacy ROS launch files and nodes still do.
 > 
 > - Run Controller and Simulation Asynchronously (ROS Nodes)
 >   - `ros2 launch mm_run run_pybullet_sim.launch.py config:=$(ros2 pkg prefix mm_run)/share/mm_run/config/simple_experiment.yaml`
@@ -39,7 +41,7 @@ Configuration parameters are documented in [configuration.md](./mm_run/config/co
 Ensure you have ROS Noetic installed on your system. Follow the [ROS Noetic installation guide](http://wiki.ros.org/noetic/Installation/Ubuntu) if it's not already set up.
 
 ### Installation of `mobile_manipulation_central`
-To install `mobile_manipulation_central`, clone this repository into your ROS workspace and compile it using `catkin`.
+`mobile_manipulation_central` is no longer required for the synchronous commands above. It is still required for some legacy ROS launch files and nodes in this repository.
 
 ```bash
 cd ~/catkin_ws/src

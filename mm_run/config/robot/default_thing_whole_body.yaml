@@ -59,7 +59,7 @@ controller:
       package: "mm_assets"
       path: "thing/urdf/thing_ctrl.urdf"
       includes:
-        - "$(find mobile_manipulation_central)/urdf/xacro/thing_no_wheels.urdf.xacro"
+        - "$(find mm_assets)/thing/xacro/thing_no_wheels.urdf.xacro"
         - "$(find mm_assets)/thing/xacro/end_effector_fingers.urdf.xacro"
         - "$(find mm_assets)/thing/xacro/collision.urdf.xacro"
       args:

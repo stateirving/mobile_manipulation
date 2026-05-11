@@ -46,8 +46,8 @@ simulation:
       package: "mm_assets"
       path: "thing/urdf/thing_sim.urdf"
       includes:
-        - "$(find mobile_manipulation_central)/urdf/xacro/cartesian_base_joints.urdf.xacro"
-        - "$(find mobile_manipulation_central)/urdf/xacro/thing_no_wheels.urdf.xacro"
+        - "$(find mm_assets)/thing/xacro/cartesian_base_joints.urdf.xacro"
+        - "$(find mm_assets)/thing/xacro/thing_no_wheels.urdf.xacro"
         - "$(find mm_assets)/thing/xacro/end_effector_empty.urdf.xacro"
         - "$(find mm_assets)/thing/xacro/arm_coverage.urdf.xacro"
         - "$(find mm_assets)/thing/xacro/cameras.urdf.xacro"
@@ -141,7 +141,7 @@ controller:
       package: "mm_assets"
       path: "thing/urdf/thing_ctrl.urdf"
       includes:
-        - "$(find mobile_manipulation_central)/urdf/xacro/thing_no_wheels.urdf.xacro"
+        - "$(find mm_assets)/thing/xacro/thing_no_wheels.urdf.xacro"
         - "$(find mm_assets)/thing/xacro/end_effector_fingers.urdf.xacro"
         - "$(find mm_assets)/thing/xacro/collision.urdf.xacro"
       args:
