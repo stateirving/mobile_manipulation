@@ -746,7 +746,14 @@ class Scene:
             self.model = pin.buildModelsFromUrdf(urdf_path)[0]
             self.cmodel = cpin.Model(self.model)
             self.cdata = self.cmodel.createData()
-            self.q = cs.SX.sym("q", self.model.nq)
+            self.data = self.model.createData()
+            self.q = cs.SX.sym("q", self.model.nq, 1)
+            if self.model.nq > 0:
+                cpin.framesForwardKinematics(self.cmodel, self.cdata, self.q)
+            else:
+                pin.framesForwardKinematics(
+                    self.model, self.data, np.zeros(self.model.nq)
+                )
         else:
             self.model = None
 
@@ -762,17 +769,27 @@ class Scene:
         for group, name_list in self.collision_link_names.items():
             for name in name_list:
                 if name == "ground":
+                    empty_q = cs.SX.sym("empty", 0, 1)
                     self.collisionLinkKinSymMdls[name] = cs.Function(
                         "fk_ground",
-                        [cs.SX.sym("empty", 0)],
+                        [empty_q],
                         [cs.DM.zeros(3), cs.DM.eye(3)],
                     )
                 else:
-                    omf_i = self.cdata.oMf[self.cmodel.getFrameId(name)]
-                    link_pos = omf_i.translation
-                    # link_rot = omf_i.rotation
+                    if self.model.nq > 0:
+                        omf_i = self.cdata.oMf[self.cmodel.getFrameId(name)]
+                        link_pos = omf_i.translation
+                        link_rot = omf_i.rotation
+                    else:
+                        omf_i = self.data.oMf[self.model.getFrameId(name)]
+                        link_pos = cs.DM(omf_i.translation)
+                        link_rot = cs.DM(omf_i.rotation)
                     self.collisionLinkKinSymMdls[name] = cs.Function(
-                        name + "_fcn", [self.q], [link_pos], ["q"], ["pos"]
+                        name + "_fcn",
+                        [self.q],
+                        [link_pos, link_rot],
+                        ["q"],
+                        ["pos", "rot"],
                     ).expand()
 
 

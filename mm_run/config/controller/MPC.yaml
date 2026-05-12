@@ -6,18 +6,18 @@ controller:
   dt: 0.1
   robot:
     time_discretization_dt: 0.1
-  prediction_horizon: 1.5
+  prediction_horizon: 3.0
   ctrl_rate: 7 #hz
   cmd_vel_pub_rate: 20 # hz
   cmd_vel_type: "interpolation"         # integration: publish vel by integrating from acc_bar
                                         # interpolation: publish vel by interpolating vel_bar
   soft_cst: True
-  self_collision_avoidance_enabled: False
-  static_obstacles_collision_avoidance_enabled: False
+  self_collision_avoidance_enabled: True
+  static_obstacles_collision_avoidance_enabled: True
   cst_tol_schedule_enabled: False
   ee_pose_tracking_enabled: True
 
-  self_collision_emergency_stop: False
+  self_collision_emergency_stop: True
 
   collision_constraint_type:
     self: "SignedDistanceConstraint"

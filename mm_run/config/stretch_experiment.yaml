@@ -1,5 +1,5 @@
 # Minimal experiment config for Stretch in PyBullet.
-# First pass: empty scene and collision avoidance disabled.
+# Uses the simple static-obstacle scene.
 
 planner:
   tasks:
@@ -18,26 +18,33 @@ planner:
 
     - name: HT Goal
       planner_type: WaypointPlanner
-      base_pose: [1.5, 0.5, 3.14]
+      base_pose: [5.0, 0.0, 3.14]
       base_mask: [true, true, false]
-      ee_pose: [1.0, 1.0, 0.9, 3.14, 0, 0]
+      ee_pose: [5.0, 0.5, 0.9, 3.14, 0, 0]
       ee_mask: [true, true, true, false, false, false]
       hold_period: 1.0
-      tracking_pos_err_tol: 0.15
+      tracking_pos_err_tol: 0.1
 
 controller:
-  # self_collision_avoidance_enabled: False
-  # static_obstacles_collision_avoidance_enabled: False
-  # self_collision_emergency_stop: False
   self_collision_avoidance_enabled: True
   static_obstacles_collision_avoidance_enabled: True
-  self_collision_emergency_stop: True
+  self_collision_emergency_stop: False
   collision_emergency_stop_margin:
     self: 0.0
     static_obstacles: 0.05
   collision_safety_margin:
     self: 0.01
     static_obstacles: 0.05
+
+  # simple_obstacles.yaml lists only the obstacle cylinders. Keep ground in the
+  # controller scene too because mpc_ros.py's emergency-stop path expects it.
+  scene:
+    enabled: True
+    collision_link_names:
+      static_obstacles:
+        - "ground"
+        - "obstacle_cylinder_1_link"
+        - "obstacle_cylinder_2_link"
 
   acados:
     name: "StretchExperiment"
@@ -85,7 +92,7 @@ include:
   - package: "mm_run"
     path: "config/controller/MPC.yaml"
   - package: "mm_run"
-    path: "config/scene/empty.yaml"
+    path: "config/scene/simple_obstacles.yaml"
   - package: "mm_run"
     path: "config/robot/stretch.yaml"
 
