@@ -12,7 +12,7 @@ build-backend = "hatchling.build"
 requires = ["hatchling"]
 
 [tool.pixi.workspace]
-channels = ["robostack-humble", "conda-forge"]
+channels = ["robostack-humble", "conda-forge", "nvidia"]
 platforms = ["linux-64"]
 
 [tool.pixi.tasks]
@@ -37,6 +37,21 @@ transforms3d = "*"
 jax = ">=0.7.0,<0.8"
 jaxlib = ">=0.7.0,<0.8"
 jaxlie = ">=1.5.0,<2"
+glib = ">=2.86.2,<3"
+libgl = ">=1.7.0,<2"
+cuda-nvcc = ">=12.9.86,<13"
+libnpp = "*"
+
+[tool.pixi.pypi-dependencies]
+torch = { version = "<=2.9.1", index = "https://download.pytorch.org/whl/cu128" }
+# if error do "export UV_SKIP_WHEEL_FILENAME_CHECK=1"
+nvblox-torch = { url = "https://github.com/nvidia-isaac/nvblox/releases/download/v0.0.10/nvblox_torch-0.0.10+cu12ubuntu24-py3-none-linux_x86_64.whl"}
 
 [tool.pixi.activation]
 scripts = ["install/setup.sh", "tools/setup_acados.sh"]
+
+[tool.pixi.activation.env]
+LD_LIBRARY_PATH = "$CONDA_PREFIX/lib:$LD_LIBRARY_PATH"
+
+[tool.pixi.system-requirements]
+cuda = "12.8"
