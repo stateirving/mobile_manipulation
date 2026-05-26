@@ -1,5 +1,4 @@
 import argparse
-import copy
 import datetime
 import json
 import math
@@ -11,12 +10,12 @@ os.environ.setdefault("MPLCONFIGDIR", "/tmp/matplotlib")
 
 import numpy as np
 import pybullet as pyb
+import pybullet_data
 import torch
 from nvblox_torch.mapper import Mapper, QueryType
 from nvblox_torch.projective_integrator_types import ProjectiveIntegratorType
 from nvblox_torch.sensor import Sensor
 
-from mm_simulator import simulation
 from mm_utils import parsing
 
 
@@ -154,42 +153,54 @@ def make_orbit_views(bounds, num_views, height_offset):
     return views
 
 
-def robot_link_pose(sim, link_name):
-    """Return a robot link pose as a 4x4 camera-to-world matrix."""
-    if link_name not in sim.robot.links:
-        available = ", ".join(sorted(sim.robot.links.keys()))
-        raise ValueError(
-            f"Robot camera link '{link_name}' does not exist. Available links: {available}"
-        )
-    link_idx = sim.robot.links[link_name][0]
-    pos, quat = sim.robot.link_pose(link_idx)
-    t_w_c = np.eye(4, dtype=np.float32)
-    t_w_c[:3, :3] = np.asarray(pyb.getMatrixFromQuaternion(quat)).reshape(3, 3)
-    t_w_c[:3, 3] = pos
-    return t_w_c
+def make_base_spin_camera_poses(
+    base_xy_yaw,
+    num_views,
+    camera_height,
+    yaw_offset,
+):
+    """Spin a virtual horizontal camera around a fixed world-frame point."""
+    eye = np.array([base_xy_yaw[0], base_xy_yaw[1], camera_height], dtype=float)
 
-
-def make_robot_spin_camera_poses(sim, link_names, num_views):
-    """Spin the mobile base in place and return robot camera poses around 360 deg."""
-    q_home, _ = sim.robot.joint_states()
     camera_poses = []
     for view_idx in range(num_views):
-        yaw = q_home[2] + 2.0 * math.pi * float(view_idx) / float(num_views)
-        q = q_home.copy()
-        q[2] = yaw
-        sim.robot.reset_joint_configuration(q)
-        pyb.stepSimulation()
-        for link_name in link_names:
-            camera_poses.append(
-                (
-                    f"robot_spin_{view_idx:03d}_{link_name}",
-                    robot_link_pose(sim, link_name),
-                )
+        yaw = (
+            base_xy_yaw[2]
+            + yaw_offset
+            + 2.0 * math.pi * float(view_idx) / float(num_views)
+        )
+        forward = np.array([math.cos(yaw), math.sin(yaw), 0.0], dtype=float)
+        target = eye + forward
+        camera_poses.append(
+            (
+                f"base_spin_{view_idx:03d}",
+                look_at_pose(eye, target),
             )
-
-    sim.robot.reset_joint_configuration(q_home)
-    pyb.stepSimulation()
+        )
     return camera_poses
+
+
+def load_environment_scene(config, gui):
+    """Load only the ground plane and static obstacles into PyBullet."""
+    if gui:
+        pyb.connect(pyb.GUI, options="--width=1280 --height=720")
+    else:
+        pyb.connect(pyb.DIRECT)
+
+    pyb.setGravity(*config.get("gravity", [0.0, 0.0, 0.0]))
+    timestep = float(config.get("timestep", 0.03))
+    pyb.setTimeStep(timestep)
+
+    pyb.setAdditionalSearchPath(pybullet_data.getDataPath())
+    pyb.loadURDF("plane.urdf", [0, 0, 0])
+
+    static_obstacles = config.get("static_obstacles", {})
+    if static_obstacles.get("enabled", False):
+        urdf_path = parsing.parse_and_compile_urdf(static_obstacles["urdf"])
+        obstacles_uid = pyb.loadURDF(parsing.parse_path(urdf_path))
+        pyb.changeDynamics(obstacles_uid, -1, mass=0)
+
+    return timestep
 
 
 def make_grid(bounds, resolution):
@@ -212,8 +223,14 @@ def query_esdf_grid(
 ):
     xs, ys, zs, points = make_grid(bounds, resolution)
     values = np.empty((points.shape[0], 4), dtype=np.float32)
+    num_chunks = int(math.ceil(points.shape[0] / chunk_size))
+    print(
+        f"Querying ESDF grid: {points.shape[0]} points "
+        f"({len(xs)} x {len(ys)} x {len(zs)}, {num_chunks} chunks)",
+        flush=True,
+    )
 
-    for start in range(0, points.shape[0], chunk_size):
+    for chunk_idx, start in enumerate(range(0, points.shape[0], chunk_size), start=1):
         stop = min(start + chunk_size, points.shape[0])
         query_np = np.column_stack(
             [
@@ -224,6 +241,8 @@ def query_esdf_grid(
         query = torch.as_tensor(query_np, device="cuda", dtype=torch.float32)
         out = mapper.query_layer(QueryType.ESDF_GRAD, query)
         values[start:stop] = out.detach().cpu().numpy()
+        if chunk_idx == 1 or chunk_idx == num_chunks or chunk_idx % 10 == 0:
+            print(f"  ESDF query chunk {chunk_idx}/{num_chunks}", flush=True)
 
     shape = (len(xs), len(ys), len(zs))
     gradients = values[:, :3].reshape(shape + (3,))
@@ -246,7 +265,7 @@ def save_slice_images(out_dir, xs, ys, zs, distances, valid, slice_zs, max_abs_d
             data.T,
             origin="lower",
             extent=[float(xs[0]), float(xs[-1]), float(ys[0]), float(ys[-1])],
-            cmap="coolwarm",
+            cmap="coolwarm_r",
             vmin=-max_abs_distance,
             vmax=max_abs_distance,
             interpolation="nearest",
@@ -351,26 +370,34 @@ def parse_args():
         action="store_true",
         help="Keep the PyBullet GUI open after exporting. Use with --gui.",
     )
-    parser.add_argument(
-        "--include-robot",
-        action="store_true",
-        help="Do not mask the robot from rendered depth images.",
-    )
 
-    # Virtual depth camera used to scan the PyBullet scene. The default orbit
-    # mode is useful for offline map export; robot-spin uses URDF camera links
-    # while rotating the mobile base in place.
+    # Virtual depth camera used to scan the PyBullet scene. base-spin is the
+    # default for environment-only export; orbit is useful for full-scene scans.
     parser.add_argument(
         "--scan-mode",
-        choices=["orbit", "robot-spin"],
-        default="orbit",
-        help="Camera placement mode: orbit scans around --bounds, robot-spin rotates the robot base in place.",
+        choices=["base-spin", "orbit"],
+        default="base-spin",
+        help="Camera placement mode: base-spin spins a virtual camera at --base-spin-origin, orbit scans around --bounds.",
     )
     parser.add_argument(
-        "--robot-camera-links",
-        nargs="+",
-        default=["camera_base_color_optical_frame"],
-        help="Robot link names used as camera optical frames when --scan-mode robot-spin.",
+        "--base-spin-camera-height",
+        type=float,
+        default=0.5,
+        help="Virtual camera z height in world frame when --scan-mode base-spin.",
+    )
+    parser.add_argument(
+        "--base-spin-origin",
+        nargs=3,
+        type=float,
+        default=[0.0, 0.0, 0.0],
+        metavar=("X", "Y", "YAW"),
+        help="World-frame x, y, yaw used by --scan-mode base-spin.",
+    )
+    parser.add_argument(
+        "--base-spin-yaw-offset-deg",
+        type=float,
+        default=15.0,
+        help="Yaw offset for --scan-mode base-spin, in degrees. Avoids PyBullet renderer hangs at exact cardinal directions.",
     )
     parser.add_argument("--width", type=int, default=640, help="Rendered image width in pixels.")
     parser.add_argument("--height", type=int, default=480, help="Rendered image height in pixels.")
@@ -491,11 +518,9 @@ def main():
         raise RuntimeError("nvblox-torch requires a CUDA device for this export script.")
 
     config = parsing.load_config(args.config)
-    sim_config = copy.deepcopy(config["simulation"])
-    sim_config["gui"] = bool(args.gui)
 
     timestamp = datetime.datetime.now()
-    sim = simulation.BulletSimulation(config=sim_config, timestamp=timestamp, cli_args=None)
+    timestep = load_environment_scene(config["simulation"], bool(args.gui))
 
     root = Path(args.output)
     out_dir = root if args.no_timestamp else root / timestamp.strftime("%Y-%m-%d_%H-%M-%S")
@@ -507,7 +532,7 @@ def main():
         if args.renderer == "tiny"
         else pyb.ER_BULLET_HARDWARE_OPENGL
     )
-    exclude_body_ids = [] if args.include_robot else [sim.robot.uid]
+    exclude_body_ids = []
 
     fy = args.height / (2.0 * math.tan(math.radians(args.fov_y_deg) / 2.0))
     fx = fy
@@ -525,11 +550,20 @@ def main():
             )
         ]
     else:
-        camera_poses = make_robot_spin_camera_poses(
-            sim, args.robot_camera_links, args.num_views
+        camera_poses = make_base_spin_camera_poses(
+            np.asarray(args.base_spin_origin, dtype=float),
+            args.num_views,
+            args.base_spin_camera_height,
+            math.radians(args.base_spin_yaw_offset_deg),
         )
 
+    print(f"Rendering and integrating {len(camera_poses)} camera views...", flush=True)
     for idx, (camera_name, t_w_c) in enumerate(camera_poses):
+        view_start = time.time()
+        print(
+            f"  View {idx + 1}/{len(camera_poses)} {camera_name}: rendering...",
+            flush=True,
+        )
         rgb, depth, mask = render_camera_pose(
             args.width,
             args.height,
@@ -540,15 +574,24 @@ def main():
             renderer,
             exclude_body_ids,
         )
+        render_elapsed = time.time() - view_start
+        valid_depth_pixels = int(np.count_nonzero(depth > 0.0))
+        print(
+            f"  View {idx + 1}/{len(camera_poses)} {camera_name}: "
+            f"rendered in {render_elapsed:.2f}s, valid depth pixels={valid_depth_pixels}",
+            flush=True,
+        )
         if args.save_frames:
             save_debug_frame(frame_dir, idx, rgb, depth, args.far)
 
+        integrate_start = time.time()
         depth_cuda = torch.as_tensor(depth, device="cuda", dtype=torch.float32)
         rgb_cuda = torch.as_tensor(rgb, device="cuda", dtype=torch.uint8)
         mask_cuda = torch.as_tensor(mask, device="cuda", dtype=torch.uint8)
         t_w_c_cpu = torch.as_tensor(t_w_c, dtype=torch.float32)
         mapper.add_depth_frame(depth_cuda, t_w_c_cpu, sensor, mask_cuda)
         mapper.add_color_frame(rgb_cuda, t_w_c_cpu, sensor, mask_cuda)
+        integrate_elapsed = time.time() - integrate_start
 
         camera_records.append(
             {
@@ -558,10 +601,18 @@ def main():
                 "t_w_c": t_w_c.tolist(),
             }
         )
+        print(
+            f"  View {idx + 1}/{len(camera_poses)} {camera_name}: "
+            f"integrated in {integrate_elapsed:.2f}s",
+            flush=True,
+        )
 
+    print("Updating nvblox ESDF...", flush=True)
     mapper.update_esdf()
+    print("Updating nvblox color mesh...", flush=True)
     mapper.update_color_mesh()
 
+    print("Saving nvblox map...", flush=True)
     mapper.save_map(str(out_dir / "map.nvblox"), 0)
     try:
         mapper.get_color_mesh(0).save(str(out_dir / "tsdf_mesh.ply"))
@@ -576,6 +627,7 @@ def main():
         args.unknown_distance_threshold,
         args.query_radius,
     )
+    print("Saving ESDF grid and visualizations...", flush=True)
     np.savez_compressed(
         out_dir / "esdf_grid.npz",
         bounds=np.asarray(args.bounds, dtype=np.float32),
@@ -622,7 +674,9 @@ def main():
         "far": args.far,
         "scan_mode": args.scan_mode,
         "num_views": args.num_views,
-        "robot_camera_links": args.robot_camera_links,
+        "base_spin_camera_height": args.base_spin_camera_height,
+        "base_spin_origin": args.base_spin_origin,
+        "base_spin_yaw_offset_deg": args.base_spin_yaw_offset_deg,
         "camera_intrinsics": {
             "fx": fx,
             "fy": fy,
@@ -631,12 +685,13 @@ def main():
             "width": args.width,
             "height": args.height,
         },
-        "include_robot": args.include_robot,
         "surface_band_ply_saved": surface_saved,
         "cameras": camera_records,
     }
     with (out_dir / "metadata.json").open("w", encoding="utf-8") as f:
         json.dump(metadata, f, indent=2)
+
+    print(f"Saved nvblox map and ESDF export to: {out_dir}", flush=True)
 
     if args.keep_open:
         if not args.gui:
@@ -646,13 +701,42 @@ def main():
             try:
                 while True:
                     pyb.stepSimulation()
-                    time.sleep(sim.timestep)
+                    time.sleep(timestep)
             except KeyboardInterrupt:
                 pass
 
     pyb.disconnect()
-    print(f"Saved nvblox map and ESDF export to: {out_dir}")
 
 
 if __name__ == "__main__":
     main()
+
+# Example usage:
+# 
+# python mm_run/scripts/export_nvblox_esdf.py \
+#   --config mm_run/config/aws_small_warehouse_esdf.yaml \
+#   --output mm_run/results/nvblox_esdf/aws_small_warehouse_env \
+#   --bounds -7 -10 0 7 10 3 \
+#   --far 20 \
+#   --base-spin-origin 0 0 0 \
+#   --base-spin-camera-height 1.2 \
+#   --base-spin-yaw-offset-deg 15 \
+#   --num-views 12 \
+#   --width 320 \
+#   --height 240 \
+#   --grid-resolution 0.2 \
+#   --renderer hardware \
+#   --save-frames
+# 
+# python mm_run/scripts/export_nvblox_esdf.py \
+#   --config mm_run/config/aws_small_warehouse_esdf.yaml \
+#   --output /tmp/nvblox_scene_view \
+#   --bounds -7 -10 0 7 10 3 \
+#   --scan-mode base-spin \
+#   --base-spin-origin 0 0 0 \
+#   --base-spin-camera-height 1.2 \
+#   --num-views 1 \
+#   --width 320 \
+#   --height 240 \
+#   --grid-resolution 0.5 \
+#   --gui --keep-open

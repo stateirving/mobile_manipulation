@@ -214,14 +214,12 @@ def write_export_yaml(export_yaml_path):
     export_yaml_path.parent.mkdir(parents=True, exist_ok=True)
     export_yaml_path.write_text(
         """simulation:
-  robot:
-    home: [0, 0, 0, 0.25pi, -0.25pi, 0.5pi, -0.25pi, 0.5pi, 0.417pi]
+  timestep: 0.03
+  gravity: [0, 0, 0]
   static_obstacles:
     enabled: true
 
 include:
-  - package: "mm_run"
-    path: "config/sim/simulation.yaml"
   - package: "mm_run"
     path: "config/scene/aws_small_warehouse.yaml"
 

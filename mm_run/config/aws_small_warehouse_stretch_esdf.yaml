@@ -9,5 +9,5 @@ include:
     path: "config/scene/aws_small_warehouse.yaml"
 
 logging:
-  log_dir: "aws_small_warehouse_esdf"
+  log_dir: "aws_small_warehouse_env_esdf"
   log_level: 20
