@@ -1,0 +1,18 @@
+simulation:
+  static_obstacles:
+    enabled: true
+    urdf:
+      package: mm_assets
+      path: scenes/urdf/aws_small_warehouse.urdf
+      includes:
+      - $(find mm_assets)/scenes/xacro/aws_small_warehouse.urdf.xacro
+controller:
+  scene:
+    enabled: true
+    collision_link_names:
+      static_obstacles: []
+    urdf:
+      package: mm_assets
+      path: scenes/urdf/aws_small_warehouse.urdf
+      includes:
+      - $(find mm_assets)/scenes/xacro/aws_small_warehouse.urdf.xacro

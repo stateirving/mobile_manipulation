@@ -1,0 +1,15 @@
+simulation:
+  robot:
+    home: [0, 0, 0, 0.25pi, -0.25pi, 0.5pi, -0.25pi, 0.5pi, 0.417pi]
+  static_obstacles:
+    enabled: true
+
+include:
+  - package: "mm_run"
+    path: "config/sim/simulation.yaml"
+  - package: "mm_run"
+    path: "config/scene/aws_small_warehouse.yaml"
+
+logging:
+  log_dir: "aws_small_warehouse_esdf"
+  log_level: 20

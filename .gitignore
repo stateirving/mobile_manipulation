@@ -20,6 +20,10 @@ __pycache__/
 
 # Results/output data
 results/
+
+# Downloaded upstream repositories/assets used for conversion.
+third_party/
+
 # pixi environments
 .pixi/*
 !.pixi/config.toml

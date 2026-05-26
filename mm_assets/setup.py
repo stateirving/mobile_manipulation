@@ -1,7 +1,27 @@
 from glob import glob
+from pathlib import Path
 from setuptools import find_packages, setup
 
 package_name = 'mm_assets'
+
+
+def recursive_data_files(source_dir):
+    data_files = []
+    root = Path(source_dir)
+    if not root.exists():
+        return data_files
+
+    files_by_parent = {}
+    for path in root.rglob('*'):
+        if not path.is_file():
+            continue
+        files_by_parent.setdefault(path.parent, []).append(str(path))
+
+    for parent, files in sorted(files_by_parent.items()):
+        target = Path('share') / package_name / parent
+        data_files.append((str(target), sorted(files)))
+    return data_files
+
 
 setup(
     name=package_name,
@@ -23,9 +43,7 @@ setup(
         ('share/' + package_name + '/stretch/meshes', glob('stretch/meshes/*')),
         ('share/' + package_name + '/scenes', glob('scenes/*.sh')),
         ('share/' + package_name + '/scenes/xacro', glob('scenes/xacro/*')),
-        ('share/' + package_name + '/scenes/meshes', glob('scenes/meshes/*.dae')),
-        ('share/' + package_name + '/scenes/meshes/chair/model', glob('scenes/meshes/chair/model/*')),
-    ],
+    ] + recursive_data_files('scenes/meshes') + recursive_data_files('scenes/urdf'),
     install_requires=['setuptools'],
     zip_safe=True,
     maintainer='benni',
