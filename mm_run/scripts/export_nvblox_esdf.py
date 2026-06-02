@@ -158,6 +158,7 @@ def make_base_spin_camera_poses(
     num_views,
     camera_height,
     yaw_offset,
+    name_prefix="base_spin",
 ):
     """Spin a virtual horizontal camera around a fixed world-frame point."""
     eye = np.array([base_xy_yaw[0], base_xy_yaw[1], camera_height], dtype=float)
@@ -173,11 +174,25 @@ def make_base_spin_camera_poses(
         target = eye + forward
         camera_poses.append(
             (
-                f"base_spin_{view_idx:03d}",
+                f"{name_prefix}_{view_idx:03d}",
                 look_at_pose(eye, target),
             )
         )
     return camera_poses
+
+
+def resolve_base_spin_origins(args):
+    """Return one or more world-frame base-spin origins as rows [x, y, yaw]."""
+    if args.base_spin_origins is None:
+        return np.asarray([args.base_spin_origin], dtype=float)
+
+    origins = np.asarray(args.base_spin_origins, dtype=float)
+    if origins.size % 3 != 0:
+        raise ValueError(
+            "--base-spin-origins expects a multiple of 3 values: "
+            "X Y YAW [X Y YAW ...]"
+        )
+    return origins.reshape((-1, 3))
 
 
 def load_environment_scene(config, gui):
@@ -377,7 +392,7 @@ def parse_args():
         "--scan-mode",
         choices=["base-spin", "orbit"],
         default="base-spin",
-        help="Camera placement mode: base-spin spins a virtual camera at --base-spin-origin, orbit scans around --bounds.",
+        help="Camera placement mode: base-spin spins a virtual camera at one or more base origins, orbit scans around --bounds.",
     )
     parser.add_argument(
         "--base-spin-camera-height",
@@ -391,7 +406,18 @@ def parse_args():
         type=float,
         default=[0.0, 0.0, 0.0],
         metavar=("X", "Y", "YAW"),
-        help="World-frame x, y, yaw used by --scan-mode base-spin.",
+        help="Single world-frame x, y, yaw used by --scan-mode base-spin. Yaw is in radians.",
+    )
+    parser.add_argument(
+        "--base-spin-origins",
+        nargs="+",
+        type=float,
+        default=None,
+        metavar="VALUE",
+        help=(
+            "Flat list of multiple world-frame base-spin origins: "
+            "X Y YAW [X Y YAW ...]. Yaw is in radians. Overrides --base-spin-origin."
+        ),
     )
     parser.add_argument(
         "--base-spin-yaw-offset-deg",
@@ -423,7 +449,7 @@ def parse_args():
         "--num-views",
         type=int,
         default=24,
-        help="Number of camera poses in the orbit scan.",
+        help="Number of camera poses in the orbit scan, or per base-spin origin.",
     )
     parser.add_argument(
         "--camera-height-offset",
@@ -542,6 +568,7 @@ def main():
     mapper = Mapper(args.voxel_size, ProjectiveIntegratorType.TSDF)
 
     camera_records = []
+    base_spin_origins = None
     if args.scan_mode == "orbit":
         camera_poses = [
             (f"orbit_{idx:03d}", look_at_pose(eye, target))
@@ -550,12 +577,23 @@ def main():
             )
         ]
     else:
-        camera_poses = make_base_spin_camera_poses(
-            np.asarray(args.base_spin_origin, dtype=float),
-            args.num_views,
-            args.base_spin_camera_height,
-            math.radians(args.base_spin_yaw_offset_deg),
-        )
+        base_spin_origins = resolve_base_spin_origins(args)
+        camera_poses = []
+        for origin_idx, base_spin_origin in enumerate(base_spin_origins):
+            name_prefix = (
+                "base_spin"
+                if len(base_spin_origins) == 1
+                else f"base_spin_p{origin_idx:03d}"
+            )
+            camera_poses.extend(
+                make_base_spin_camera_poses(
+                    base_spin_origin,
+                    args.num_views,
+                    args.base_spin_camera_height,
+                    math.radians(args.base_spin_yaw_offset_deg),
+                    name_prefix,
+                )
+            )
 
     print(f"Rendering and integrating {len(camera_poses)} camera views...", flush=True)
     for idx, (camera_name, t_w_c) in enumerate(camera_poses):
@@ -676,6 +714,9 @@ def main():
         "num_views": args.num_views,
         "base_spin_camera_height": args.base_spin_camera_height,
         "base_spin_origin": args.base_spin_origin,
+        "base_spin_origins": (
+            None if base_spin_origins is None else base_spin_origins.tolist()
+        ),
         "base_spin_yaw_offset_deg": args.base_spin_yaw_offset_deg,
         "camera_intrinsics": {
             "fx": fx,
@@ -718,7 +759,7 @@ if __name__ == "__main__":
 #   --output mm_run/results/nvblox_esdf/aws_small_warehouse_env \
 #   --bounds -7 -10 0 7 10 3 \
 #   --far 20 \
-#   --base-spin-origin 0 0 0 \
+#   --base-spin-origins 0 0 0  2 0 0  4 0 0 \
 #   --base-spin-camera-height 1.2 \
 #   --base-spin-yaw-offset-deg 15 \
 #   --num-views 12 \
