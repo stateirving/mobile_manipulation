@@ -5,11 +5,15 @@ import numpy as np
 from numpy.typing import NDArray
 from scipy.interpolate import interp1d
 
-from mm_control.MPCConstraints import NonholonomicBaseConstraint
+from mm_control.esdf_map import ESDFMap
+from mm_control.MPCConstraints import (
+    LinearizedESDFConstraint,
+    NonholonomicBaseConstraint,
+)
 from mm_control.MPCBase import MPCBase
 from mm_control.MPCCostFunctions import CostFunctionRegistry
 from mm_utils.math import wrap_pi_array
-from mm_utils.parsing import parse_ros_path
+from mm_utils.parsing import parse_path, parse_ros_path
 
 
 class MPC(MPCBase):
@@ -22,6 +26,8 @@ class MPC(MPCBase):
             config (dict): Configuration dictionary with MPC parameters.
         """
         super().__init__(config)
+        self._setup_esdf_collision()
+
         num_terminal_cost = 2
         cost_params = config["cost_params"]
 
@@ -81,6 +87,9 @@ class MPC(MPCBase):
             else:
                 constraints.append(self.collisionCsts[name])
 
+        if self.esdf_collision_enabled:
+            constraints.append(self.esdfCollisionCst)
+
         name = self.params["acados"].get("name", "MM")
         self.ocp, self.ocp_solver, self.p_struct = self._construct(
             costs, constraints, num_terminal_cost, name
@@ -119,6 +128,85 @@ class MPC(MPCBase):
         effort_params = self.params["cost_params"]["Effort"]
         for param_name in ["Qqa", "Qqb", "Qva", "Qvb", "Qua", "Qub"]:
             curr_p_map[f"{param_name}_ControlEffort"] = effort_params[param_name]
+
+    def _setup_esdf_collision(self):
+        """Configure optional ESDF linearization data used outside the solver."""
+        self.esdf_collision_config = self.params.get("esdf_collision", {})
+        self.esdf_collision_enabled = bool(
+            self.esdf_collision_config.get("enabled", False)
+        )
+        self.esdf_map = None
+        self.esdf_sphere_names = []
+        self.esdf_sphere_radii = np.zeros(0)
+        self.esdf_safety_margin = float(
+            self.esdf_collision_config.get("d_safe", 0.05)
+        )
+        self.esdf_invalid_distance = float(
+            self.esdf_collision_config.get("invalid_distance", -1.0)
+        )
+        self.esdf_constraint_name = self.esdf_collision_config.get("name", "esdf")
+        self.esdfCollisionCst = None
+        self.esdf_linearization = None
+
+        if not self.esdf_collision_enabled:
+            return
+
+        map_path = self._resolve_esdf_map_path(self.esdf_collision_config["map_path"])
+        self.esdf_map = ESDFMap(
+            map_path,
+            require_all_corners_valid=self.esdf_collision_config.get(
+                "require_all_corners_valid", True
+            ),
+        )
+
+        sphere_names = list(self.esdf_collision_config.get("spheres", []))
+        if (
+            not sphere_names
+            and "base_body_collision" in self.robot.collisionLinkKinSymMdls
+        ):
+            sphere_names = ["base_body_collision"]
+        if not sphere_names:
+            raise ValueError(
+                "esdf_collision.enabled is true, but no ESDF collision spheres "
+                "were configured"
+            )
+
+        self.esdf_sphere_names = sphere_names
+        self.esdf_sphere_radii = np.asarray(
+            [self._get_collision_sphere_radius(name) for name in sphere_names],
+            dtype=float,
+        )
+        self.esdfCollisionCst = LinearizedESDFConstraint(
+            self.robot,
+            self.esdf_sphere_names,
+            self.esdf_sphere_radii,
+            self.esdf_safety_margin,
+            self.esdf_constraint_name,
+        )
+
+    def _resolve_esdf_map_path(self, map_path):
+        if isinstance(map_path, dict):
+            return parse_ros_path(map_path)
+        return parse_path(str(map_path))
+
+    def _get_collision_sphere_radius(self, name):
+        if name not in self.robot.collisionLinkKinSymMdls:
+            raise KeyError(f"Unknown robot collision link '{name}' for ESDF collision")
+
+        spec = self.robot.collision_object_specs.get(name)
+        if spec is not None:
+            if spec.get("type", "").lower() != "sphere":
+                raise ValueError(
+                    f"ESDF collision link '{name}' must be a sphere, got {spec.get('type')}"
+                )
+            return float(spec["radius"])
+
+        geom = self.model_interface.pinocchio_interface.getGeometryObject(name)
+        if geom is None or not hasattr(geom.geometry, "radius"):
+            raise ValueError(
+                f"Could not infer sphere radius for ESDF collision link '{name}'"
+            )
+        return float(geom.geometry.radius)
 
     def control(
         self,
@@ -267,17 +355,95 @@ class MPC(MPCBase):
             if "time" in key:
                 self.log[key] = 0
 
+        self._update_esdf_linearization(x_bar_initial)
+
         for i in range(self.N + 1):
             curr_p_map = self.p_struct(0)
             self._set_initial_guess(curr_p_map, i, x_bar_initial, u_bar_initial)
             self._set_tracking_params(curr_p_map, r_bar_map, i)
             self._set_control_effort_params(curr_p_map)
+            self._set_esdf_params(curr_p_map, i)
             self._set_ocp_params(curr_p_map, i)
             curr_p_map_bar.append(curr_p_map)
 
         tp2 = time.perf_counter()
         self.log["time_ocp_set_params"] = tp2 - tp1
         return curr_p_map_bar
+
+    def _set_esdf_params(self, curr_p_map, i):
+        if not self.esdf_collision_enabled:
+            return
+        if self.esdf_linearization is None:
+            raise RuntimeError("ESDF linearization data was not initialized")
+
+        suffix = self.esdf_constraint_name
+        curr_p_map[f"c0_{suffix}"] = self.esdf_linearization["c0"][i].T
+        curr_p_map[f"n0_{suffix}"] = self.esdf_linearization["n0"][i].T
+        curr_p_map[f"d0_{suffix}"] = self.esdf_linearization["d0"][i].reshape((-1, 1))
+
+    def _update_esdf_linearization(self, x_bar_initial):
+        """Linearize ESDF distances at the current warm-start trajectory."""
+        t1 = time.perf_counter()
+        if not self.esdf_collision_enabled:
+            self.esdf_linearization = None
+            return
+
+        q_bar = x_bar_initial[:, : self.DoF]
+        num_nodes = q_bar.shape[0]
+        num_spheres = len(self.esdf_sphere_names)
+        centers = np.zeros((num_nodes, num_spheres, 3), dtype=float)
+
+        for sphere_idx, name in enumerate(self.esdf_sphere_names):
+            fk_fcn = self.robot.collisionLinkKinSymMdls[name]
+            for node_idx in range(num_nodes):
+                pos, _ = fk_fcn(q_bar[node_idx])
+                pos_np = pos.toarray() if hasattr(pos, "toarray") else pos
+                centers[node_idx, sphere_idx] = np.asarray(
+                    pos_np, dtype=float
+                ).reshape(3)
+
+        flat_centers = centers.reshape((-1, 3))
+        distances, gradients, valid = self.esdf_map.query(flat_centers)
+        distances = distances.reshape((num_nodes, num_spheres))
+        gradients = gradients.reshape((num_nodes, num_spheres, 3))
+        valid = valid.reshape((num_nodes, num_spheres))
+
+        solver_distances = np.where(valid, distances, self.esdf_invalid_distance)
+        solver_gradients = np.where(valid[:, :, None], gradients, 0.0)
+
+        clearance = distances - self.esdf_sphere_radii[None, :]
+        margin = clearance - self.esdf_safety_margin
+
+        self.esdf_linearization = {
+            "sphere_names": list(self.esdf_sphere_names),
+            "radii": self.esdf_sphere_radii.copy(),
+            "c0": centers,
+            "raw_d0": distances,
+            "raw_n0": gradients,
+            "d0": solver_distances,
+            "n0": solver_gradients,
+            "valid": valid,
+            "clearance": clearance,
+            "margin": margin,
+        }
+
+        valid_distances = distances[valid]
+        valid_clearance = clearance[valid]
+        valid_margin = margin[valid]
+        self.log["esdf_all_valid"] = bool(np.all(valid))
+        self.log["esdf_valid_count"] = int(np.count_nonzero(valid))
+        self.log["esdf_total_count"] = int(valid.size)
+        self.log["esdf_min_distance"] = (
+            float(np.min(valid_distances)) if valid_distances.size else np.nan
+        )
+        self.log["esdf_min_clearance"] = (
+            float(np.min(valid_clearance)) if valid_clearance.size else np.nan
+        )
+        self.log["esdf_min_margin"] = (
+            float(np.min(valid_margin)) if valid_margin.size else np.nan
+        )
+        t2 = time.perf_counter()
+        self.log["time_esdf_linearization"] = t2 - t1
 
     def _set_initial_guess(self, curr_p_map, i, x_bar_initial, u_bar_initial):
         """Set initial guess for state, control, and multipliers.
@@ -408,7 +574,13 @@ class MPC(MPCBase):
         self.log["time_ocp_solve"] = t2 - t1
 
         self.ocp_solver.print_statistics()
-        self.log["solver_status"] = self.ocp_solver.status
+        status = (
+            self.ocp_solver.get_status()
+            if hasattr(self.ocp_solver, "get_status")
+            else getattr(self.ocp_solver, "status", 0)
+        )
+        self.log["solver_status"] = status
+        self.log["solver_fallback"] = False
         if self.ocp.solver_options.nlp_solver_type != "SQP_RTI":
             self.log["step_size"] = np.mean(self.ocp_solver.get_stats("alpha"))
         else:
@@ -417,7 +589,7 @@ class MPC(MPCBase):
         self.log["qp_iter"] = sum(self.ocp_solver.get_stats("qp_iter"))
         self.log["cost_final"] = self.ocp_solver.get_cost()
 
-        if self.ocp_solver.status != 0:
+        if status != 0:
             x_bar = [self.ocp_solver.get(i, "x") for i in range(self.N)]
             u_bar = [self.ocp_solver.get(i, "u") for i in range(self.N)]
             x_bar.append(self.ocp_solver.get(self.N, "x"))
@@ -434,8 +606,11 @@ class MPC(MPCBase):
 
             if self.params["acados"]["raise_exception_on_failure"]:
                 raise Exception(
-                    f"acados acados_ocp_solver returned status {self.ocp_solver.status}"
+                    f"acados_ocp_solver returned status {status}"
                 )
+
+            self._apply_solver_failure_fallback(xo, t, status)
+            return
         else:
             self.log["iter_snapshot"] = None
 
@@ -451,6 +626,24 @@ class MPC(MPCBase):
         self.t_bar = t + np.arange(self.N) * self.dt
         self.v_cmd = self.x_bar[0][self.robot.DoF :].copy()
 
+    def _apply_solver_failure_fallback(self, xo, t, status):
+        """Use a safe zero-velocity trajectory when acados returns a bad status."""
+        self.py_logger.warning(
+            "acados solver returned status %s at t=%.3f; using zero-velocity fallback",
+            status,
+            t,
+        )
+        self.log["solver_fallback"] = True
+
+        self.x_bar = np.tile(xo, (self.N + 1, 1))
+        self.x_bar[:, self.DoF :] = 0.0
+        self.u_bar = np.zeros_like(self.u_bar)
+
+        # Do not warm-start the next solve from failed primal/dual iterates.
+        self.t_bar = None
+        self.lam_bar = None
+        self.v_cmd = np.zeros(self.nx - self.DoF)
+
     def _update_logging(self, curr_p_map_bar):
         """Update logging and visualization data.
 
@@ -464,6 +657,10 @@ class MPC(MPCBase):
         for name in self.collision_link_names:
             self.log["_".join([name, "constraint"])] = self.evaluate_constraints(
                 self.collisionCsts[name], self.x_bar, self.u_bar, curr_p_map_bar
+            )
+        if self.esdf_collision_enabled:
+            self.log["esdf_constraint"] = self.evaluate_constraints(
+                self.esdfCollisionCst, self.x_bar, self.u_bar, curr_p_map_bar
             )
 
         self.log["ee_pos"] = self.ee_bar.copy()
@@ -486,13 +683,22 @@ class MPC(MPCBase):
             "sqp_iter": 0,
             "qp_iter": 0,
             "solver_status": 0,
+            "solver_fallback": False,
             "time_ocp_set_params": 0,
             "time_ocp_solve": 0,
             "time_ocp_set_params_set_x": 0,
             "time_ocp_set_params_tracking": 0,
             "time_ocp_set_params_setp": 0,
+            "time_esdf_linearization": 0,
             "state_constraint": 0,
             "control_constraint": 0,
+            "esdf_all_valid": False,
+            "esdf_valid_count": 0,
+            "esdf_total_count": 0,
+            "esdf_min_distance": np.nan,
+            "esdf_min_clearance": np.nan,
+            "esdf_min_margin": np.nan,
+            "esdf_constraint": 0,
             "x_bar": 0,
             "u_bar": 0,
             "lam_bar": 0,

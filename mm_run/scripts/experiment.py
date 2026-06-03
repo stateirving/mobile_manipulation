@@ -15,6 +15,21 @@ from mm_utils import parsing
 from mm_utils.logging import DataLogger
 
 
+def _get_command_velocity_limits(config, expected_dim):
+    state_limits = config.get("robot", {}).get("limits", {}).get("state")
+    if state_limits is None:
+        return None, None
+
+    nq = config["robot"]["dims"]["q"]
+    lower = parsing.parse_array(state_limits["lower"])[nq:]
+    upper = parsing.parse_array(state_limits["upper"])[nq:]
+    if lower.shape[0] != expected_dim or upper.shape[0] != expected_dim:
+        raise ValueError(
+            "Command velocity limit dimension does not match robot velocity dimension"
+        )
+    return lower, upper
+
+
 def main():
     np.set_printoptions(precision=3, suppress=True)
 
@@ -74,6 +89,11 @@ def main():
     sim_config = config["simulation"]
     ctrl_config = config["controller"]
     planner_config = config["planner"]
+    if (
+        "limits" not in sim_config.get("robot", {})
+        and "limits" in ctrl_config.get("robot", {})
+    ):
+        sim_config["robot"]["limits"] = ctrl_config["robot"]["limits"]
 
     # Simulator
     timestamp = datetime.datetime.now()
@@ -126,6 +146,10 @@ def main():
 
     sot.activatePlanners()
     u = np.zeros(sim_config["robot"]["dims"]["v"])
+    cmd_vel_lower, cmd_vel_upper = _get_command_velocity_limits(
+        ctrl_config, sim_config["robot"]["dims"]["v"]
+    )
+    cmd_vel_clip_count = 0
 
     while t <= sim.duration:
         # open-loop command
@@ -139,7 +163,12 @@ def main():
         t1 = time.perf_counter()
         controller_log.log(20, f"Controller Run Time: {t1 - t0}")
 
-        if ctrl_config["cmd_vel_type"] == "integration":
+        solver_fallback = bool(
+            getattr(controller, "log", {}).get("solver_fallback", False)
+        )
+        if solver_fallback:
+            u = np.zeros_like(u)
+        elif ctrl_config["cmd_vel_type"] == "integration":
             u += u_bar[0] * sim.timestep
         elif ctrl_config["cmd_vel_type"] == "interpolation":
             # Interpolate velocity trajectory at sim.timestep
@@ -154,10 +183,28 @@ def main():
                 fill_value="extrapolate",
             )
             u = v_interp(sim.timestep)
-            print(f"------------------------------Interpolated velocity command at t={t:.3f}s: {u}")
         else:
             raise ValueError(f"Unknown cmd_vel_type: {ctrl_config['cmd_vel_type']}")
-        
+
+        u_raw = np.asarray(u, dtype=float).copy()
+        cmd_vel_clipped = False
+        if cmd_vel_lower is not None:
+            u = np.clip(u_raw, cmd_vel_lower, cmd_vel_upper)
+            cmd_vel_clipped = not np.allclose(u, u_raw)
+            if cmd_vel_clipped:
+                cmd_vel_clip_count += 1
+                if cmd_vel_clip_count <= 5:
+                    controller_log.warning(
+                        "Command velocity clipped at t=%.3f: raw=%s clipped=%s",
+                        t,
+                        u_raw,
+                        u,
+                    )
+                elif cmd_vel_clip_count == 6:
+                    controller_log.warning(
+                        "Further command velocity clipping messages suppressed"
+                    )
+
         # u = np.zeros(sim_config["robot"]["dims"]["v"])  # zero velocity command for testing
         # u[0] = 1  # set forward velocity command for testing
 
@@ -206,7 +253,9 @@ def main():
         logger.append("ts", t)
         logger.append("xs", np.hstack(robot_states))
         logger.append("controller_run_time", t1 - t0)
+        logger.append("cmd_vels_raw", u_raw)
         logger.append("cmd_vels", u)
+        logger.append("cmd_vel_clipped", cmd_vel_clipped)
         logger.append("r_ew_ws", ee_curr_pos)
         logger.append("Q_wes", ee_cur_orn)
         logger.append("v_ew_ws", v_ew_w)

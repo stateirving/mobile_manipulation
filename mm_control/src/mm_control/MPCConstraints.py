@@ -156,6 +156,72 @@ class SignedDistanceConstraint(NonlinearConstraint):
         self.slack_enabled = True
 
 
+class LinearizedESDFConstraint(NonlinearConstraint):
+    def __init__(
+        self,
+        robot_mdl,
+        sphere_names,
+        sphere_radii,
+        d_safe,
+        name="esdf",
+    ):
+        """Linearized ESDF constraint for robot collision spheres.
+
+        The ESDF query is performed outside the solver at warm-start centers c0.
+        Inside the solver, each sphere's distance is approximated as:
+            d(c(q)) ~= d0 + n0.T @ (c(q) - c0)
+
+        The inequality follows the local convention g(x, u, p) <= 0:
+            d_safe + radius - d(c(q)) <= 0
+        """
+        nx = robot_mdl.ssSymMdl["nx"]
+        nu = robot_mdl.ssSymMdl["nu"]
+        nq = robot_mdl.q_sym.size()[0]
+        sphere_names = list(sphere_names)
+        sphere_radii = list(sphere_radii)
+        if len(sphere_names) != len(sphere_radii):
+            raise ValueError("sphere_names and sphere_radii must have the same length")
+        if not sphere_names:
+            raise ValueError("LinearizedESDFConstraint requires at least one sphere")
+
+        ng = len(sphere_names)
+        p_dict = {
+            "c0": cs.MX.sym("c0", 3, ng),
+            "n0": cs.MX.sym("n0", 3, ng),
+            "d0": cs.MX.sym("d0", ng, 1),
+        }
+        super().__init__(nx, nu, ng, None, p_dict, name)
+
+        q = self.x_sym[:nq]
+        g_eqns = []
+        for sphere_idx, (sphere_name, radius) in enumerate(
+            zip(sphere_names, sphere_radii)
+        ):
+            center, _ = robot_mdl.collisionLinkKinSymMdls[sphere_name](q)
+            c0 = self.p_struct["c0"][:, sphere_idx]
+            n0 = self.p_struct["n0"][:, sphere_idx]
+            d0 = self.p_struct["d0"][sphere_idx]
+            linearized_distance = d0 + n0.T @ (center - c0)
+            g_eqns.append(float(d_safe) + float(radius) - linearized_distance)
+
+        self.g_eqn = cs.vertcat(*g_eqns)
+        self.g_fcn = cs.Function(
+            "g_" + self.name, [self.x_sym, self.u_sym, self.p_sym], [self.g_eqn]
+        )
+
+        self.g_grad_eqn = cs.jacobian(self.g_eqn, cs.veccat(self.u_sym, self.x_sym))
+        self.g_grad_fcn = cs.Function(
+            "g_grad_" + self.name,
+            [self.x_sym, self.u_sym, self.p_sym],
+            [self.g_grad_eqn],
+        )
+
+        self.sphere_names = sphere_names
+        self.sphere_radii = sphere_radii
+        self.d_safe = float(d_safe)
+        self.slack_enabled = True
+
+
 class StateBoxConstraints(NonlinearConstraint):
     def __init__(self, robot_mdl, name="state"):
         """State Box Constraint: lb_x < x < ub_x.

@@ -447,6 +447,11 @@ class BulletDynamicObstacle:
 
 
 class BulletSimulation:
+    @staticmethod
+    def _disable_body_collisions(body_uid):
+        for link_idx in [-1, *range(pyb.getNumJoints(body_uid))]:
+            pyb.setCollisionFilterGroupMask(body_uid, link_idx, 0, 0)
+
     def __init__(self, config, timestamp, cli_args=None):
         """Initialize PyBullet simulation environment.
 
@@ -488,12 +493,16 @@ class BulletSimulation:
         self.robot.reset_joint_configuration(self.robot.home)
 
         # setup obstacles
-        if config["static_obstacles"]["enabled"]:
+        self.static_obstacles_uid = None
+        static_obstacles_config = config.get("static_obstacles", {})
+        if static_obstacles_config.get("enabled", False):
             urdf_path = parsing.parse_and_compile_urdf(
-                config["static_obstacles"]["urdf"]
+                static_obstacles_config["urdf"]
             )
-            obstacles_uid = pyb.loadURDF(parsing.parse_path(urdf_path))
-            pyb.changeDynamics(obstacles_uid, -1, mass=0)  # change to static object
+            self.static_obstacles_uid = pyb.loadURDF(parsing.parse_path(urdf_path))
+            pyb.changeDynamics(self.static_obstacles_uid, -1, mass=0)
+            if not static_obstacles_config.get("collision_enabled", True):
+                self._disable_body_collisions(self.static_obstacles_uid)
 
         r_ew_w, Q_we = self.robot.link_pose()
 

@@ -221,6 +221,19 @@ class SimulatedRobot:
                 self.q_lb[i] = lower
                 self.q_ub[i] = upper
 
+        self.v_lb = np.full(self.nv, -np.inf)
+        self.v_ub = np.full(self.nv, np.inf)
+        state_limits = config["robot"].get("limits", {}).get("state")
+        if state_limits is not None:
+            state_lower = parsing.parse_array(state_limits["lower"])
+            state_upper = parsing.parse_array(state_limits["upper"])
+            self.v_lb = state_lower[self.nq :]
+            self.v_ub = state_upper[self.nq :]
+            if self.v_lb.shape[0] != self.nv or self.v_ub.shape[0] != self.nv:
+                raise ValueError(
+                    "Robot state velocity limits do not match simulator velocity dimension"
+                )
+
         # set any locked joints to appropriate values
         self.locked_joints = {}
         if "locked_joints" in config["robot"]:
@@ -265,6 +278,8 @@ class SimulatedRobot:
             ndarray: Actual commanded velocities (with noise if applicable).
         """
         q, _ = self.joint_states()
+        cmd_vel = np.asarray(cmd_vel, dtype=float)
+        cmd_vel = np.clip(cmd_vel, self.v_lb, self.v_ub)
 
         # convert to PyBullet coordinates
         _, v_pyb = self.pyb_mapping.forward(q, cmd_vel, bodyframe=bodyframe)

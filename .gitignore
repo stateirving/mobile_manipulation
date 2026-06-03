@@ -31,5 +31,13 @@ third_party/
 build/
 log/
 install/
+build_*/
+log_*/
+install_*/
+
+# Local Python/tool caches
+.pytest_cache/
+.mypy_cache/
+.ipynb_checkpoints/
 
 ros1/

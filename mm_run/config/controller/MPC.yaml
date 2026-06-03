@@ -31,6 +31,18 @@ controller:
     self: 0.25
     static_obstacles: 0.15
 
+  # Optional nvblox ESDF collision constraint. Disabled by default because it
+  # changes the acados model and requires solver regeneration.
+  esdf_collision:
+    enabled: False
+    map_path: "mm_run/results/nvblox_esdf/aws_small_warehouse_env/2026-06-02_19-51-55/esdf_grid.npz"
+    spheres:
+      - "base_body_collision"
+    d_safe: 0.05
+    require_all_corners_valid: True
+    invalid_distance: -1.0
+    name: "esdf"
+
   # Soft constraints parameters
   xu_soft:
     mu: 0.001

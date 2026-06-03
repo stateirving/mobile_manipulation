@@ -1,0 +1,86 @@
+# Smoke test for the nvblox ESDF hard constraint in MPC.
+# This run regenerates the acados solver because enabling ESDF changes the
+# nonlinear constraint model and parameter vector.
+
+planner:
+  tasks:
+    - name: ESDF Smoke Base Goal
+      planner_type: WaypointPlanner
+      base_pose: [1.0, 0.0, 0.0]
+      base_mask: [true, true, false]
+      tracking_pos_err_tol: 0.15
+      hold_period: 0.5
+
+controller:
+  cmd_vel_type: "integration"
+  self_collision_avoidance_enabled: False
+  static_obstacles_collision_avoidance_enabled: False
+  self_collision_emergency_stop: False
+  collision_emergency_stop_margin:
+    self: 0.0
+    static_obstacles: 0.0
+
+  esdf_collision:
+    enabled: True
+    map_path: "mm_run/results/nvblox_esdf/aws_small_warehouse_env/2026-06-02_19-51-55/esdf_grid.npz"
+    spheres:
+      - "base_body_collision"
+    d_safe: 0.05
+    require_all_corners_valid: True
+    invalid_distance: -1.0
+    name: "esdf"
+
+  acados:
+    name: "StretchESDFBase"
+    cython:
+      enabled: True
+      recompile: True
+    ocp_solver_options:
+      nlp_solver_max_iter: 100
+
+  cost_params:
+    EEPose:
+      Qk: [0.0, 0.0, 0.0, 0.0, 0.0, 0.0]
+      P: [0.0, 0.0, 0.0, 0.0, 0.0, 0.0]
+    EEVel:
+      Qk: [0.0, 0.0, 0.0, 0.0, 0.0, 0.0]
+      P: [0.0, 0.0, 0.0, 0.0, 0.0, 0.0]
+    BasePose:
+      Qk: [3.0, 3.0, 0.0]
+      P: [50.0, 50.0, 0.0]
+    BaseVel:
+      Qk: [0.05, 0.05, 0.0]
+      P: [0.05, 0.05, 0.0]
+    Effort:
+      Qqa: [0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0]
+      Qqb: [0.0, 0.0, 0.0]
+      Qva: [0.0, 0.0, 0.0, 0.0, 0.0, 0.0005, 0.005, 0.005]
+      Qvb: [0.05, 0.05, 0.1]
+      Qua: [0.005, 0.0005, 0.0005, 0.0005, 0.0005, 0.0, 0.0, 0.0005]
+      Qub: [0.05, 0.05, 0.05]
+    Regularization:
+      eps: 1.0e-06
+    slack:
+      z: 1000
+      Z: 1000000
+
+simulation:
+  duration: 6.0
+  gui: False
+  static_obstacles:
+    enabled: True
+    collision_enabled: False
+
+include:
+  - package: "mm_run"
+    path: "config/sim/simulation.yaml"
+  - package: "mm_run"
+    path: "config/controller/MPC.yaml"
+  - package: "mm_run"
+    path: "config/scene/aws_small_warehouse.yaml"
+  - package: "mm_run"
+    path: "config/robot/stretch.yaml"
+
+logging:
+  log_dir: "validate_esdf_mpc_smoke"
+  log_level: 20
