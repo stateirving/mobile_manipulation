@@ -10,6 +10,12 @@ simulation:
 
   gui: False
 
+  collision_sphere_markers:
+    enabled: False
+    alpha: 0.25
+    color: [0.0, 0.7, 1.0]
+    object_colors: {}
+
   static_obstacles:
     enabled: False
 

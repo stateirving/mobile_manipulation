@@ -112,3 +112,43 @@ Configuration files are located in `mm_run/config/`. Key configuration options i
 - **Scene**: Environment and obstacle definitions (`config/scene/`)
 - **Controller**: MPC parameters (`config/controller/`)
 - **Simulation**: Simulation settings (`config/sim/`)
+
+## ESDF MPC Validation
+Use the merged ESDF validation config below. It keeps the challenge target, loads
+the warehouse scene visually, disables PyBullet collision for the scene, and uses
+the nvblox ESDF as the MPC obstacle field.
+
+Build the edited packages into the clean install tree:
+
+```bash
+cd ~/repo/mobile_manipulation
+pixi run colcon build \
+  --packages-select mm_simulator mm_control mm_run \
+  --build-base build_clean \
+  --install-base install_clean
+```
+
+Source the clean install tree:
+
+```bash
+source install_clean/setup.bash
+```
+
+Compile the ESDF MPC acados solver:
+
+```bash
+python3 mm_control/scripts/generate_acados_code.py \
+  --config $(ros2 pkg prefix mm_run)/share/mm_run/config/validate_esdf_mpc_challenge.yaml
+```
+
+Run the PyBullet validation:
+
+```bash
+python3 mm_run/scripts/experiment.py \
+  --config $(ros2 pkg prefix mm_run)/share/mm_run/config/validate_esdf_mpc_challenge.yaml \
+  --GUI
+```
+
+If you edit the ESDF MPC model structure or solver options such as
+`nlp_solver_max_iter`, rebuild `mm_run` and run the compile command again before
+running the experiment.

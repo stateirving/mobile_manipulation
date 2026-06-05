@@ -114,6 +114,7 @@ controller:
           - "base_body_collision"
         rack:
           - "lift_collision"
+          - "lift_top_collision"
         upper_arm:
           - "arm_l4_collision"
           - "arm_l3_collision"
@@ -127,18 +128,24 @@ controller:
           - "wrist_roll_collision"
         tool:
           - "gripper_body_collision"
+          - "gripper_tip_collision"
 
       objects:
         base_body_collision:
           parent_link: "base_link"
           type: "sphere"
           radius: 0.24
-          translation: [0.0, 0.0, 0.12]
+          translation: [-0.10, 0.0, 0.12]
         lift_collision:
           parent_link: "link_lift"
           type: "sphere"
           radius: 0.10
           translation: [0.0, 0.0, 0.10]
+        lift_top_collision:
+          parent_link: "link_lift"
+          type: "sphere"
+          radius: 0.06
+          translation: [0.00, 0.00, 0.387]
         arm_l4_collision:
           parent_link: "link_arm_l4"
           type: "sphere"
@@ -183,6 +190,11 @@ controller:
           parent_link: "link_gripper_s3_body"
           type: "sphere"
           radius: 0.08
+          translation: [0.0, 0.0, 0.0]
+        gripper_tip_collision:
+          parent_link: "link_grasp_center"
+          type: "sphere"
+          radius: 0.045
           translation: [0.0, 0.0, 0.0]
 
       self_collision_pairs:

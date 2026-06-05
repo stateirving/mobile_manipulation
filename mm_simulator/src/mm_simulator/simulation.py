@@ -530,9 +530,105 @@ class BulletSimulation:
         # ghost objects
         self.ghosts = []
         self.target_marker_ids = {"base": [], "ee": []}
+        self.collision_sphere_marker_bodies = []
+        self.collision_sphere_marker_specs = []
+        self._setup_collision_sphere_markers()
 
         # used to change color when object goes non-statically stable
         self.static_stable = True
+
+    def _setup_collision_sphere_markers(self):
+        marker_config = self.config.get("collision_sphere_markers", {})
+        if not self.gui or not marker_config.get("enabled", False):
+            return
+
+        collision_objects = (
+            self.config.get("robot", {})
+            .get("collision_model", {})
+            .get("objects", {})
+        )
+        if not collision_objects:
+            return
+
+        alpha = float(marker_config.get("alpha", 0.25))
+        default_color = marker_config.get("color", [0.0, 0.7, 1.0])
+        object_colors = marker_config.get("object_colors", {})
+
+        for name, spec in collision_objects.items():
+            if spec.get("type", "").lower() != "sphere":
+                continue
+
+            parent_link = spec["parent_link"]
+            if parent_link not in self.robot.links:
+                print(
+                    f"Skipping collision sphere marker '{name}': "
+                    f"unknown parent link '{parent_link}'"
+                )
+                continue
+
+            radius = float(spec["radius"])
+            translation = np.asarray(
+                spec.get("translation", [0.0, 0.0, 0.0]), dtype=float
+            )
+            link_idx = self.robot.links[parent_link][0]
+            center = self._collision_sphere_marker_center(link_idx, translation)
+            color = self._collision_sphere_marker_rgba(
+                object_colors.get(name, default_color), alpha
+            )
+
+            visual_uid = pyb.createVisualShape(
+                pyb.GEOM_SPHERE,
+                radius=radius,
+                rgbaColor=color,
+            )
+            body_uid = pyb.createMultiBody(
+                baseMass=0,
+                baseCollisionShapeIndex=-1,
+                baseVisualShapeIndex=visual_uid,
+                basePosition=list(center),
+                baseOrientation=[0, 0, 0, 1],
+            )
+            pyb.setCollisionFilterGroupMask(body_uid, -1, 0, 0)
+
+            self.collision_sphere_marker_bodies.append(body_uid)
+            self.collision_sphere_marker_specs.append(
+                {
+                    "name": name,
+                    "link_idx": link_idx,
+                    "translation": translation,
+                }
+            )
+
+    @staticmethod
+    def _collision_sphere_marker_rgba(color, alpha):
+        color = list(color)
+        if len(color) == 3:
+            return [*color, alpha]
+        if len(color) == 4:
+            color[3] = alpha
+            return color
+        raise ValueError("collision sphere marker color must have length 3 or 4")
+
+    def _collision_sphere_marker_center(self, link_idx, translation):
+        parent_position, parent_orientation = self.robot.link_pose(link_idx)
+        parent_rotation = Rot.from_quat(parent_orientation).as_matrix()
+        return parent_position + parent_rotation @ translation
+
+    def _update_collision_sphere_markers(self):
+        if not self.collision_sphere_marker_bodies:
+            return
+
+        for body_uid, spec in zip(
+            self.collision_sphere_marker_bodies, self.collision_sphere_marker_specs
+        ):
+            center = self._collision_sphere_marker_center(
+                spec["link_idx"], spec["translation"]
+            )
+            pyb.resetBasePositionAndOrientation(
+                body_uid,
+                list(center),
+                [0, 0, 0, 1],
+            )
 
     def _clear_target_marker(self, marker_type):
         for item_id in self.target_marker_ids[marker_type]:
@@ -719,6 +815,8 @@ class BulletSimulation:
         for obstacle in self.dynamic_obstacles:
             obstacle_reset = obstacle.step(t) or obstacle_reset
 
+        self._update_collision_sphere_markers()
+
         if self.video_manager is not None:
             self.video_manager.record(t)
 
@@ -733,3 +831,4 @@ class BulletSimulation:
             robot_home (ndarray): Joint positions for home configuration.
         """
         self.robot.reset_joint_configuration(robot_home)
+        self._update_collision_sphere_markers()

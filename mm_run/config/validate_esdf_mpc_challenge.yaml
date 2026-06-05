@@ -1,18 +1,22 @@
-# Challenge test for the nvblox ESDF hard constraint in MPC.
-# Run validate_esdf_mpc_smoke.yaml first to regenerate the acados solver, then
-# this config reuses the same solver name with recompile disabled.
+# nvblox ESDF hard-constraint MPC validation.
+# Compile the matching acados solver with generate_acados_code.py before running.
 
 planner:
   tasks:
-    - name: ESDF Shelf-Edge Base Goal
+    - name: ESDF Aisle Entry
       planner_type: WaypointPlanner
-      # This target is near the right-side warehouse shelf boundary. At the
-      # base collision-sphere height its ESDF margin is small but positive.
-      # base_pose: [2.8, -0.2, 0.0]
-      base_pose: [5.0, -0.6, 0.0]
+      base_pose: [2.0, -2.3, 0.0]
       base_mask: [true, true, false]
+      ee_pose: [3.0, -2.3, 1.0, 0.0, 0.0, -0.0708]
+      ee_mask: [true, true, true, false, false, false]
       tracking_pos_err_tol: 0.15
       hold_period: 1.0
+    # - name: ESDF Shelf-Edge Base Goal
+    #   planner_type: WaypointPlanner
+    #   base_pose: [5.0, -2.3, 0.0]
+    #   base_mask: [true, true, false]
+    #   tracking_pos_err_tol: 0.15
+    #   hold_period: 1.0
 
 controller:
   cmd_vel_type: "integration"
@@ -28,6 +32,18 @@ controller:
     map_path: "mm_run/results/nvblox_esdf/aws_small_warehouse_env/2026-06-02_19-51-55/esdf_grid.npz"
     spheres:
       - "base_body_collision"
+      - "lift_collision"
+      - "lift_top_collision"
+      - "arm_l4_collision"
+      # - "arm_l3_collision"
+      - "arm_l2_collision"
+      # - "arm_l1_collision"
+      - "arm_l0_collision"
+      - "wrist_yaw_collision"
+      # - "wrist_pitch_collision"
+      # - "wrist_roll_collision"
+      - "gripper_body_collision"
+      - "gripper_tip_collision"
     d_safe: 0.05
     require_all_corners_valid: True
     invalid_distance: -1.0
@@ -37,23 +53,30 @@ controller:
     name: "StretchESDFBase"
     cython:
       enabled: True
-      recompile: True
+      recompile: False
     ocp_solver_options:
       nlp_solver_max_iter: 500
+    slack_enabled:
+      x: False
+      x_e: False
+      u: False
+      h_0: True
+      h: True
+      h_e: True
 
   cost_params:
     EEPose:
-      Qk: [0.0, 0.0, 0.0, 0.0, 0.0, 0.0]
-      P: [0.0, 0.0, 0.0, 0.0, 0.0, 0.0]
+      Qk: [0.5, 0.5, 0.5, 0.0, 0.0, 0.0]
+      P: [5.0, 5.0, 5.0, 0.0, 0.0, 0.0]
     EEVel:
       Qk: [0.0, 0.0, 0.0, 0.0, 0.0, 0.0]
       P: [0.0, 0.0, 0.0, 0.0, 0.0, 0.0]
     BasePose:
-      Qk: [3.0, 3.0, 0.0]
-      P: [50.0, 50.0, 0.0]
+      Qk: [1.5, 1.5, 0.0]
+      P: [25.0, 25.0, 0.0]
     BaseVel:
-      Qk: [0.05, 0.05, 0.0]
-      P: [0.05, 0.05, 0.0]
+      Qvb: [0.01, 0.01, 0.01]
+      Qub: [0.01, 0.01, 0.01]
     Effort:
       Qqa: [0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0]
       Qqb: [0.0, 0.0, 0.0]
@@ -70,6 +93,11 @@ controller:
 simulation:
   duration: 18.0
   gui: False
+  collision_sphere_markers:
+    enabled: True
+    alpha: 0.25
+    color: [0.0, 0.7, 1.0]
+    object_colors: {}
   static_obstacles:
     enabled: True
     collision_enabled: False

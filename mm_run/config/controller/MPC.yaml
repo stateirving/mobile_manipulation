@@ -6,7 +6,8 @@ controller:
   dt: 0.1
   robot:
     time_discretization_dt: 0.1
-  prediction_horizon: 3.0
+  # prediction_horizon: 3.0
+  prediction_horizon: 6.0
   ctrl_rate: 7 #hz
   cmd_vel_pub_rate: 20 # hz
   cmd_vel_type: "interpolation"         # integration: publish vel by integrating from acc_bar
@@ -38,7 +39,7 @@ controller:
     map_path: "mm_run/results/nvblox_esdf/aws_small_warehouse_env/2026-06-02_19-51-55/esdf_grid.npz"
     spheres:
       - "base_body_collision"
-    d_safe: 0.05
+    d_safe: 0.10
     require_all_corners_valid: True
     invalid_distance: -1.0
     name: "esdf"

@@ -144,6 +144,9 @@ class MPC(MPCBase):
         self.esdf_invalid_distance = float(
             self.esdf_collision_config.get("invalid_distance", -1.0)
         )
+        self.esdf_accept_status2_min_margin = float(
+            self.esdf_collision_config.get("accept_status2_min_margin", 0.0)
+        )
         self.esdf_constraint_name = self.esdf_collision_config.get("name", "esdf")
         self.esdfCollisionCst = None
         self.esdf_linearization = None
@@ -391,16 +394,7 @@ class MPC(MPCBase):
         q_bar = x_bar_initial[:, : self.DoF]
         num_nodes = q_bar.shape[0]
         num_spheres = len(self.esdf_sphere_names)
-        centers = np.zeros((num_nodes, num_spheres, 3), dtype=float)
-
-        for sphere_idx, name in enumerate(self.esdf_sphere_names):
-            fk_fcn = self.robot.collisionLinkKinSymMdls[name]
-            for node_idx in range(num_nodes):
-                pos, _ = fk_fcn(q_bar[node_idx])
-                pos_np = pos.toarray() if hasattr(pos, "toarray") else pos
-                centers[node_idx, sphere_idx] = np.asarray(
-                    pos_np, dtype=float
-                ).reshape(3)
+        centers = self._compute_esdf_sphere_centers(q_bar)
 
         flat_centers = centers.reshape((-1, 3))
         distances, gradients, valid = self.esdf_map.query(flat_centers)
@@ -444,6 +438,48 @@ class MPC(MPCBase):
         )
         t2 = time.perf_counter()
         self.log["time_esdf_linearization"] = t2 - t1
+
+    def _compute_esdf_sphere_centers(self, q_bar):
+        """Evaluate configured collision sphere centers for a q trajectory."""
+        num_nodes = q_bar.shape[0]
+        num_spheres = len(self.esdf_sphere_names)
+        centers = np.zeros((num_nodes, num_spheres, 3), dtype=float)
+
+        for sphere_idx, name in enumerate(self.esdf_sphere_names):
+            fk_fcn = self.robot.collisionLinkKinSymMdls[name]
+            for node_idx in range(num_nodes):
+                pos, _ = fk_fcn(q_bar[node_idx])
+                pos_np = pos.toarray() if hasattr(pos, "toarray") else pos
+                centers[node_idx, sphere_idx] = np.asarray(
+                    pos_np, dtype=float
+                ).reshape(3)
+        return centers
+
+    def _evaluate_solution_esdf_margins(self, x_bar):
+        """Query actual ESDF margins for a candidate state trajectory."""
+        if not self.esdf_collision_enabled:
+            return {
+                "all_valid": True,
+                "valid_count": 0,
+                "total_count": 0,
+                "min_margin": np.inf,
+            }
+
+        q_bar = x_bar[:, : self.DoF]
+        centers = self._compute_esdf_sphere_centers(q_bar)
+        flat_centers = centers.reshape((-1, 3))
+        distances, _, valid = self.esdf_map.query(flat_centers)
+        distances = distances.reshape((q_bar.shape[0], len(self.esdf_sphere_names)))
+        valid = valid.reshape((q_bar.shape[0], len(self.esdf_sphere_names)))
+        margins = distances - self.esdf_sphere_radii[None, :] - self.esdf_safety_margin
+
+        valid_margins = margins[valid]
+        return {
+            "all_valid": bool(np.all(valid)),
+            "valid_count": int(np.count_nonzero(valid)),
+            "total_count": int(valid.size),
+            "min_margin": float(np.min(valid_margins)) if valid_margins.size else np.nan,
+        }
 
     def _set_initial_guess(self, curr_p_map, i, x_bar_initial, u_bar_initial):
         """Set initial guess for state, control, and multipliers.
@@ -581,6 +617,11 @@ class MPC(MPCBase):
         )
         self.log["solver_status"] = status
         self.log["solver_fallback"] = False
+        self.log["solver_status_accepted"] = False
+        self.log["status2_esdf_all_valid"] = False
+        self.log["status2_esdf_valid_count"] = 0
+        self.log["status2_esdf_total_count"] = 0
+        self.log["status2_esdf_min_margin"] = np.nan
         if self.ocp.solver_options.nlp_solver_type != "SQP_RTI":
             self.log["step_size"] = np.mean(self.ocp_solver.get_stats("alpha"))
         else:
@@ -590,9 +631,7 @@ class MPC(MPCBase):
         self.log["cost_final"] = self.ocp_solver.get_cost()
 
         if status != 0:
-            x_bar = [self.ocp_solver.get(i, "x") for i in range(self.N)]
-            u_bar = [self.ocp_solver.get(i, "u") for i in range(self.N)]
-            x_bar.append(self.ocp_solver.get(self.N, "x"))
+            x_bar, u_bar, lam_bar = self._extract_solver_solution()
 
             self.log["iter_snapshot"] = {
                 "t": t,
@@ -604,6 +643,11 @@ class MPC(MPCBase):
                 "u_bar": u_bar,
             }
 
+            if status == 2 and self._accept_status2_solution_if_safe(
+                x_bar, u_bar, lam_bar, t
+            ):
+                return
+
             if self.params["acados"]["raise_exception_on_failure"]:
                 raise Exception(
                     f"acados_ocp_solver returned status {status}"
@@ -614,17 +658,62 @@ class MPC(MPCBase):
         else:
             self.log["iter_snapshot"] = None
 
-        # Extract solution
-        self.lam_bar = []
-        for i in range(self.N):
-            self.x_bar[i, :] = self.ocp_solver.get(i, "x")
-            self.u_bar[i, :] = self.ocp_solver.get(i, "u")
-            self.lam_bar.append(self.ocp_solver.get(i, "lam"))
+        x_bar, u_bar, lam_bar = self._extract_solver_solution()
+        self._set_solver_solution(x_bar, u_bar, lam_bar, t)
 
-        self.x_bar[self.N, :] = self.ocp_solver.get(self.N, "x")
-        self.lam_bar.append(self.ocp_solver.get(self.N, "lam"))
+    def _extract_solver_solution(self):
+        """Read the current state, control, and multiplier trajectories."""
+        x_bar = np.zeros_like(self.x_bar)
+        u_bar = np.zeros_like(self.u_bar)
+        lam_bar = []
+        for i in range(self.N):
+            x_bar[i, :] = self.ocp_solver.get(i, "x")
+            u_bar[i, :] = self.ocp_solver.get(i, "u")
+            if lam_bar is not None:
+                try:
+                    lam_bar.append(self.ocp_solver.get(i, "lam"))
+                except Exception:
+                    lam_bar = None
+        x_bar[self.N, :] = self.ocp_solver.get(self.N, "x")
+        if lam_bar is not None:
+            try:
+                lam_bar.append(self.ocp_solver.get(self.N, "lam"))
+            except Exception:
+                lam_bar = None
+        return x_bar, u_bar, lam_bar
+
+    def _set_solver_solution(self, x_bar, u_bar, lam_bar, t):
+        self.x_bar = np.asarray(x_bar, dtype=float).copy()
+        self.u_bar = np.asarray(u_bar, dtype=float).copy()
+        self.lam_bar = lam_bar
         self.t_bar = t + np.arange(self.N) * self.dt
         self.v_cmd = self.x_bar[0][self.robot.DoF :].copy()
+
+    def _accept_status2_solution_if_safe(self, x_bar, u_bar, lam_bar, t):
+        """Accept max-iteration solver output when the ESDF trajectory is safe."""
+        if not np.all(np.isfinite(x_bar)) or not np.all(np.isfinite(u_bar)):
+            return False
+
+        esdf_stats = self._evaluate_solution_esdf_margins(x_bar)
+        self.log["status2_esdf_all_valid"] = esdf_stats["all_valid"]
+        self.log["status2_esdf_valid_count"] = esdf_stats["valid_count"]
+        self.log["status2_esdf_total_count"] = esdf_stats["total_count"]
+        self.log["status2_esdf_min_margin"] = esdf_stats["min_margin"]
+
+        if not esdf_stats["all_valid"]:
+            return False
+        if esdf_stats["min_margin"] < self.esdf_accept_status2_min_margin:
+            return False
+
+        self.py_logger.warning(
+            "acados solver returned status 2 at t=%.3f; accepting current "
+            "solution with ESDF min margin %.4f",
+            t,
+            esdf_stats["min_margin"],
+        )
+        self.log["solver_status_accepted"] = True
+        self._set_solver_solution(x_bar, u_bar, lam_bar, t)
+        return True
 
     def _apply_solver_failure_fallback(self, xo, t, status):
         """Use a safe zero-velocity trajectory when acados returns a bad status."""
@@ -684,6 +773,11 @@ class MPC(MPCBase):
             "qp_iter": 0,
             "solver_status": 0,
             "solver_fallback": False,
+            "solver_status_accepted": False,
+            "status2_esdf_all_valid": False,
+            "status2_esdf_valid_count": 0,
+            "status2_esdf_total_count": 0,
+            "status2_esdf_min_margin": np.nan,
             "time_ocp_set_params": 0,
             "time_ocp_solve": 0,
             "time_ocp_set_params_set_x": 0,
