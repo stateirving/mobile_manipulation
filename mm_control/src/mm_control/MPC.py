@@ -11,7 +11,10 @@ from mm_control.MPCConstraints import (
     NonholonomicBaseConstraint,
 )
 from mm_control.MPCBase import MPCBase
-from mm_control.MPCCostFunctions import CostFunctionRegistry
+from mm_control.MPCCostFunctions import (
+    CostFunctionRegistry,
+    SoftConstraintsSquaredHingeCostFunction,
+)
 from mm_utils.math import wrap_pi_array
 from mm_utils.parsing import parse_path, parse_ros_path
 
@@ -87,8 +90,13 @@ class MPC(MPCBase):
             else:
                 constraints.append(self.collisionCsts[name])
 
-        if self.esdf_collision_enabled:
+        if self.esdf_collision_enabled and self.esdf_collision_mode == "constraint":
             constraints.append(self.esdfCollisionCst)
+        elif (
+            self.esdf_collision_enabled
+            and self.esdf_collision_mode == "squared_hinge_cost"
+        ):
+            costs.append(self.esdfCollisionSoftCst)
 
         name = self.params["acados"].get("name", "MM")
         self.ocp, self.ocp_solver, self.p_struct = self._construct(
@@ -148,11 +156,22 @@ class MPC(MPCBase):
             self.esdf_collision_config.get("accept_status2_min_margin", 0.0)
         )
         self.esdf_constraint_name = self.esdf_collision_config.get("name", "esdf")
+        self.esdf_collision_mode = self.esdf_collision_config.get(
+            "mode", "constraint"
+        )
         self.esdfCollisionCst = None
+        self.esdfCollisionSoftCst = None
         self.esdf_linearization = None
 
         if not self.esdf_collision_enabled:
             return
+
+        supported_modes = {"constraint", "squared_hinge_cost"}
+        if self.esdf_collision_mode not in supported_modes:
+            raise ValueError(
+                f"Unsupported esdf_collision.mode '{self.esdf_collision_mode}'. "
+                f"Supported modes are: {sorted(supported_modes)}"
+            )
 
         map_path = self._resolve_esdf_map_path(self.esdf_collision_config["map_path"])
         self.esdf_map = ESDFMap(
@@ -186,6 +205,20 @@ class MPC(MPCBase):
             self.esdf_safety_margin,
             self.esdf_constraint_name,
         )
+        if self.esdf_collision_mode == "squared_hinge_cost":
+            soft_cost_config = self.esdf_collision_config.get("soft_cost", {})
+            self.esdfCollisionSoftCst = SoftConstraintsSquaredHingeCostFunction(
+                soft_cost_config.get("mu", self.esdf_collision_config.get("mu", 1.0)),
+                self.esdfCollisionCst,
+                scale=soft_cost_config.get(
+                    "p", self.esdf_collision_config.get("p", 1.0)
+                ),
+                smoothing=soft_cost_config.get(
+                    "smoothing",
+                    self.esdf_collision_config.get("smoothing", 1.0e-3),
+                ),
+                name=f"{self.esdf_constraint_name}SquaredHingeSoftCst",
+            )
 
     def _resolve_esdf_map_path(self, map_path):
         if isinstance(map_path, dict):

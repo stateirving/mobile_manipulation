@@ -21,6 +21,17 @@ __pycache__/
 # Results/output data
 results/
 
+# Keep only the compact ESDF grid needed by the warehouse ESDF MPC demo.
+!mm_run/results/
+mm_run/results/**
+!mm_run/results/nvblox_esdf/
+mm_run/results/nvblox_esdf/**
+!mm_run/results/nvblox_esdf/aws_small_warehouse_env/
+mm_run/results/nvblox_esdf/aws_small_warehouse_env/**
+!mm_run/results/nvblox_esdf/aws_small_warehouse_env/2026-06-02_19-51-55/
+mm_run/results/nvblox_esdf/aws_small_warehouse_env/2026-06-02_19-51-55/**
+!mm_run/results/nvblox_esdf/aws_small_warehouse_env/2026-06-02_19-51-55/esdf_grid.npz
+
 # Downloaded upstream repositories/assets used for conversion.
 third_party/
 

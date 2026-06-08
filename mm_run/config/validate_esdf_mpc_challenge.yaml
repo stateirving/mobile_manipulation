@@ -3,12 +3,19 @@
 
 planner:
   tasks:
+    - name: firstgoal
+      planner_type: WaypointPlanner
+      base_pose: [3.0, 3.0, 0.0]
+      base_mask: [true, true, false]
+      tracking_pos_err_tol: 0.15
+      hold_period: 1.0
+
     - name: ESDF Aisle Entry
       planner_type: WaypointPlanner
       base_pose: [2.0, -2.3, 0.0]
       base_mask: [true, true, false]
-      ee_pose: [3.0, -2.3, 1.0, 0.0, 0.0, -0.0708]
-      ee_mask: [true, true, true, false, false, false]
+      # ee_pose: [3.0, -2.3, 1.0, 0.0, 0.0, -0.0708]
+      # ee_mask: [true, true, true, false, false, false]
       tracking_pos_err_tol: 0.15
       hold_period: 1.0
     # - name: ESDF Shelf-Edge Base Goal
@@ -45,6 +52,11 @@ controller:
       - "gripper_body_collision"
       - "gripper_tip_collision"
     d_safe: 0.05
+    mode: "squared_hinge_cost"
+    soft_cost:
+      p: 1.0
+      mu: 10.0
+      smoothing: 1.0e-03
     require_all_corners_valid: True
     invalid_distance: -1.0
     name: "esdf"
@@ -56,13 +68,14 @@ controller:
       recompile: False
     ocp_solver_options:
       nlp_solver_max_iter: 500
+      qp_solver_iter_max: 100
     slack_enabled:
       x: False
       x_e: False
       u: False
-      h_0: True
-      h: True
-      h_e: True
+      h_0: False
+      h: False
+      h_e: False
 
   cost_params:
     EEPose:

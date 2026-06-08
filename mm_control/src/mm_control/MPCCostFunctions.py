@@ -527,6 +527,107 @@ class SoftConstraintsRBFCostFunction(CostFunctions):
         return self.p_dict
 
 
+class SoftConstraintsSquaredHingeCostFunction(CostFunctions):
+    """Squared hinge penalty for soft constraints.
+
+    For a constraint written as g(x, u, p) <= 0, this class uses the signed
+    safety margin h = -g and applies:
+        J = scale * sum_i 0.5 * mu * max(0, -h_i)^2
+    """
+
+    def __init__(
+        self,
+        mu,
+        cst_obj,
+        scale=1.0,
+        smoothing=1.0e-3,
+        name="SquaredHingeSoftConstraint",
+        expand=True,
+    ):
+        super().__init__(cst_obj.nx, cst_obj.nu, name)
+
+        self.mu = float(mu)
+        self.scale = float(scale)
+        self.smoothing = float(smoothing)
+        self.weight = self.scale * self.mu
+
+        self.p_dict = cst_obj.get_p_dict()
+        self.p_struct = casadi_sym_struct(self.p_dict)
+        self.p_sym = self.p_struct.cat
+
+        self.h_eqn = -cst_obj.g_fcn(self.x_sym, self.u_sym, self.p_sym)
+        self.dhdz_eqn = -cst_obj.g_grad_fcn(self.x_sym, self.u_sym, self.p_sym)
+        self.nh = self.h_eqn.shape[0]
+
+        violation_eqn_list = []
+        J_eqn_list = []
+        active_weight_eqn_list = []
+        for k in range(self.nh):
+            if self.smoothing > 0.0:
+                root = cs.sqrt(self.h_eqn[k] ** 2 + self.smoothing**2)
+                violation = 0.5 * (-self.h_eqn[k] + root)
+                dviolation_dh = 0.5 * (-1.0 + self.h_eqn[k] / root)
+                active_weight = self.weight * dviolation_dh**2
+            else:
+                violation = cs.if_else(self.h_eqn[k] < 0.0, -self.h_eqn[k], 0.0)
+                active_weight = cs.if_else(self.h_eqn[k] < 0.0, self.weight, 0.0)
+
+            violation_eqn_list.append(violation)
+            J_eqn_list.append(0.5 * self.weight * violation**2)
+            active_weight_eqn_list.append(active_weight)
+
+        self.violation_eqn = cs.vertcat(*violation_eqn_list)
+        self.J_eqn = sum(J_eqn_list)
+        self.J_vec_eqn = cs.vertcat(*J_eqn_list)
+
+        # PSD Gauss-Newton Hessian approximation. The exact Hessian would add
+        # terms proportional to d2h/dz2 from robot kinematics, which can make
+        # the QP Hessian indefinite.
+        active_weight_eqn = cs.diag(cs.vertcat(*active_weight_eqn_list))
+        self.H_approx_eqn = self.dhdz_eqn.T @ active_weight_eqn @ self.dhdz_eqn
+
+        self.h_fcn = cs.Function(
+            "h_" + self.name, [self.x_sym, self.u_sym, self.p_sym], [self.h_eqn]
+        )
+        self.violation_fcn = cs.Function(
+            "violation_" + self.name,
+            [self.x_sym, self.u_sym, self.p_sym],
+            [self.violation_eqn],
+        )
+        self.J_fcn = cs.Function(
+            "J_" + self.name, [self.x_sym, self.u_sym, self.p_sym], [self.J_eqn]
+        )
+        self.J_vec_fcn = cs.Function(
+            "J_vec_" + self.name, [self.x_sym, self.u_sym, self.p_sym], [self.J_vec_eqn]
+        )
+        self.H_approx_fcn = cs.Function(
+            "H_approx_" + self.name,
+            [self.x_sym, self.u_sym, self.p_sym],
+            [self.H_approx_eqn],
+            ["x", "u", "r"],
+            ["H_approx"],
+        )
+
+        if expand:
+            self.h_fcn = self.h_fcn.expand()
+            self.violation_fcn = self.violation_fcn.expand()
+            self.J_fcn = self.J_fcn.expand()
+            self.J_vec_fcn = self.J_vec_fcn.expand()
+            self.H_approx_fcn = self.H_approx_fcn.expand()
+
+    def evaluate_vec(self, x, u, p):
+        """Evaluate cost function vector (per-constraint costs)."""
+        return self.J_vec_fcn(x, u, p).toarray().flatten()
+
+    def evaluate_violation(self, x, u, p):
+        """Evaluate positive constraint violations max(0, -h)."""
+        return self.violation_fcn(x, u, p).toarray().flatten()
+
+    def get_p_dict(self):
+        """Get parameter dictionary."""
+        return self.p_dict
+
+
 class RegularizationCostFunction(CostFunctions):
     """Regularization cost function (quadratic in state and control)."""
 
