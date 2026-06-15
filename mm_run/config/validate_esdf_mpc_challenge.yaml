@@ -3,27 +3,82 @@
 
 planner:
   tasks:
-    - name: firstgoal
-      planner_type: WaypointPlanner
-      base_pose: [3.0, 3.0, 0.0]
-      base_mask: [true, true, false]
-      tracking_pos_err_tol: 0.15
-      hold_period: 1.0
 
     - name: ESDF Aisle Entry
       planner_type: WaypointPlanner
-      base_pose: [2.0, -2.3, 0.0]
-      base_mask: [true, true, false]
-      # ee_pose: [3.0, -2.3, 1.0, 0.0, 0.0, -0.0708]
+      base_pose: [0.5, -1.5, -0.7854]
+      base_mask: [true, true, true]
+      # ee_pose: [0.5, -1.0, 1.0, 0.0, 0.0, -0.0708]
       # ee_mask: [true, true, true, false, false, false]
-      tracking_pos_err_tol: 0.15
+      tracking_pos_err_tol: 0.2
+      tracking_ori_err_tol: 0.20
       hold_period: 1.0
-    # - name: ESDF Shelf-Edge Base Goal
+    - name: ESDF Aisle Entry
+      planner_type: WaypointPlanner
+      base_pose: [1.0, -2.0, -0.7854]
+      base_mask: [true, true, true]
+      # ee_pose: [0.5, -1.5, 1.0, 0.0, 0.0, -0.0708]
+      # ee_mask: [true, true, true, false, false, false]
+      tracking_pos_err_tol: 0.2
+      tracking_ori_err_tol: 0.20
+      hold_period: 1.0
+    - name: ESDF Aisle Entry
+      planner_type: WaypointPlanner
+      base_pose: [1.5, -2.5, -0.7854]
+      base_mask: [true, true, true]
+      # ee_pose: [1.0, -2.0, 1.0, 0.0, 0.0, -0.0708]
+      # ee_mask: [true, true, true, false, false, false]
+      tracking_pos_err_tol: 0.2
+      tracking_ori_err_tol: 0.20
+      hold_period: 1.0
+
+    # - name: firstgoal
     #   planner_type: WaypointPlanner
-    #   base_pose: [5.0, -2.3, 0.0]
+    #   base_pose: [2.0, 0.0, 0.0]
     #   base_mask: [true, true, false]
     #   tracking_pos_err_tol: 0.15
     #   hold_period: 1.0
+    # - name: ESDF Aisle Entry
+    #   planner_type: WaypointPlanner
+    #   # base_pose: [2.0, -2.3, 0.0]
+    #   # base_mask: [true, true, false]
+    #   ee_pose: [3.0, -0.5, 0.85, 0.0, 0.0, -0.0708]
+    #   ee_mask: [true, true, true, false, false, false]
+    #   tracking_pos_err_tol: 0.05
+    #   hold_period: 1.0
+    # - name: ESDF Aisle Entry
+    #   planner_type: WaypointPlanner
+    #   # base_pose: [2.0, -2.3, 0.0]
+    #   # base_mask: [true, true, false]
+    #   ee_pose: [2.5, -0.75, 0.85, 0.0, 0.0, -0.0708]
+    #   ee_mask: [true, true, true, false, false, false]
+    #   tracking_pos_err_tol: 0.05
+    #   hold_period: 1.0
+    # - name: ESDF Aisle Entry
+    #   planner_type: WaypointPlanner
+    #   # base_pose: [2.0, -2.3, 0.0]
+    #   # base_mask: [true, true, false]
+    #   ee_pose: [3.0, -0.5, 0.4, 0.0, 0.0, -0.0708]
+    #   ee_mask: [true, true, true, false, false, false]
+    #   tracking_pos_err_tol: 0.05
+    #   hold_period: 1.0
+    # - name: ESDF Aisle Entry
+    #   planner_type: WaypointPlanner
+    #   # base_pose: [2.0, -2.3, 0.0]
+    #   # base_mask: [true, true, false]
+    #   ee_pose: [2.3, 0.0, 0.4, 0.0, 0.0, -0.0708]
+    #   ee_mask: [true, true, true, false, false, false]
+    #   tracking_pos_err_tol: 0.10
+    #   hold_period: 1.0
+    # - name: ESDF Aisle Entry
+    #   planner_type: WaypointPlanner
+    #   # base_pose: [2.0, -2.3, 0.0]
+    #   # base_mask: [true, true, false]
+    #   ee_pose: [3.0, 0.5, 0.4, 0.0, 0.0, -0.0708]
+    #   ee_mask: [true, true, true, false, false, false]
+    #   tracking_pos_err_tol: 0.05
+    #   hold_period: 1.0
+
 
 controller:
   cmd_vel_type: "integration"
@@ -34,9 +89,21 @@ controller:
     self: 0.0
     static_obstacles: 0.0
 
+  scene:
+    enabled: True
+    collision_link_names:
+      static_obstacles: []
+    urdf:
+      package: "mm_assets"
+      path: "scenes/urdf/esdf_test_room.urdf"
+      includes:
+        - "$(find mm_assets)/scenes/xacro/esdf_test_room.urdf.xacro"
+
   esdf_collision:
     enabled: True
-    map_path: "mm_run/results/nvblox_esdf/aws_small_warehouse_env/2026-06-02_19-51-55/esdf_grid.npz"
+    map_path:
+      package: "mm_run"
+      path: "results/nvblox_esdf/esdf_test_room_full_2cm_dense/2026-06-15_12-32-10/esdf_grid.npz"
     spheres:
       - "base_body_collision"
       - "lift_collision"
@@ -55,8 +122,8 @@ controller:
     mode: "squared_hinge_cost"
     soft_cost:
       p: 1.0
-      mu: 10.0
-      smoothing: 1.0e-03
+      mu: 10000.0
+      smoothing: 5.0e-03
     require_all_corners_valid: True
     invalid_distance: -1.0
     name: "esdf"
@@ -79,24 +146,38 @@ controller:
 
   cost_params:
     EEPose:
-      Qk: [0.5, 0.5, 0.5, 0.0, 0.0, 0.0]
-      P: [5.0, 5.0, 5.0, 0.0, 0.0, 0.0]
+      Qk: [1.0, 1.0, 1.0, 0.0, 0.0, 0.0]
+      P: [0.0, 0.0, 0.0, 0.0, 0.0, 0.0]
     EEVel:
       Qk: [0.0, 0.0, 0.0, 0.0, 0.0, 0.0]
       P: [0.0, 0.0, 0.0, 0.0, 0.0, 0.0]
     BasePose:
-      Qk: [1.5, 1.5, 0.0]
-      P: [25.0, 25.0, 0.0]
+      Qk: [1.5, 1.5, 0.5]
+      # P: [25.0, 25.0, 0.0]
+      P: [0.0, 0.0, 0.0]
     BaseVel:
       Qvb: [0.01, 0.01, 0.01]
       Qub: [0.01, 0.01, 0.01]
     Effort:
       Qqa: [0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0]
       Qqb: [0.0, 0.0, 0.0]
-      Qva: [0.0, 0.0, 0.0, 0.0, 0.0, 0.0005, 0.005, 0.005]
-      Qvb: [0.05, 0.05, 0.1]
-      Qua: [0.005, 0.0005, 0.0005, 0.0005, 0.0005, 0.0, 0.0, 0.0005]
-      Qub: [0.05, 0.05, 0.05]
+      Qva: [0.01, 0.01, 0.01, 0.01, 0.01, 0.01, 0.02, 0.02]
+      Qvb: [0.05, 0.05, 0.001]
+      Qua: [0.01, 0.01, 0.01, 0.01, 0.01, 0.01, 0.02, 0.02]
+      Qub: [0.05, 0.05, 0.001]
+    ArmExtension:
+      enabled: True
+      joint_names: ["joint_arm_l3", "joint_arm_l2", "joint_arm_l1", "joint_arm_l0"]
+      upper: [0.08, 0.08, 0.08, 0.08]
+      base_task_upper: [0.03, 0.03, 0.03, 0.03]
+      weight: [2.0, 2.0, 2.0, 2.0]
+      smoothing: 5.0e-03
+    WristYawLimit:
+      enabled: True
+      joint_name: "joint_wrist_yaw"
+      abs_limit: 1.5708
+      weight: 2.0
+      smoothing: 5.0e-03
     Regularization:
       eps: 1.0e-06
     slack:
@@ -104,7 +185,7 @@ controller:
       Z: 1000000
 
 simulation:
-  duration: 18.0
+  duration: 40.0
   gui: False
   collision_sphere_markers:
     enabled: True
@@ -114,6 +195,11 @@ simulation:
   static_obstacles:
     enabled: True
     collision_enabled: False
+    urdf:
+      package: "mm_assets"
+      path: "scenes/urdf/esdf_test_room.urdf"
+      includes:
+        - "$(find mm_assets)/scenes/xacro/esdf_test_room.urdf.xacro"
 
 include:
   - package: "mm_run"
@@ -121,7 +207,7 @@ include:
   - package: "mm_run"
     path: "config/controller/MPC.yaml"
   - package: "mm_run"
-    path: "config/scene/aws_small_warehouse.yaml"
+    path: "config/scene/empty.yaml"
   - package: "mm_run"
     path: "config/robot/stretch.yaml"
 

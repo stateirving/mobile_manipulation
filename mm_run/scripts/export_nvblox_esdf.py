@@ -218,11 +218,16 @@ def load_environment_scene(config, gui):
     return timestep
 
 
-def make_grid(bounds, resolution):
+def make_grid_axes(bounds, resolution):
     xmin, ymin, zmin, xmax, ymax, zmax = [float(v) for v in bounds]
     xs = np.arange(xmin, xmax + 0.5 * resolution, resolution, dtype=np.float32)
     ys = np.arange(ymin, ymax + 0.5 * resolution, resolution, dtype=np.float32)
     zs = np.arange(zmin, zmax + 0.5 * resolution, resolution, dtype=np.float32)
+    return xs, ys, zs
+
+
+def make_grid(bounds, resolution):
+    xs, ys, zs = make_grid_axes(bounds, resolution)
     grid = np.meshgrid(xs, ys, zs, indexing="ij")
     points = np.column_stack([axis.reshape(-1) for axis in grid]).astype(np.float32)
     return xs, ys, zs, points
@@ -236,32 +241,44 @@ def query_esdf_grid(
     unknown_distance_threshold,
     query_radius,
 ):
-    xs, ys, zs, points = make_grid(bounds, resolution)
-    values = np.empty((points.shape[0], 4), dtype=np.float32)
-    num_chunks = int(math.ceil(points.shape[0] / chunk_size))
+    xs, ys, zs = make_grid_axes(bounds, resolution)
+    shape = (len(xs), len(ys), len(zs))
+    total_points = int(np.prod(shape))
+    distances = np.empty(shape, dtype=np.float32)
+    gradients = np.empty(shape + (3,), dtype=np.float32)
+    distances_flat = distances.reshape(-1)
+    gradients_flat = gradients.reshape((-1, 3))
+
+    num_chunks = int(math.ceil(total_points / chunk_size))
     print(
-        f"Querying ESDF grid: {points.shape[0]} points "
+        f"Querying ESDF grid: {total_points} points "
         f"({len(xs)} x {len(ys)} x {len(zs)}, {num_chunks} chunks)",
         flush=True,
     )
 
-    for chunk_idx, start in enumerate(range(0, points.shape[0], chunk_size), start=1):
-        stop = min(start + chunk_size, points.shape[0])
-        query_np = np.column_stack(
-            [
-                points[start:stop],
-                np.full(stop - start, query_radius, dtype=np.float32),
-            ]
-        )
+    ny, nz = shape[1], shape[2]
+    yz_size = ny * nz
+    for chunk_idx, start in enumerate(range(0, total_points, chunk_size), start=1):
+        stop = min(start + chunk_size, total_points)
+        flat_indices = np.arange(start, stop, dtype=np.int64)
+        ix = flat_indices // yz_size
+        iy = (flat_indices // nz) % ny
+        iz = flat_indices % nz
+
+        query_np = np.empty((stop - start, 4), dtype=np.float32)
+        query_np[:, 0] = xs[ix]
+        query_np[:, 1] = ys[iy]
+        query_np[:, 2] = zs[iz]
+        query_np[:, 3] = query_radius
+
         query = torch.as_tensor(query_np, device="cuda", dtype=torch.float32)
         out = mapper.query_layer(QueryType.ESDF_GRAD, query)
-        values[start:stop] = out.detach().cpu().numpy()
+        out_np = out.detach().cpu().numpy()
+        gradients_flat[start:stop] = out_np[:, :3]
+        distances_flat[start:stop] = out_np[:, 3]
         if chunk_idx == 1 or chunk_idx == num_chunks or chunk_idx % 10 == 0:
             print(f"  ESDF query chunk {chunk_idx}/{num_chunks}", flush=True)
 
-    shape = (len(xs), len(ys), len(zs))
-    gradients = values[:, :3].reshape(shape + (3,))
-    distances = values[:, 3].reshape(shape)
     valid = np.isfinite(distances) & (np.abs(distances) < unknown_distance_threshold)
     return xs, ys, zs, distances, gradients, valid
 
@@ -324,18 +341,57 @@ def save_surface_band_ply(
     band,
     max_points,
 ):
-    mask = valid & (np.abs(distances) <= band)
-    if not np.any(mask):
+    if max_points <= 0:
         return False
 
-    grid = np.meshgrid(xs, ys, zs, indexing="ij")
-    points = np.column_stack([axis[mask] for axis in grid]).astype(np.float32)
-    d = distances[mask].astype(np.float32)
+    distances_flat = distances.reshape(-1)
+    valid_flat = valid.reshape(-1)
+    total_points = distances_flat.shape[0]
+    chunk_size = 4_000_000
 
-    if points.shape[0] > max_points:
-        stride = int(math.ceil(points.shape[0] / max_points))
-        points = points[::stride]
-        d = d[::stride]
+    band_count = 0
+    for start in range(0, total_points, chunk_size):
+        stop = min(start + chunk_size, total_points)
+        mask = valid_flat[start:stop] & (np.abs(distances_flat[start:stop]) <= band)
+        band_count += int(np.count_nonzero(mask))
+
+    if band_count == 0:
+        return False
+
+    stride = max(1, int(math.ceil(band_count / max_points)))
+    ny, nz = len(ys), len(zs)
+    yz_size = ny * nz
+    points_chunks = []
+    distance_chunks = []
+    seen_band_points = 0
+
+    for start in range(0, total_points, chunk_size):
+        stop = min(start + chunk_size, total_points)
+        mask = valid_flat[start:stop] & (np.abs(distances_flat[start:stop]) <= band)
+        local_indices = np.flatnonzero(mask)
+        local_count = local_indices.shape[0]
+        if local_count == 0:
+            continue
+
+        keep = (seen_band_points + np.arange(local_count, dtype=np.int64)) % stride == 0
+        selected = local_indices[keep] + start
+        seen_band_points += local_count
+        if selected.shape[0] == 0:
+            continue
+
+        ix = selected // yz_size
+        iy = (selected // nz) % ny
+        iz = selected % nz
+        points_chunks.append(
+            np.column_stack([xs[ix], ys[iy], zs[iz]]).astype(np.float32)
+        )
+        distance_chunks.append(distances_flat[selected].astype(np.float32))
+
+    if not points_chunks:
+        return False
+
+    points = np.concatenate(points_chunks, axis=0)
+    d = np.concatenate(distance_chunks, axis=0)
 
     t = np.clip((d + band) / (2.0 * band), 0.0, 1.0)
     colors = np.column_stack(
@@ -346,6 +402,82 @@ def save_surface_band_ply(
         ]
     ).astype(np.uint8)
     write_ply(path, points, colors)
+    return True
+
+
+def save_base_navigation_esdf(
+    out_dir,
+    xs,
+    ys,
+    zs,
+    distances,
+    valid,
+    z_min,
+    z_max,
+    inflation_radius,
+    max_abs_distance,
+):
+    os.environ.setdefault("MPLCONFIGDIR", "/tmp/matplotlib")
+    import matplotlib.pyplot as plt
+
+    z_mask = (zs >= z_min) & (zs <= z_max)
+    if not np.any(z_mask):
+        print(
+            f"Warning: base navigation z band [{z_min}, {z_max}] does not overlap ESDF grid.",
+            flush=True,
+        )
+        return False
+
+    band_distances = distances[:, :, z_mask]
+    band_valid = valid[:, :, z_mask]
+    projected = np.min(np.where(band_valid, band_distances, np.inf), axis=2)
+    projected_valid = np.isfinite(projected)
+    inflated = projected - float(inflation_radius)
+
+    out_dir.mkdir(parents=True, exist_ok=True)
+    np.savez_compressed(
+        out_dir / "base_navigation_esdf.npz",
+        xs=xs,
+        ys=ys,
+        z_min=np.asarray(z_min, dtype=np.float32),
+        z_max=np.asarray(z_max, dtype=np.float32),
+        inflation_radius=np.asarray(inflation_radius, dtype=np.float32),
+        distance=projected.astype(np.float32),
+        inflated_distance=inflated.astype(np.float32),
+        valid=projected_valid,
+    )
+
+    for name, data, title in [
+        (
+            "base_navigation_esdf.png",
+            projected,
+            f"Base navigation ESDF z=[{z_min:.2f}, {z_max:.2f}] m",
+        ),
+        (
+            "base_navigation_esdf_inflated.png",
+            inflated,
+            f"Inflated base ESDF radius={inflation_radius:.2f} m",
+        ),
+    ]:
+        masked = np.ma.masked_where(~projected_valid, data)
+        fig, ax = plt.subplots(figsize=(8, 6), constrained_layout=True)
+        im = ax.imshow(
+            masked.T,
+            origin="lower",
+            extent=[float(xs[0]), float(xs[-1]), float(ys[0]), float(ys[-1])],
+            cmap="coolwarm_r",
+            vmin=-max_abs_distance,
+            vmax=max_abs_distance,
+            interpolation="nearest",
+        )
+        ax.set_title(title)
+        ax.set_xlabel("x [m]")
+        ax.set_ylabel("y [m]")
+        ax.set_aspect("equal")
+        fig.colorbar(im, ax=ax, label="signed distance [m]")
+        fig.savefig(out_dir / name, dpi=160)
+        plt.close(fig)
+
     return True
 
 
@@ -399,6 +531,14 @@ def parse_args():
         type=float,
         default=0.5,
         help="Virtual camera z height in world frame when --scan-mode base-spin.",
+    )
+    parser.add_argument(
+        "--base-spin-camera-heights",
+        nargs="+",
+        type=float,
+        default=None,
+        metavar="Z",
+        help="Multiple virtual camera z heights for --scan-mode base-spin. Overrides --base-spin-camera-height.",
     )
     parser.add_argument(
         "--base-spin-origin",
@@ -495,6 +635,35 @@ def parse_args():
         help="Color scale limit for ESDF slice images, in meters.",
     )
     parser.add_argument(
+        "--base-nav-esdf",
+        action="store_true",
+        help="Export a 2D base-navigation ESDF by vertically projecting the 3D ESDF over --base-nav-z-min/max.",
+    )
+    parser.add_argument(
+        "--base-nav-z-min",
+        type=float,
+        default=0.05,
+        help="Minimum z height included in the base-navigation ESDF projection.",
+    )
+    parser.add_argument(
+        "--base-nav-z-max",
+        type=float,
+        default=1.2,
+        help="Maximum z height included in the base-navigation ESDF projection.",
+    )
+    parser.add_argument(
+        "--base-nav-inflation-radius",
+        type=float,
+        default=0.35,
+        help="Radius subtracted from the projected ESDF to form an inflated base-navigation distance field.",
+    )
+    parser.add_argument(
+        "--base-nav-max-abs-distance",
+        type=float,
+        default=0.5,
+        help="Color scale limit for base-navigation ESDF images, in meters.",
+    )
+    parser.add_argument(
         "--surface-band",
         type=float,
         default=0.08,
@@ -505,6 +674,11 @@ def parse_args():
         type=int,
         default=200000,
         help="Maximum number of points written to esdf_surface_band.ply.",
+    )
+    parser.add_argument(
+        "--skip-color-mesh",
+        action="store_true",
+        help="Skip nvblox color mesh update/export. This saves GPU memory when only ESDF output is needed.",
     )
     parser.add_argument(
         "--query-radius",
@@ -569,6 +743,7 @@ def main():
 
     camera_records = []
     base_spin_origins = None
+    base_spin_camera_heights = None
     if args.scan_mode == "orbit":
         camera_poses = [
             (f"orbit_{idx:03d}", look_at_pose(eye, target))
@@ -578,22 +753,30 @@ def main():
         ]
     else:
         base_spin_origins = resolve_base_spin_origins(args)
+        base_spin_camera_heights = (
+            args.base_spin_camera_heights
+            if args.base_spin_camera_heights is not None
+            else [args.base_spin_camera_height]
+        )
         camera_poses = []
         for origin_idx, base_spin_origin in enumerate(base_spin_origins):
-            name_prefix = (
-                "base_spin"
-                if len(base_spin_origins) == 1
-                else f"base_spin_p{origin_idx:03d}"
-            )
-            camera_poses.extend(
-                make_base_spin_camera_poses(
-                    base_spin_origin,
-                    args.num_views,
-                    args.base_spin_camera_height,
-                    math.radians(args.base_spin_yaw_offset_deg),
-                    name_prefix,
+            for height_idx, camera_height in enumerate(base_spin_camera_heights):
+                name_prefix = (
+                    "base_spin"
+                    if len(base_spin_origins) == 1
+                    else f"base_spin_p{origin_idx:03d}"
                 )
-            )
+                if len(base_spin_camera_heights) > 1:
+                    name_prefix = f"{name_prefix}_h{height_idx:02d}"
+                camera_poses.extend(
+                    make_base_spin_camera_poses(
+                        base_spin_origin,
+                        args.num_views,
+                        camera_height,
+                        math.radians(args.base_spin_yaw_offset_deg),
+                        name_prefix,
+                    )
+                )
 
     print(f"Rendering and integrating {len(camera_poses)} camera views...", flush=True)
     for idx, (camera_name, t_w_c) in enumerate(camera_poses):
@@ -647,15 +830,20 @@ def main():
 
     print("Updating nvblox ESDF...", flush=True)
     mapper.update_esdf()
-    print("Updating nvblox color mesh...", flush=True)
-    mapper.update_color_mesh()
 
     print("Saving nvblox map...", flush=True)
     mapper.save_map(str(out_dir / "map.nvblox"), 0)
-    try:
-        mapper.get_color_mesh(0).save(str(out_dir / "tsdf_mesh.ply"))
-    except Exception as exc:
-        print(f"Warning: failed to save color mesh: {exc}")
+    color_mesh_saved = False
+    if args.skip_color_mesh:
+        print("Skipping nvblox color mesh export.", flush=True)
+    else:
+        print("Updating nvblox color mesh...", flush=True)
+        mapper.update_color_mesh()
+        try:
+            mapper.get_color_mesh(0).save(str(out_dir / "tsdf_mesh.ply"))
+            color_mesh_saved = True
+        except Exception as exc:
+            print(f"Warning: failed to save color mesh: {exc}")
 
     xs, ys, zs, distances, gradients, valid = query_esdf_grid(
         mapper,
@@ -688,6 +876,20 @@ def main():
         args.slice_z,
         args.slice_max_abs_distance,
     )
+    base_nav_esdf_saved = False
+    if args.base_nav_esdf:
+        base_nav_esdf_saved = save_base_navigation_esdf(
+            out_dir / "base_navigation",
+            xs,
+            ys,
+            zs,
+            distances,
+            valid,
+            args.base_nav_z_min,
+            args.base_nav_z_max,
+            args.base_nav_inflation_radius,
+            args.base_nav_max_abs_distance,
+        )
     surface_saved = save_surface_band_ply(
         out_dir / "esdf_surface_band.ply",
         xs,
@@ -713,6 +915,7 @@ def main():
         "scan_mode": args.scan_mode,
         "num_views": args.num_views,
         "base_spin_camera_height": args.base_spin_camera_height,
+        "base_spin_camera_heights": base_spin_camera_heights,
         "base_spin_origin": args.base_spin_origin,
         "base_spin_origins": (
             None if base_spin_origins is None else base_spin_origins.tolist()
@@ -727,6 +930,11 @@ def main():
             "height": args.height,
         },
         "surface_band_ply_saved": surface_saved,
+        "base_nav_esdf_saved": base_nav_esdf_saved,
+        "base_nav_z_min": args.base_nav_z_min,
+        "base_nav_z_max": args.base_nav_z_max,
+        "base_nav_inflation_radius": args.base_nav_inflation_radius,
+        "color_mesh_saved": color_mesh_saved,
         "cameras": camera_records,
     }
     with (out_dir / "metadata.json").open("w", encoding="utf-8") as f:

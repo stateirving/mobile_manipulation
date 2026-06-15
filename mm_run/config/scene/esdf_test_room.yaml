@@ -1,0 +1,49 @@
+simulation:
+  static_obstacles:
+    enabled: true
+    urdf:
+      package: "mm_assets"
+      path: "scenes/urdf/esdf_test_room.urdf"
+      includes:
+        - "$(find mm_assets)/scenes/xacro/esdf_test_room.urdf.xacro"
+
+controller:
+  scene:
+    enabled: true
+    collision_link_names:
+      static_obstacles:
+        - "wall_north"
+        - "wall_south"
+        - "wall_east"
+        - "wall_west"
+        - "desk_left_top"
+        - "desk_left_leg_fl"
+        - "desk_left_leg_fr"
+        - "desk_left_leg_bl"
+        - "desk_left_leg_br"
+        - "desk_right_top"
+        - "desk_right_leg_fl"
+        - "desk_right_leg_fr"
+        - "desk_right_leg_bl"
+        - "desk_right_leg_br"
+        - "file_cabinet_left"
+        - "file_cabinet_right"
+        - "cubicle_partition_left"
+        - "cubicle_partition_right"
+        - "table_back_left"
+        - "table_back_right"
+        - "cart_front"
+        - "low_box_front_left"
+        - "low_box_front_right"
+        - "table_struct_top"
+        - "table_struct_leg_fl"
+        - "table_struct_leg_fr"
+        - "table_struct_leg_bl"
+        - "table_struct_leg_br"
+        - "column_left"
+        - "column_right"
+    urdf:
+      package: "mm_assets"
+      path: "scenes/urdf/esdf_test_room.urdf"
+      includes:
+        - "$(find mm_assets)/scenes/xacro/esdf_test_room.urdf.xacro"

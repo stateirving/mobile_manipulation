@@ -23,6 +23,15 @@ setup(
         ("share/" + package_name + "/config/test_experiment", glob("config/test_experiment/*")),
         ("share/" + package_name + "/config", glob("config/*.yaml")),
         ("share/" + package_name + "/config", glob("config/*.md")),
+        (
+            "share/"
+            + package_name
+            + "/results/nvblox_esdf/esdf_test_room_full_2cm_dense/2026-06-15_12-32-10",
+            glob(
+                "results/nvblox_esdf/esdf_test_room_full_2cm_dense/"
+                "2026-06-15_12-32-10/esdf_grid.npz"
+            ),
+        ),
     ],
     install_requires=["setuptools"],
     zip_safe=True,

@@ -1,0 +1,14 @@
+simulation:
+  timestep: 0.03
+  gravity: [0, 0, 0]
+  static_obstacles:
+    enabled: true
+    urdf:
+      package: "mm_assets"
+      path: "scenes/urdf/esdf_test_room.urdf"
+      includes:
+        - "$(find mm_assets)/scenes/xacro/esdf_test_room.urdf.xacro"
+
+logging:
+  log_dir: "esdf_test_room_esdf"
+  log_level: 20

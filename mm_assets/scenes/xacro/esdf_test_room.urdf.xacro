@@ -1,0 +1,106 @@
+<?xml version="1.0" encoding="utf-8"?>
+<robot name="esdf_test_room" xmlns:xacro="http://www.ros.org/wiki/xacro">
+
+  <material name="wall_gray">
+    <color rgba="0.55 0.55 0.55 1.0"/>
+  </material>
+  <material name="cabinet_gray">
+    <color rgba="0.35 0.38 0.40 1.0"/>
+  </material>
+  <material name="table_green">
+    <color rgba="0.10 0.55 0.25 1.0"/>
+  </material>
+  <material name="column_orange">
+    <color rgba="0.90 0.45 0.10 1.0"/>
+  </material>
+
+  <xacro:macro name="box_obstacle" params="name size xyz rpy material">
+    <link name="${name}">
+      <collision>
+        <origin xyz="0 0 0" rpy="0 0 0"/>
+        <geometry>
+          <box size="${size}"/>
+        </geometry>
+      </collision>
+      <visual>
+        <origin xyz="0 0 0" rpy="0 0 0"/>
+        <geometry>
+          <box size="${size}"/>
+        </geometry>
+        <material name="${material}"/>
+      </visual>
+    </link>
+    <joint name="${name}_joint" type="fixed">
+      <origin xyz="${xyz}" rpy="${rpy}"/>
+      <parent link="esdf_test_room_base_link"/>
+      <child link="${name}"/>
+    </joint>
+  </xacro:macro>
+
+  <xacro:macro name="cylinder_obstacle" params="name radius length xyz rpy material">
+    <link name="${name}">
+      <collision>
+        <origin xyz="0 0 0" rpy="0 0 0"/>
+        <geometry>
+          <cylinder radius="${radius}" length="${length}"/>
+        </geometry>
+      </collision>
+      <visual>
+        <origin xyz="0 0 0" rpy="0 0 0"/>
+        <geometry>
+          <cylinder radius="${radius}" length="${length}"/>
+        </geometry>
+        <material name="${material}"/>
+      </visual>
+    </link>
+    <joint name="${name}_joint" type="fixed">
+      <origin xyz="${xyz}" rpy="${rpy}"/>
+      <parent link="esdf_test_room_base_link"/>
+      <child link="${name}"/>
+    </joint>
+  </xacro:macro>
+
+  <link name="esdf_test_room_base_link"/>
+
+  <!-- Four low walls around an 8 m x 8 m indoor test area. -->
+  <xacro:box_obstacle name="wall_north" size="8.0 0.12 1.6" xyz="0 4.0 0.8" rpy="0 0 0" material="wall_gray"/>
+  <xacro:box_obstacle name="wall_south" size="8.0 0.12 1.6" xyz="0 -4.0 0.8" rpy="0 0 0" material="wall_gray"/>
+  <xacro:box_obstacle name="wall_east" size="0.12 8.0 1.6" xyz="4.0 0 0.8" rpy="0 0 0" material="wall_gray"/>
+  <xacro:box_obstacle name="wall_west" size="0.12 8.0 1.6" xyz="-4.0 0 0.8" rpy="0 0 0" material="wall_gray"/>
+
+  <!-- Office furniture stays close to the walls, leaving Stretch-sized aisles through the center. -->
+  <xacro:box_obstacle name="desk_left_top" size="0.75 1.15 0.08" xyz="-3.15 0.45 0.74" rpy="0 0 0" material="table_green"/>
+  <xacro:box_obstacle name="desk_left_leg_fl" size="0.08 0.08 0.72" xyz="-2.85 -0.05 0.36" rpy="0 0 0" material="table_green"/>
+  <xacro:box_obstacle name="desk_left_leg_fr" size="0.08 0.08 0.72" xyz="-2.85 0.95 0.36" rpy="0 0 0" material="table_green"/>
+  <xacro:box_obstacle name="desk_left_leg_bl" size="0.08 0.08 0.72" xyz="-3.45 -0.05 0.36" rpy="0 0 0" material="table_green"/>
+  <xacro:box_obstacle name="desk_left_leg_br" size="0.08 0.08 0.72" xyz="-3.45 0.95 0.36" rpy="0 0 0" material="table_green"/>
+
+  <xacro:box_obstacle name="desk_right_top" size="0.75 1.15 0.08" xyz="3.15 -0.45 0.74" rpy="0 0 0" material="table_green"/>
+  <xacro:box_obstacle name="desk_right_leg_fl" size="0.08 0.08 0.72" xyz="2.85 -0.95 0.36" rpy="0 0 0" material="table_green"/>
+  <xacro:box_obstacle name="desk_right_leg_fr" size="0.08 0.08 0.72" xyz="2.85 0.05 0.36" rpy="0 0 0" material="table_green"/>
+  <xacro:box_obstacle name="desk_right_leg_bl" size="0.08 0.08 0.72" xyz="3.45 -0.95 0.36" rpy="0 0 0" material="table_green"/>
+  <xacro:box_obstacle name="desk_right_leg_br" size="0.08 0.08 0.72" xyz="3.45 0.05 0.36" rpy="0 0 0" material="table_green"/>
+
+  <xacro:box_obstacle name="file_cabinet_left" size="0.55 0.45 0.9" xyz="-3.35 -1.65 0.45" rpy="0 0 0" material="cabinet_gray"/>
+  <xacro:box_obstacle name="file_cabinet_right" size="0.55 0.45 0.9" xyz="3.35 1.55 0.45" rpy="0 0 0" material="cabinet_gray"/>
+  <xacro:box_obstacle name="cubicle_partition_left" size="0.08 1.2 1.1" xyz="-1.35 1.15 0.55" rpy="0 0 0" material="wall_gray"/>
+  <xacro:box_obstacle name="cubicle_partition_right" size="0.08 1.2 1.1" xyz="1.35 -1.15 0.55" rpy="0 0 0" material="wall_gray"/>
+
+  <!-- Work surfaces and bins add clutter without making the scene huge. -->
+  <xacro:box_obstacle name="table_back_left" size="1.2 0.75 0.75" xyz="-1.0 2.55 0.375" rpy="0 0 0.25" material="table_green"/>
+  <xacro:box_obstacle name="table_back_right" size="1.2 0.75 0.75" xyz="1.2 2.7 0.375" rpy="0 0 -0.20" material="table_green"/>
+  <xacro:box_obstacle name="cart_front" size="1.1 0.55 0.9" xyz="0.15 -2.6 0.45" rpy="0 0 0.45" material="table_green"/>
+  <xacro:box_obstacle name="low_box_front_left" size="0.7 0.7 0.5" xyz="-2.65 -2.55 0.25" rpy="0 0 0.30" material="table_green"/>
+  <xacro:box_obstacle name="low_box_front_right" size="0.7 0.7 0.5" xyz="2.85 -2.25 0.25" rpy="0 0 -0.30" material="table_green"/>
+
+  <!-- A simple table assembled from a tabletop and four legs. -->
+  <xacro:box_obstacle name="table_struct_top" size="1.0 0.7 0.08" xyz="2.65 2.65 0.74" rpy="0 0 0.12" material="table_green"/>
+  <xacro:box_obstacle name="table_struct_leg_fl" size="0.08 0.08 0.72" xyz="2.25 2.37 0.36" rpy="0 0 0.12" material="table_green"/>
+  <xacro:box_obstacle name="table_struct_leg_fr" size="0.08 0.08 0.72" xyz="3.05 2.47 0.36" rpy="0 0 0.12" material="table_green"/>
+  <xacro:box_obstacle name="table_struct_leg_bl" size="0.08 0.08 0.72" xyz="2.25 2.83 0.36" rpy="0 0 0.12" material="table_green"/>
+  <xacro:box_obstacle name="table_struct_leg_br" size="0.08 0.08 0.72" xyz="3.05 2.93 0.36" rpy="0 0 0.12" material="table_green"/>
+
+  <xacro:cylinder_obstacle name="column_left" radius="0.22" length="1.5" xyz="-3.05 1.65 0.75" rpy="0 0 0" material="column_orange"/>
+  <xacro:cylinder_obstacle name="column_right" radius="0.22" length="1.5" xyz="3.05 -1.55 0.75" rpy="0 0 0" material="column_orange"/>
+
+</robot>

@@ -7,7 +7,7 @@ controller:
   robot:
     time_discretization_dt: 0.1
   # prediction_horizon: 3.0
-  prediction_horizon: 6.0
+  prediction_horizon: 4.0
   ctrl_rate: 7 #hz
   cmd_vel_pub_rate: 20 # hz
   cmd_vel_type: "interpolation"         # integration: publish vel by integrating from acc_bar
@@ -85,6 +85,21 @@ controller:
       Qvb: [0.01, 0.01, 0.01]
       Qua: [0.01, 0.01, 0.01, 0.01, 0.01, 0.01]
       Qub: [0.01, 0.01, 0.01]
+    # Optional soft hinge cost for telescoping arm extension.
+    ArmExtension:
+      enabled: False
+      joint_names: ["joint_arm_l3", "joint_arm_l2", "joint_arm_l1", "joint_arm_l0"]
+      upper: [0.09, 0.09, 0.09, 0.09]
+      base_task_upper: [0.03, 0.03, 0.03, 0.03]
+      weight: [20.0, 20.0, 20.0, 20.0]
+      smoothing: 1.0e-03
+    # Optional soft hinge cost for wrist yaw outside a preferred interval.
+    WristYawLimit:
+      enabled: False
+      joint_name: "joint_wrist_yaw"
+      abs_limit: 1.5708
+      weight: 2.0
+      smoothing: 1.0e-03
     # Regularization cost (optional)
     Regularization:
       eps: 1.0e-06

@@ -13,10 +13,11 @@ from mm_control.MPCConstraints import (
 from mm_control.MPCBase import MPCBase
 from mm_control.MPCCostFunctions import (
     CostFunctionRegistry,
+    JointSquaredHingeCostFunction,
     SoftConstraintsSquaredHingeCostFunction,
 )
-from mm_utils.math import wrap_pi_array
-from mm_utils.parsing import parse_path, parse_ros_path
+from mm_utils.math import wrap_pi_scalar
+from mm_utils.parsing import parse_array, parse_path, parse_ros_path
 
 
 class MPC(MPCBase):
@@ -31,7 +32,9 @@ class MPC(MPCBase):
         super().__init__(config)
         self._setup_esdf_collision()
 
-        num_terminal_cost = 2
+        # Terminal cost uses the first tracking costs in this order:
+        # BasePose, BaseVel, EEPose, EEVel.
+        num_terminal_cost = 4
         cost_params = config["cost_params"]
 
         # Create cost functions using simplified parameterized registry
@@ -71,6 +74,8 @@ class MPC(MPCBase):
                 "ControlEffort", self.robot, cost_params.get("Effort", {})
             )
         )
+        self.joint_soft_costs = self._create_joint_soft_costs(cost_params)
+        costs.extend(self.joint_soft_costs)
 
         # Add collision costs/constraints
         constraints = []
@@ -109,6 +114,7 @@ class MPC(MPCBase):
         # Initialize masks to None (will be set from references in control())
         self.base_mask = None
         self.ee_mask = None
+        self.base_only_task_active = False
 
     def _get_config_key_for_cost_name(self, cost_name):
         """Map cost function name to simplified config parameter key.
@@ -136,6 +142,106 @@ class MPC(MPCBase):
         effort_params = self.params["cost_params"]["Effort"]
         for param_name in ["Qqa", "Qqb", "Qva", "Qvb", "Qua", "Qub"]:
             curr_p_map[f"{param_name}_ControlEffort"] = effort_params[param_name]
+
+    def _create_joint_soft_costs(self, cost_params):
+        """Create optional soft joint bound costs from configuration."""
+        costs = []
+
+        arm_params = cost_params.get("ArmExtension", {})
+        if arm_params.get("enabled", False):
+            joint_names = arm_params.get(
+                "joint_names",
+                ["joint_arm_l3", "joint_arm_l2", "joint_arm_l1", "joint_arm_l0"],
+            )
+            q_indices = self._joint_names_to_q_indices(joint_names)
+            upper = self._parse_cost_vector(
+                arm_params.get("upper", 0.09), len(q_indices), "ArmExtension.upper"
+            )
+            base_task_upper = self._parse_cost_vector(
+                arm_params.get("base_task_upper", upper),
+                len(q_indices),
+                "ArmExtension.base_task_upper",
+            )
+            weights = self._parse_cost_vector(
+                arm_params.get("weight", 10.0), len(q_indices), "ArmExtension.weight"
+            )
+            cost = JointSquaredHingeCostFunction(
+                self.robot,
+                q_indices=q_indices,
+                bounds=upper,
+                signs=np.ones(len(q_indices)),
+                weights=weights,
+                smoothing=arm_params.get("smoothing", 1.0e-3),
+                name="ArmExtension",
+            )
+            cost.base_task_bounds = base_task_upper
+            costs.append(cost)
+
+        wrist_params = cost_params.get("WristYawLimit", {})
+        if wrist_params.get("enabled", False):
+            joint_name = wrist_params.get("joint_name", "joint_wrist_yaw")
+            q_idx = self._joint_names_to_q_indices([joint_name])[0]
+            limit = float(wrist_params.get("abs_limit", np.pi / 2.0))
+            lower = float(wrist_params.get("lower", -limit))
+            upper = float(wrist_params.get("upper", limit))
+            weight = float(wrist_params.get("weight", 10.0))
+            costs.append(
+                JointSquaredHingeCostFunction(
+                    self.robot,
+                    q_indices=[q_idx, q_idx],
+                    bounds=[upper, lower],
+                    signs=[1.0, -1.0],
+                    weights=[weight, weight],
+                    smoothing=wrist_params.get("smoothing", 1.0e-3),
+                    name="WristYawLimit",
+                )
+            )
+
+        return costs
+
+    def _joint_names_to_q_indices(self, joint_names):
+        configured_joint_names = list(self.robot.config.get("joint_names", []))
+        if len(configured_joint_names) == self.robot.DoF:
+            base_offset = 0
+        elif len(configured_joint_names) == self.robot.numjoint:
+            base_offset = 3
+        else:
+            raise ValueError(
+                "robot.joint_names length does not match controller DoF or arm DoF"
+            )
+
+        q_indices = []
+        for name in joint_names:
+            if name not in configured_joint_names:
+                raise ValueError(f"Unknown joint name in soft joint cost: {name}")
+            q_indices.append(base_offset + configured_joint_names.index(name))
+        return q_indices
+
+    @staticmethod
+    def _parse_cost_vector(value, expected_size, field_name):
+        if isinstance(value, (int, float)):
+            arr = np.full(expected_size, float(value))
+        elif isinstance(value, str):
+            arr = parse_array([value])
+        else:
+            arr = parse_array(value)
+
+        if arr.size == 1 and expected_size != 1:
+            arr = np.full(expected_size, float(arr[0]))
+        if arr.size != expected_size:
+            raise ValueError(
+                f"{field_name} must have length 1 or {expected_size}, got {arr.size}"
+            )
+        return arr
+
+    def _set_joint_soft_cost_params(self, curr_p_map):
+        for cost in self.joint_soft_costs:
+            bounds = cost.bounds
+            if cost.name == "ArmExtension" and self.base_only_task_active:
+                bounds = getattr(cost, "base_task_bounds", cost.bounds)
+            curr_p_map[f"bounds_{cost.name}"] = bounds
+            curr_p_map[f"weights_{cost.name}"] = cost.weights
+            curr_p_map[f"smoothing_{cost.name}"] = cost.smoothing
 
     def _setup_esdf_collision(self):
         """Configure optional ESDF linearization data used outside the solver."""
@@ -271,8 +377,9 @@ class MPC(MPCBase):
         """
         self.py_logger.debug(f"control time {t}")
         self.curr_control_time = t
-        q, v = robot_states
-        q[2:9] = wrap_pi_array(q[2:9])
+        q = np.asarray(robot_states[0], dtype=float).copy()
+        v = np.asarray(robot_states[1], dtype=float).copy()
+        q[2] = wrap_pi_scalar(q[2])
         xo = np.hstack((q, v))
 
         x_bar_initial, u_bar_initial = self._prepare_warm_start(t, xo)
@@ -338,6 +445,11 @@ class MPC(MPCBase):
         # Store masks as instance variables for use in _set_tracking_params
         self.base_mask = references.get("base_mask")
         self.ee_mask = references.get("ee_mask")
+        self.base_only_task_active = (
+            references.get("base_pose") is not None
+            and references.get("ee_pose") is None
+        )
+        self.log["base_only_task_active"] = bool(self.base_only_task_active)
 
         # Convert base pose reference - only if provided
         if references.get("base_pose") is not None:
@@ -398,6 +510,7 @@ class MPC(MPCBase):
             self._set_initial_guess(curr_p_map, i, x_bar_initial, u_bar_initial)
             self._set_tracking_params(curr_p_map, r_bar_map, i)
             self._set_control_effort_params(curr_p_map)
+            self._set_joint_soft_cost_params(curr_p_map)
             self._set_esdf_params(curr_p_map, i)
             self._set_ocp_params(curr_p_map, i)
             curr_p_map_bar.append(curr_p_map)
@@ -826,6 +939,7 @@ class MPC(MPCBase):
             "esdf_min_clearance": np.nan,
             "esdf_min_margin": np.nan,
             "esdf_constraint": 0,
+            "base_only_task_active": False,
             "x_bar": 0,
             "u_bar": 0,
             "lam_bar": 0,

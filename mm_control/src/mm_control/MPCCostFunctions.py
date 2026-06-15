@@ -628,6 +628,100 @@ class SoftConstraintsSquaredHingeCostFunction(CostFunctions):
         return self.p_dict
 
 
+class JointSquaredHingeCostFunction(CostFunctions):
+    """Squared hinge penalty for selected joint position bounds.
+
+    Each term is active only when the configured joint crosses its soft bound:
+        upper term: max(0, q_i - q_upper)^2
+        lower term: max(0, q_lower - q_i)^2
+    """
+
+    def __init__(
+        self,
+        robot_mdl: MobileManipulator3D,
+        q_indices,
+        bounds,
+        signs,
+        weights,
+        smoothing=1.0e-3,
+        name="JointSquaredHinge",
+        expand=True,
+    ):
+        ss_mdl = robot_mdl.ssSymMdl
+        super().__init__(ss_mdl["nx"], ss_mdl["nu"], name)
+
+        self.q_indices = list(q_indices)
+        self.bounds = list(bounds)
+        self.signs = list(signs)
+        self.weights = list(weights)
+        self.smoothing = float(smoothing)
+
+        n_terms = len(self.q_indices)
+        if not (len(self.bounds) == len(self.signs) == len(self.weights) == n_terms):
+            raise ValueError("q_indices, bounds, signs, and weights must align")
+        if n_terms == 0:
+            raise ValueError("JointSquaredHingeCostFunction requires at least one term")
+
+        self.p_dict = {
+            "bounds": cs.MX.sym("bounds_" + self.name, n_terms),
+            "weights": cs.MX.sym("weights_" + self.name, n_terms),
+            "smoothing": cs.MX.sym("smoothing_" + self.name, 1),
+        }
+        self.p_struct = casadi_sym_struct(self.p_dict)
+        self.p_sym = self.p_struct.cat
+
+        bounds_sym = self.p_struct["bounds"]
+        weights_sym = self.p_struct["weights"]
+        smoothing_sym = self.p_struct["smoothing"]
+
+        violation_eqns = []
+        for term_idx, (q_idx, sign) in enumerate(zip(self.q_indices, self.signs)):
+            raw = float(sign) * (self.x_sym[q_idx] - bounds_sym[term_idx])
+            root = cs.sqrt(raw**2 + smoothing_sym**2)
+            violation_eqns.append(0.5 * (raw + root))
+
+        self.violation_eqn = cs.vertcat(*violation_eqns)
+        self.J_vec_eqn = 0.5 * (cs.diag(weights_sym) @ (self.violation_eqn**2))
+        self.J_eqn = cs.sum1(self.J_vec_eqn)
+
+        dz = cs.vertcat(self.u_sym, self.x_sym)
+        dviolation_dz = cs.jacobian(self.violation_eqn, dz)
+        self.H_approx_eqn = dviolation_dz.T @ cs.diag(weights_sym) @ dviolation_dz
+
+        self.violation_fcn = cs.Function(
+            "violation_" + self.name,
+            [self.x_sym, self.u_sym, self.p_sym],
+            [self.violation_eqn],
+        )
+        self.J_fcn = cs.Function(
+            "J_" + self.name, [self.x_sym, self.u_sym, self.p_sym], [self.J_eqn]
+        )
+        self.J_vec_fcn = cs.Function(
+            "J_vec_" + self.name, [self.x_sym, self.u_sym, self.p_sym], [self.J_vec_eqn]
+        )
+        self.H_approx_fcn = cs.Function(
+            "H_approx_" + self.name,
+            [self.x_sym, self.u_sym, self.p_sym],
+            [self.H_approx_eqn],
+            ["x", "u", "r"],
+            ["H_approx"],
+        )
+
+        if expand:
+            self.violation_fcn = self.violation_fcn.expand()
+            self.J_fcn = self.J_fcn.expand()
+            self.J_vec_fcn = self.J_vec_fcn.expand()
+            self.H_approx_fcn = self.H_approx_fcn.expand()
+
+    def evaluate_vec(self, x, u, p):
+        """Evaluate per-term costs."""
+        return self.J_vec_fcn(x, u, p).toarray().flatten()
+
+    def evaluate_violation(self, x, u, p):
+        """Evaluate positive soft-bound violations."""
+        return self.violation_fcn(x, u, p).toarray().flatten()
+
+
 class RegularizationCostFunction(CostFunctions):
     """Regularization cost function (quadratic in state and control)."""
 

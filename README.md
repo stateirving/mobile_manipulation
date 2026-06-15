@@ -114,16 +114,16 @@ Configuration files are located in `mm_run/config/`. Key configuration options i
 - **Simulation**: Simulation settings (`config/sim/`)
 
 ## ESDF MPC Validation
-Use the merged ESDF validation config below. It keeps the challenge target, loads
-the warehouse scene visually, disables PyBullet collision for the scene, and uses
-the nvblox ESDF as the MPC obstacle field.
+Use the merged ESDF validation config below. It loads the checked-in test-room
+scene visually, disables PyBullet collision for the scene, and uses the bundled
+nvblox ESDF grid as the MPC obstacle field.
 
 Build the edited packages into the clean install tree:
 
 ```bash
 cd ~/repo/mobile_manipulation
 pixi run colcon build \
-  --packages-select mm_simulator mm_control mm_run \
+  --packages-up-to mm_simulator mm_control mm_run \
   --build-base build_clean \
   --install-base install_clean
 ```
