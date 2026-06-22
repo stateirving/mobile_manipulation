@@ -59,6 +59,7 @@ def render_camera_pose(
     t_w_c,
     renderer,
     exclude_body_ids,
+    return_segmentation=False,
 ):
     """Render from a camera-to-world pose using x-right, y-down, z-forward axes."""
     eye = t_w_c[:3, 3]
@@ -100,6 +101,9 @@ def render_camera_pose(
 
     depth = np.where(valid, depth, 0.0).astype(np.float32)
     mask = valid.astype(np.uint8)
+    if return_segmentation:
+        segmentation = np.asarray(result[4], dtype=np.int64).reshape(height, width)
+        return rgb, depth, mask, segmentation
     return rgb, depth, mask
 
 

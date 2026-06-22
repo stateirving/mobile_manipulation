@@ -1,0 +1,256 @@
+# Online nvblox ESDF MPC validation in the existing PyBullet experiment loop.
+# Run with:
+#   source install_clean/setup.bash
+#   python3 mm_control/scripts/generate_acados_code.py \
+#     --config $(ros2 pkg prefix mm_run)/share/mm_run/config/validate_online_nvblox_mpc_challenge.yaml
+#   python3 mm_run/scripts/experiment_online_nvblox.py \
+#     --config $(ros2 pkg prefix mm_run)/share/mm_run/config/validate_online_nvblox_mpc_challenge.yaml \
+#     --GUI
+#
+# The acados model is the same ESDF model as validate_esdf_mpc_challenge.yaml;
+# regenerate the solver only if the ESDF spheres/mode/model structure changes.
+
+planner:
+  tasks:
+    - name: firstgoal
+      planner_type: WaypointPlanner
+      base_pose: [2.0, 0.0, 0.0]
+      base_mask: [true, true, false]
+      tracking_pos_err_tol: 0.15
+      hold_period: 1.0
+    - name: ESDF Aisle Entry
+      planner_type: WaypointPlanner
+      # base_pose: [2.0, -2.3, 0.0]
+      # base_mask: [true, true, false]
+      ee_pose: [3.0, -0.5, 0.85, 0.0, 0.0, -0.0708]
+      ee_mask: [true, true, true, false, false, false]
+      tracking_pos_err_tol: 0.05
+      hold_period: 1.0
+    - name: ESDF Aisle Entry
+      planner_type: WaypointPlanner
+      # base_pose: [2.0, -2.3, 0.0]
+      # base_mask: [true, true, false]
+      ee_pose: [2.5, -0.75, 0.85, 0.0, 0.0, -0.0708]
+      ee_mask: [true, true, true, false, false, false]
+      tracking_pos_err_tol: 0.05
+      hold_period: 1.0
+    - name: ESDF Aisle Entry
+      planner_type: WaypointPlanner
+      # base_pose: [2.0, -2.3, 0.0]
+      # base_mask: [true, true, false]
+      ee_pose: [3.0, -0.5, 0.4, 0.0, 0.0, -0.0708]
+      ee_mask: [true, true, true, false, false, false]
+      tracking_pos_err_tol: 0.05
+      hold_period: 1.0
+    - name: ESDF Aisle Entry
+      planner_type: WaypointPlanner
+      # base_pose: [2.0, -2.3, 0.0]
+      # base_mask: [true, true, false]
+      ee_pose: [2.3, 0.0, 0.4, 0.0, 0.0, -0.0708]
+      ee_mask: [true, true, true, false, false, false]
+      tracking_pos_err_tol: 0.10
+      hold_period: 1.0
+    - name: ESDF Aisle Entry
+      planner_type: WaypointPlanner
+      # base_pose: [2.0, -2.3, 0.0]
+      # base_mask: [true, true, false]
+      ee_pose: [3.0, 0.5, 0.4, 0.0, 0.0, -0.0708]
+      ee_mask: [true, true, true, false, false, false]
+      tracking_pos_err_tol: 0.05
+      hold_period: 1.0
+
+controller:
+  cmd_vel_type: "integration"
+  self_collision_avoidance_enabled: False
+  static_obstacles_collision_avoidance_enabled: False
+  self_collision_emergency_stop: False
+  collision_emergency_stop_margin:
+    self: 0.0
+    static_obstacles: 0.0
+
+  scene:
+    enabled: True
+    collision_link_names:
+      static_obstacles: []
+    urdf:
+      package: "mm_assets"
+      path: "scenes/urdf/esdf_test_room.urdf"
+      includes:
+        - "$(find mm_assets)/scenes/xacro/esdf_test_room.urdf.xacro"
+
+  esdf_collision:
+    enabled: True
+    source: "online_nvblox"
+    spheres:
+      - "base_body_collision"
+      - "lift_collision"
+      - "lift_top_collision"
+      - "arm_l4_collision"
+      - "arm_l2_collision"
+      - "arm_l0_collision"
+      - "wrist_yaw_collision"
+      - "gripper_body_collision"
+      - "gripper_tip_collision"
+    d_safe: 0.05
+    mode: "squared_hinge_cost"
+    soft_cost:
+      p: 1.0
+      mu: 10000.0
+      smoothing: 5.0e-03
+    invalid_distance: -1.0
+    name: "esdf"
+    online_nvblox:
+      voxel_size: 0.03
+      integrator_type: "tsdf"
+      query_radius: 0.0
+      auto_update_esdf: True
+      update_esdf_on_depth: False
+      unknown_distance_threshold: 50.0
+      camera:
+        fx: 147.802
+        fy: 147.802
+        cx: 255.5
+        cy: 255.5
+        width: 512
+        height: 512
+
+  acados:
+    name: "StretchESDFBase"
+    cython:
+      enabled: True
+      recompile: False
+    ocp_solver_options:
+      nlp_solver_max_iter: 500
+      qp_solver_iter_max: 100
+    slack_enabled:
+      x: False
+      x_e: False
+      u: False
+      h_0: False
+      h: False
+      h_e: False
+
+  cost_params:
+    EEPose:
+      Qk: [1.0, 1.0, 1.0, 0.0, 0.0, 0.0]
+      P: [5.0, 5.0, 5.0, 0.0, 0.0, 0.0]
+    EEVel:
+      Qk: [0.0, 0.0, 0.0, 0.0, 0.0, 0.0]
+      P: [0.0, 0.0, 0.0, 0.0, 0.0, 0.0]
+    BasePose:
+      Qk: [1.5, 1.5, 0.5]
+      P: [0.0, 0.0, 0.0]
+    BaseVel:
+      Qvb: [0.01, 0.01, 0.01]
+      Qub: [0.01, 0.01, 0.01]
+    Effort:
+      Qqa: [0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0]
+      Qqb: [0.0, 0.0, 0.0]
+      Qva: [0.01, 0.01, 0.01, 0.01, 0.01, 0.01, 0.02, 0.02]
+      Qvb: [0.05, 0.05, 0.001]
+      Qua: [0.01, 0.01, 0.01, 0.01, 0.01, 0.01, 0.02, 0.02]
+      Qub: [0.05, 0.05, 0.001]
+    ArmExtension:
+      enabled: false
+      joint_names: ["joint_arm_l3", "joint_arm_l2", "joint_arm_l1", "joint_arm_l0"]
+      upper: [0.08, 0.08, 0.08, 0.08]
+      base_task_upper: [0.03, 0.03, 0.03, 0.03]
+      weight: [2.0, 2.0, 2.0, 2.0]
+      smoothing: 5.0e-03
+    WristYawLimit:
+      enabled: False
+      joint_name: "joint_wrist_yaw"
+      abs_limit: 1.5708
+      weight: 2.0
+      smoothing: 5.0e-03
+    Regularization:
+      eps: 1.0e-06
+    slack:
+      z: 1000
+      Z: 1000000
+
+simulation:
+  duration: 20.0
+  gui: False
+  collision_sphere_markers:
+    enabled: True
+    alpha: 0.25
+    color: [0.0, 0.7, 1.0]
+    object_colors: {}
+  static_obstacles:
+    enabled: True
+    collision_enabled: False
+    urdf:
+      package: "mm_assets"
+      path: "scenes/urdf/esdf_test_room.urdf"
+      includes:
+        - "$(find mm_assets)/scenes/xacro/esdf_test_room.urdf.xacro"
+
+online_nvblox_sim:
+  enabled: True
+  renderer: "tiny"
+  width: 512
+  height: 512
+  fov_y_deg: 120.0
+  near: 0.25
+  # far: 2.88
+  far: 4.0
+  ground_filter_min_z: 0.01
+  timing_log_interval_steps: 20
+  exclude_robot: True
+  exclude_collision_sphere_markers: True
+  diagnostics:
+    enabled: True
+    base_sphere_name: "base_body_collision"
+    unknown_distance: 100.0
+    unknown_distance_tolerance: 1.0e-03
+    target_link_names:
+      - "desk_right_leg_fr"
+      - "desk_right_leg_fl"
+      - "desk_right_leg_br"
+      - "desk_right_leg_bl"
+  preview:
+    enabled: True
+    mode: "rgb_depth"
+    window_name: "online nvblox simulated camera"
+    show_initial_scan: False
+    show_realtime_scan: True
+    wait_ms: 1
+    scale: 1.5
+  initial_scan:
+    enabled: False
+    num_views: 12
+    yaw_offset_deg: 2.5
+    camera_heights: [1.0]
+    update_esdf: True
+    origins:
+      - [0.0, 0.0, 0.0]
+      - [0.5, -1.5, -0.7854]
+      - [1.0, -2.0, -0.7854]
+      - [1.5, -2.5, -0.7854]
+  realtime_scan:
+    enabled: True
+    render_interval_steps: 1
+    pose_source: "camera_link"
+    camera_link_name: "camera_depth_frame"
+    camera_frame_convention: "ros_link"
+    # pose_correction_rpy: [-0.2618, 0.0, -1.5708]
+    pose_correction_rpy: [0.0, 0.0, -1.5708]
+    num_views: 1
+    camera_height: 1.0
+    yaw_offset_deg: 0.0
+    update_esdf: False
+
+include:
+  - package: "mm_run"
+    path: "config/sim/simulation.yaml"
+  - package: "mm_run"
+    path: "config/controller/MPC.yaml"
+  - package: "mm_run"
+    path: "config/scene/empty.yaml"
+  - package: "mm_run"
+    path: "config/robot/stretch.yaml"
+
+logging:
+  log_dir: "validate_online_nvblox_mpc_challenge"
+  log_level: 20

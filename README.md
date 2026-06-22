@@ -149,6 +149,29 @@ python3 mm_run/scripts/experiment.py \
   --GUI
 ```
 
+### Online nvblox ESDF MPC Validation
+Build the edited packages into the clean install tree:
+
+```bash
+cd ~/repo/mobile_manipulation
+pixi run colcon build \
+  --packages-up-to mm_simulator mm_control mm_run \
+  --build-base build_clean \
+  --install-base install_clean
+```
+
+Compile the online ESDF MPC acados solver:
+
+```bash
+pixi run bash -lc 'source install_clean/setup.bash && python3 mm_control/scripts/generate_acados_code.py --config $(ros2 pkg prefix mm_run)/share/mm_run/config/validate_online_nvblox_mpc_challenge.yaml'
+```
+
+Run the online nvblox PyBullet validation:
+
+```bash
+pixi run bash -lc 'source install_clean/setup.bash && python3 mm_run/scripts/experiment_online_nvblox.py --config $(ros2 pkg prefix mm_run)/share/mm_run/config/validate_online_nvblox_mpc_challenge.yaml --GUI'
+```
+
 If you edit the ESDF MPC model structure or solver options such as
-`nlp_solver_max_iter`, rebuild `mm_run` and run the compile command again before
-running the experiment.
+`nlp_solver_max_iter`, rebuild `mm_run` and run the matching compile command
+again before running the experiment.

@@ -22,6 +22,8 @@ if __name__ == "__main__":
 
     config["controller"]["acados"]["cython"]["enabled"] = True
     config["controller"]["acados"]["cython"]["recompile"] = True
+    if config["controller"].get("esdf_collision", {}).get("enabled", False):
+        config["controller"]["esdf_collision"]["initialize_map"] = False
 
     ctrl_config = config["controller"]
     ctrl_type = ctrl_config["type"]

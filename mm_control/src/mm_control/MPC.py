@@ -5,7 +5,7 @@ import numpy as np
 from numpy.typing import NDArray
 from scipy.interpolate import interp1d
 
-from mm_control.esdf_map import ESDFMap
+from mm_control.esdf_map import ESDFMap, OnlineNvbloxESDFMap
 from mm_control.MPCConstraints import (
     LinearizedESDFConstraint,
     NonholonomicBaseConstraint,
@@ -279,13 +279,11 @@ class MPC(MPCBase):
                 f"Supported modes are: {sorted(supported_modes)}"
             )
 
-        map_path = self._resolve_esdf_map_path(self.esdf_collision_config["map_path"])
-        self.esdf_map = ESDFMap(
-            map_path,
-            require_all_corners_valid=self.esdf_collision_config.get(
-                "require_all_corners_valid", True
-            ),
+        self.esdf_initialize_map = bool(
+            self.esdf_collision_config.get("initialize_map", True)
         )
+        if self.esdf_initialize_map:
+            self.esdf_map = self._create_esdf_map()
 
         sphere_names = list(self.esdf_collision_config.get("spheres", []))
         if (
@@ -303,6 +301,15 @@ class MPC(MPCBase):
         self.esdf_sphere_radii = np.asarray(
             [self._get_collision_sphere_radius(name) for name in sphere_names],
             dtype=float,
+        )
+        self.log["esdf_node0_distances"] = np.full(len(sphere_names), np.nan)
+        self.log["esdf_node0_margins"] = np.full(len(sphere_names), np.nan)
+        self.log["esdf_node0_valid"] = np.zeros(len(sphere_names), dtype=bool)
+        self.log["esdf_min_distance_per_sphere"] = np.full(
+            len(sphere_names), np.nan
+        )
+        self.log["esdf_min_margin_per_sphere"] = np.full(
+            len(sphere_names), np.nan
         )
         self.esdfCollisionCst = LinearizedESDFConstraint(
             self.robot,
@@ -330,6 +337,41 @@ class MPC(MPCBase):
         if isinstance(map_path, dict):
             return parse_ros_path(map_path)
         return parse_path(str(map_path))
+
+    def _create_esdf_map(self):
+        source = str(
+            self.esdf_collision_config.get("source", "offline")
+        ).lower()
+        if source in {"offline", "offline_npz", "npz", "exported_nvblox"}:
+            map_path = self._resolve_esdf_map_path(
+                self.esdf_collision_config["map_path"]
+            )
+            return ESDFMap(
+                map_path,
+                require_all_corners_valid=self.esdf_collision_config.get(
+                    "require_all_corners_valid", True
+                ),
+            )
+
+        if source in {"online", "online_nvblox", "nvblox"}:
+            config = dict(self.esdf_collision_config)
+            online_config = dict(config.get("online_nvblox", {}))
+            if "initial_map_path" in online_config:
+                initial_map_path = online_config["initial_map_path"]
+                online_config["initial_map_path"] = (
+                    self._resolve_esdf_map_path(initial_map_path)
+                )
+            elif "initial_map_path" in config:
+                config["initial_map_path"] = self._resolve_esdf_map_path(
+                    config["initial_map_path"]
+                )
+            config["online_nvblox"] = online_config
+            return OnlineNvbloxESDFMap.from_config(config)
+
+        raise ValueError(
+            f"Unsupported esdf_collision.source '{source}'. "
+            "Supported sources are 'offline' and 'online_nvblox'."
+        )
 
     def _get_collision_sphere_radius(self, name):
         if name not in self.robot.collisionLinkKinSymMdls:
@@ -536,6 +578,11 @@ class MPC(MPCBase):
         if not self.esdf_collision_enabled:
             self.esdf_linearization = None
             return
+        if self.esdf_map is None:
+            raise RuntimeError(
+                "ESDF collision is enabled but no ESDF map is initialized. "
+                "Set esdf_collision.initialize_map to true for runtime control."
+            )
 
         q_bar = x_bar_initial[:, : self.DoF]
         num_nodes = q_bar.shape[0]
@@ -570,6 +617,18 @@ class MPC(MPCBase):
         valid_distances = distances[valid]
         valid_clearance = clearance[valid]
         valid_margin = margin[valid]
+        min_distances_per_sphere = np.full(num_spheres, np.nan)
+        min_margins_per_sphere = np.full(num_spheres, np.nan)
+        for sphere_idx in range(num_spheres):
+            sphere_valid = valid[:, sphere_idx]
+            if not np.any(sphere_valid):
+                continue
+            min_distances_per_sphere[sphere_idx] = float(
+                np.min(distances[sphere_valid, sphere_idx])
+            )
+            min_margins_per_sphere[sphere_idx] = float(
+                np.min(margin[sphere_valid, sphere_idx])
+            )
         self.log["esdf_all_valid"] = bool(np.all(valid))
         self.log["esdf_valid_count"] = int(np.count_nonzero(valid))
         self.log["esdf_total_count"] = int(valid.size)
@@ -582,6 +641,11 @@ class MPC(MPCBase):
         self.log["esdf_min_margin"] = (
             float(np.min(valid_margin)) if valid_margin.size else np.nan
         )
+        self.log["esdf_node0_distances"] = distances[0].copy()
+        self.log["esdf_node0_margins"] = margin[0].copy()
+        self.log["esdf_node0_valid"] = valid[0].copy()
+        self.log["esdf_min_distance_per_sphere"] = min_distances_per_sphere
+        self.log["esdf_min_margin_per_sphere"] = min_margins_per_sphere
         t2 = time.perf_counter()
         self.log["time_esdf_linearization"] = t2 - t1
 
