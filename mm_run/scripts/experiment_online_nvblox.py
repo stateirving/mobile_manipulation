@@ -506,9 +506,11 @@ def _online_nvblox_stats(prefix, stats):
 
 def _zero_integration_stats():
     return {
+        "decays": 0,
         "frames": 0,
         "valid_depth_pixels": 0,
         "filtered_depth_pixels": 0,
+        "decay_time": 0.0,
         "render_time": 0.0,
         "filter_time": 0.0,
         "preview_time": 0.0,
@@ -521,6 +523,8 @@ def _zero_integration_stats():
 def _zero_map_timing():
     return {
         "add_depth_frame_time": 0.0,
+        "decay_time": 0.0,
+        "decay_count": 0,
         "update_esdf_time": 0.0,
         "query_layer_time": 0.0,
         "query_total_time": 0.0,
@@ -600,6 +604,22 @@ def _online_esdf_map(controller):
             "'online_nvblox'."
         )
     return esdf_map
+
+
+def _run_online_decay(controller, config, step_idx):
+    decay_config = config.get("decay", {})
+    if not bool(decay_config.get("enabled", False)):
+        return 0.0, 0
+
+    interval = int(decay_config.get("interval_steps", 1))
+    if interval <= 0 or step_idx % interval != 0:
+        return 0.0, 0
+
+    esdf_map = _online_esdf_map(controller)
+    decay_start = time.perf_counter()
+    decayed = esdf_map.decay()
+    decay_time = time.perf_counter() - decay_start
+    return decay_time, 1 if decayed else 0
 
 
 def _integrate_camera_poses(
@@ -740,6 +760,82 @@ def _camera_link_pose(robot, link_name, frame_convention, correction_rpy):
     return t_w_c
 
 
+def _realtime_camera_configs(scan_config):
+    camera_entries = scan_config.get("cameras")
+    if camera_entries is None:
+        return [scan_config]
+    if not isinstance(camera_entries, list):
+        raise TypeError("online_nvblox_sim.realtime_scan.cameras must be a list")
+
+    shared_config = {
+        key: value for key, value in scan_config.items() if key != "cameras"
+    }
+    camera_configs = []
+    for idx, entry in enumerate(camera_entries):
+        if not isinstance(entry, dict):
+            raise TypeError(
+                "Each online_nvblox_sim.realtime_scan.cameras entry must "
+                "be a mapping"
+            )
+        camera_config = dict(shared_config)
+        camera_config.update(entry)
+        camera_config.setdefault("name", f"camera{idx}")
+        if not bool(camera_config.get("enabled", True)):
+            continue
+        camera_configs.append(camera_config)
+    return camera_configs
+
+
+def _realtime_camera_poses_from_config(
+    sim, scan_config, base_pose, step_idx, interval
+):
+    pose_source = str(scan_config.get("pose_source", "camera_link")).lower()
+    camera_name = str(scan_config.get("name", pose_source))
+    name_prefix = f"realtime_{step_idx:06d}_{camera_name}"
+
+    if pose_source in {"camera_link", "link", "onboard"}:
+        link_name = scan_config.get(
+            "camera_link_name", "camera_depth_optical_frame"
+        )
+        frame_convention = scan_config.get(
+            "camera_frame_convention", "optical"
+        )
+        correction_rpy = scan_config.get(
+            "pose_correction_rpy", [0.0, 0.0, 0.0]
+        )
+        return [
+            (
+                f"{name_prefix}_{link_name}",
+                _camera_link_pose(
+                    sim.robot, link_name, frame_convention, correction_rpy
+                ),
+            )
+        ]
+
+    if pose_source in {"base_spin", "base"}:
+        num_views = int(scan_config.get("num_views", 1))
+        yaw_offset = math.radians(
+            float(scan_config.get("yaw_offset_deg", 0.0))
+        )
+        if scan_config.get("cycle_yaw_offset", False):
+            cycle = max(1, int(scan_config.get("cycle_length", 8)))
+            yaw_offset += (
+                2.0 * math.pi * ((step_idx // interval) % cycle) / cycle
+            )
+        return make_base_spin_camera_poses(
+            np.asarray(base_pose, dtype=float),
+            num_views,
+            float(scan_config.get("camera_height", 1.0)),
+            yaw_offset,
+            name_prefix=name_prefix,
+        )
+
+    raise ValueError(
+        "online_nvblox_sim.realtime_scan.pose_source must be "
+        "'camera_link' or 'base_spin'"
+    )
+
+
 def _run_initial_online_scan(controller, sim, config, preview, diagnostics):
     scan_config = config.get("initial_scan", {})
     if not scan_config.get("enabled", True):
@@ -784,53 +880,28 @@ def _run_realtime_online_scan(
     if not scan_config.get("enabled", True):
         return _zero_integration_stats(), diagnostics.zero_stats()
 
+    stats = _zero_integration_stats()
+    diagnostic_stats = diagnostics.zero_stats()
+    decay_time, decays = _run_online_decay(controller, config, step_idx)
+    stats["decay_time"] = decay_time
+    stats["decays"] = decays
+    stats["total_time"] = decay_time
+
     interval = int(scan_config.get("render_interval_steps", 1))
     if interval <= 0 or step_idx % interval != 0:
-        return _zero_integration_stats(), diagnostics.zero_stats()
+        return stats, diagnostic_stats
 
-    pose_source = str(scan_config.get("pose_source", "camera_link")).lower()
-    if pose_source in {"camera_link", "link", "onboard"}:
-        link_name = scan_config.get(
-            "camera_link_name", "camera_depth_optical_frame"
-        )
-        frame_convention = scan_config.get(
-            "camera_frame_convention", "optical"
-        )
-        correction_rpy = scan_config.get(
-            "pose_correction_rpy", [0.0, 0.0, 0.0]
-        )
-        camera_poses = [
-            (
-                f"realtime_{step_idx:06d}_{link_name}",
-                _camera_link_pose(
-                    sim.robot, link_name, frame_convention, correction_rpy
-                ),
+    camera_poses = []
+    for camera_config in _realtime_camera_configs(scan_config):
+        camera_poses.extend(
+            _realtime_camera_poses_from_config(
+                sim, camera_config, base_pose, step_idx, interval
             )
-        ]
-    elif pose_source in {"base_spin", "base"}:
-        num_views = int(scan_config.get("num_views", 1))
-        yaw_offset = math.radians(
-            float(scan_config.get("yaw_offset_deg", 0.0))
         )
-        if scan_config.get("cycle_yaw_offset", False):
-            cycle = max(1, int(scan_config.get("cycle_length", 8)))
-            yaw_offset += (
-                2.0 * math.pi * ((step_idx // interval) % cycle) / cycle
-            )
-        camera_poses = make_base_spin_camera_poses(
-            np.asarray(base_pose, dtype=float),
-            num_views,
-            float(scan_config.get("camera_height", 1.0)),
-            yaw_offset,
-            name_prefix=f"realtime_{step_idx:06d}",
-        )
-    else:
-        raise ValueError(
-            "online_nvblox_sim.realtime_scan.pose_source must be "
-            "'camera_link' or 'base_spin'"
-        )
+    if not camera_poses:
+        return stats, diagnostic_stats
 
-    return _integrate_camera_poses(
+    scan_stats, diagnostic_stats = _integrate_camera_poses(
         controller,
         sim,
         config,
@@ -840,6 +911,10 @@ def _run_realtime_online_scan(
         phase="realtime",
         diagnostics=diagnostics,
     )
+    scan_stats["decay_time"] += stats["decay_time"]
+    scan_stats["decays"] += stats["decays"]
+    scan_stats["total_time"] += stats["total_time"]
+    return scan_stats, diagnostic_stats
 
 
 def _configure_loggers(config):
@@ -1038,7 +1113,8 @@ def main():
         ):
             logging.getLogger("Controller").info(
                 "online nvblox step=%d frames=%d render=%.4fs "
-                "filter=%.4fs preview=%.4fs integrate=%.4fs "
+                "decays=%d decay=%.4fs filter=%.4fs "
+                "preview=%.4fs integrate=%.4fs "
                 "map_add=%.4fs map_update_esdf=%.4fs "
                 "map_query=%.4fs valid_depth=%d filtered_depth=%d "
                 "target_visible=%d target_integrated=%d "
@@ -1047,6 +1123,8 @@ def main():
                 step_idx,
                 realtime_stats["frames"],
                 realtime_stats["render_time"],
+                realtime_stats["decays"],
+                realtime_stats["decay_time"],
                 realtime_stats["filter_time"],
                 realtime_stats["preview_time"],
                 realtime_stats["integrate_time"],

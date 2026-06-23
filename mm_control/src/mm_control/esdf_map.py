@@ -259,6 +259,8 @@ class OnlineNvbloxESDFMap:
         self._pending_esdf_update = False
         self._timing = {
             "add_depth_frame_time": 0.0,
+            "decay_time": 0.0,
+            "decay_count": 0,
             "update_esdf_time": 0.0,
             "query_layer_time": 0.0,
             "query_total_time": 0.0,
@@ -433,8 +435,16 @@ class OnlineNvbloxESDFMap:
     def decay(self, mapper_id=None):
         mapper_id = self.mapper_id if mapper_id is None else int(mapper_id)
         with self._lock:
+            if not self._has_depth:
+                self._timing["decay_time"] = 0.0
+                self._timing["decay_count"] = 0
+                return False
+            t1 = time.perf_counter()
             self.mapper.decay(mapper_id)
+            self._timing["decay_time"] = time.perf_counter() - t1
+            self._timing["decay_count"] = 1
             self._pending_esdf_update = True
+            return True
 
     @property
     def last_timing(self):

@@ -1,3 +1,5 @@
+import threading
+
 import numpy as np
 import pytest
 
@@ -83,3 +85,34 @@ def test_online_nvblox_esdf_grad_query_tensor_has_radius_column():
     query = esdf._make_query_tensor(points)
     assert tuple(query.shape) == (2, 4)
     np.testing.assert_allclose(query[:, 3].numpy(), [0.15, 0.15])
+
+
+def test_online_nvblox_decay_marks_esdf_stale_only_after_depth():
+    class FakeMapper:
+        def __init__(self):
+            self.decay_mapper_ids = []
+
+        def decay(self, mapper_id):
+            self.decay_mapper_ids.append(mapper_id)
+
+    mapper = FakeMapper()
+    esdf = object.__new__(OnlineNvbloxESDFMap)
+    esdf.mapper = mapper
+    esdf.mapper_id = 7
+    esdf._lock = threading.RLock()
+    esdf._has_depth = False
+    esdf._pending_esdf_update = False
+    esdf._timing = {"decay_time": np.nan, "decay_count": 99}
+
+    assert esdf.decay() is False
+    assert mapper.decay_mapper_ids == []
+    assert esdf._pending_esdf_update is False
+    assert esdf._timing["decay_time"] == 0.0
+    assert esdf._timing["decay_count"] == 0
+
+    esdf._has_depth = True
+    assert esdf.decay() is True
+    assert mapper.decay_mapper_ids == [7]
+    assert esdf._pending_esdf_update is True
+    assert esdf._timing["decay_time"] >= 0.0
+    assert esdf._timing["decay_count"] == 1

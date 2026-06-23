@@ -95,12 +95,12 @@ controller:
     mode: "squared_hinge_cost"
     soft_cost:
       p: 1.0
-      mu: 10000.0
+      mu: 100.0
       smoothing: 5.0e-03
     invalid_distance: -1.0
     name: "esdf"
     online_nvblox:
-      voxel_size: 0.03
+      voxel_size: 0.01
       integrator_type: "tsdf"
       query_radius: 0.0
       auto_update_esdf: True
@@ -151,7 +151,7 @@ controller:
       Qua: [0.01, 0.01, 0.01, 0.01, 0.01, 0.01, 0.02, 0.02]
       Qub: [0.05, 0.05, 0.001]
     ArmExtension:
-      enabled: false
+      enabled: False
       joint_names: ["joint_arm_l3", "joint_arm_l2", "joint_arm_l1", "joint_arm_l0"]
       upper: [0.08, 0.08, 0.08, 0.08]
       base_task_upper: [0.03, 0.03, 0.03, 0.03]
@@ -193,12 +193,15 @@ online_nvblox_sim:
   height: 512
   fov_y_deg: 120.0
   near: 0.25
-  # far: 2.88
-  far: 4.0
+  far: 2.88
+  # far: 4.0
   ground_filter_min_z: 0.01
   timing_log_interval_steps: 20
   exclude_robot: True
   exclude_collision_sphere_markers: True
+  decay:
+    enabled: True
+    interval_steps: 3
   diagnostics:
     enabled: True
     base_sphere_name: "base_body_collision"
@@ -230,16 +233,25 @@ online_nvblox_sim:
       - [1.5, -2.5, -0.7854]
   realtime_scan:
     enabled: True
-    render_interval_steps: 1
-    pose_source: "camera_link"
-    camera_link_name: "camera_depth_frame"
-    camera_frame_convention: "ros_link"
-    # pose_correction_rpy: [-0.2618, 0.0, -1.5708]
-    pose_correction_rpy: [0.0, 0.0, -1.5708]
-    num_views: 1
-    camera_height: 1.0
-    yaw_offset_deg: 0.0
+    render_interval_steps: 3
     update_esdf: False
+    cameras:
+      - name: "head"
+        pose_source: "camera_link"
+        camera_link_name: "camera_depth_frame"
+        camera_frame_convention: "ros_link"
+        # pose_correction_rpy: [-0.2618, 0.0, -1.5708]
+        pose_correction_rpy: [0.0, 0.0, -1.5708]
+      - name: "base"
+        pose_source: "base_spin"
+        num_views: 1
+        camera_height: 0.45
+        yaw_offset_deg: 0.0
+      # - name: "wrist"
+      #   pose_source: "camera_link"
+      #   camera_link_name: "gripper_camera_depth_frame"
+      #   camera_frame_convention: "ros_link"
+      #   pose_correction_rpy: [0.0, 0.0, 0.0]
 
 include:
   - package: "mm_run"
