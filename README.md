@@ -1,28 +1,29 @@
 # Mobile Manipulation
 A ROS-based framework for mobile manipulation research, featuring MPC-based control, robot simulation, and planning utilities.
 
-> [!IMPORTANT] 
-> The instructions in this readme are not yet updated for ROS2 and pixi. Use the following commands.
+> [!IMPORTANT]
+> Current ROS2/pixi workflow. Build into the default `install/` tree and source
+> `install/setup.bash` for all runtime commands.
 >
 > Make sure submodules are cloned
 > `git submodule update --init --recursive`
 >
 > For installation, simply install the pixi environment:
 > `pixi shell`
-> 
+>
 > The following commands were tested:
-> 
+>
 > - Build packages
 >   - `colcon build && source install/setup.bash`
 >
 > - Compile MPC Controller
 >   - `python3 mm_control/scripts/generate_acados_code.py --config $(ros2 pkg prefix mm_run)/share/mm_run/config/simple_experiment.yaml`
-> 
+>
 > - Run Controller with PyBullet Simulation (Synchronous)
 >   - `python3 mm_run/scripts/experiment.py --config $(ros2 pkg prefix mm_run)/share/mm_run/config/simple_experiment.yaml --GUI`
 >
 > The two commands above no longer depend on `mobile_manipulation_central` or `ur_description`. Legacy ROS launch files and nodes still do.
-> 
+>
 > - Run Controller and Simulation Asynchronously (ROS Nodes)
 >   - `ros2 launch mm_run run_pybullet_sim.launch.py config:=$(ros2 pkg prefix mm_run)/share/mm_run/config/simple_experiment.yaml`
 
@@ -36,9 +37,27 @@ A ROS-based framework for mobile manipulation research, featuring MPC-based cont
 
 Configuration parameters are documented in [configuration.md](./mm_run/config/configuration.md).
 
-## Installation
+## Current Setup
+Use the pixi environment and build the ROS2 packages into the default colcon
+install tree:
+
+```bash
+cd ~/repo/mobile_manipulation
+git submodule update --init --recursive
+pixi shell
+colcon build && source install/setup.bash
+```
+
+In a new terminal, run `pixi shell` and `source install/setup.bash` again before
+using `ros2 pkg prefix`, launching nodes, or running experiments.
+
+## Legacy Installation Notes
+The notes below are for older ROS Noetic/catkin workflows and some legacy launch
+files. They are not required for the synchronous pixi commands above.
+
 ### Prerequisites
-Ensure you have ROS Noetic installed on your system. Follow the [ROS Noetic installation guide](http://wiki.ros.org/noetic/Installation/Ubuntu) if it's not already set up.
+For the legacy workflow, ensure you have ROS Noetic installed on your system.
+Follow the [ROS Noetic installation guide](http://wiki.ros.org/noetic/Installation/Ubuntu) if it's not already set up.
 
 ### Installation of `mobile_manipulation_central`
 `mobile_manipulation_central` is no longer required for the synchronous commands above. It is still required for some legacy ROS launch files and nodes in this repository.
@@ -88,7 +107,7 @@ python3 mm_run/scripts/experiment.py --config $(ros2 pkg prefix mm_run)/share/mm
 
 ### Run Controller and Simulation Asynchronously (ROS Nodes)
 ```bash
-ros2 launch mm_run run_pybullet_sim.launch config:=$(ros2 pkg prefix mm_run)/share/mm_run/config/simple_experiment.yaml
+ros2 launch mm_run run_pybullet_sim.launch.py config:=$(ros2 pkg prefix mm_run)/share/mm_run/config/simple_experiment.yaml
 ```
 
 ### Visualize Results
@@ -114,64 +133,79 @@ Configuration files are located in `mm_run/config/`. Key configuration options i
 - **Simulation**: Simulation settings (`config/sim/`)
 
 ## ESDF MPC Validation
-Use the merged ESDF validation config below. It loads the checked-in test-room
-scene visually, disables PyBullet collision for the scene, and uses the bundled
-nvblox ESDF grid as the MPC obstacle field.
+Use the default colcon install tree. Runtime config paths are resolved through
+`$(ros2 pkg prefix mm_run)`, so rebuild after editing Python files or YAML under
+`mm_run/config/`. The validation commands below assume you are already inside
+`pixi shell`.
 
-Build the edited packages into the clean install tree:
+Build only after code/config changes:
 
 ```bash
 cd ~/repo/mobile_manipulation
-pixi run colcon build \
-  --packages-up-to mm_simulator mm_control mm_run \
-  --build-base build_clean \
-  --install-base install_clean
+colcon build && source install/setup.bash
 ```
 
-Source the clean install tree:
+Verify the default install tree:
 
 ```bash
-source install_clean/setup.bash
+ros2 pkg prefix mm_run
+ros2 pkg prefix mm_control
 ```
 
 Compile the ESDF MPC acados solver:
 
 ```bash
-python3 mm_control/scripts/generate_acados_code.py \
-  --config $(ros2 pkg prefix mm_run)/share/mm_run/config/validate_esdf_mpc_challenge.yaml
+python3 mm_control/scripts/generate_acados_code.py --config $(ros2 pkg prefix mm_run)/share/mm_run/config/stretch_esdf_offline.yaml
 ```
 
 Run the PyBullet validation:
 
 ```bash
-python3 mm_run/scripts/experiment.py \
-  --config $(ros2 pkg prefix mm_run)/share/mm_run/config/validate_esdf_mpc_challenge.yaml \
-  --GUI
+python3 mm_run/scripts/experiment.py --config $(ros2 pkg prefix mm_run)/share/mm_run/config/stretch_esdf_offline.yaml --GUI
 ```
 
 ### Online nvblox ESDF MPC Validation
-Build the edited packages into the clean install tree:
-
-```bash
-cd ~/repo/mobile_manipulation
-pixi run colcon build \
-  --packages-up-to mm_simulator mm_control mm_run \
-  --build-base build_clean \
-  --install-base install_clean
-```
-
 Compile the online ESDF MPC acados solver:
 
 ```bash
-pixi run bash -lc 'source install_clean/setup.bash && python3 mm_control/scripts/generate_acados_code.py --config $(ros2 pkg prefix mm_run)/share/mm_run/config/validate_online_nvblox_mpc_challenge.yaml'
+python3 mm_control/scripts/generate_acados_code.py --config $(ros2 pkg prefix mm_run)/share/mm_run/config/stretch_esdf_online_nvblox.yaml
 ```
 
 Run the online nvblox PyBullet validation:
 
 ```bash
-pixi run bash -lc 'source install_clean/setup.bash && python3 mm_run/scripts/experiment_online_nvblox.py --config $(ros2 pkg prefix mm_run)/share/mm_run/config/validate_online_nvblox_mpc_challenge.yaml --GUI'
+python3 mm_run/scripts/experiment_online_nvblox.py --config $(ros2 pkg prefix mm_run)/share/mm_run/config/stretch_esdf_online_nvblox.yaml --GUI
+```
+
+### CasADi Local Grid Online nvblox MPC
+This experimental config inherits `stretch_esdf_online_nvblox.yaml`
+and changes only the ESDF collision backend to a local CasADi interpolant.
+
+Full command sequence:
+
+```bash
+cd ~/repo/mobile_manipulation
+pixi shell
+colcon build && source install/setup.bash
+python3 mm_control/scripts/generate_acados_code.py --config $(ros2 pkg prefix mm_run)/share/mm_run/config/stretch_esdf_online_nvblox_casadi_local_grid.yaml
+python3 mm_run/scripts/experiment_online_nvblox.py --config $(ros2 pkg prefix mm_run)/share/mm_run/config/stretch_esdf_online_nvblox_casadi_local_grid.yaml --GUI
+```
+
+If the package is already built and `install/setup.bash` is already sourced,
+only rerun the last command to repeat the same experiment:
+
+```bash
+python3 mm_run/scripts/experiment_online_nvblox.py --config $(ros2 pkg prefix mm_run)/share/mm_run/config/stretch_esdf_online_nvblox_casadi_local_grid.yaml --GUI
+```
+
+Quick checks:
+
+```bash
+python3 -c "from mm_control.local_esdf_grid import LocalESDFGridSampler; print(LocalESDFGridSampler({}).shape)"
 ```
 
 If you edit the ESDF MPC model structure or solver options such as
 `nlp_solver_max_iter`, rebuild `mm_run` and run the matching compile command
-again before running the experiment.
+again before running the experiment. For the CasADi local grid backend, changing
+`voxel_size`, `size_xy`, `z_range`, or `acados.name` also requires regenerating
+the solver.

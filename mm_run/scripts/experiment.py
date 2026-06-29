@@ -115,7 +115,8 @@ def main():
     controller = control_class(ctrl_config)
 
     # Task Manager (simplified - only sequential execution)
-    sot = TaskManager(planner_config)
+    planner_resources = {"esdf_map": getattr(controller, "esdf_map", None)}
+    sot = TaskManager(planner_config, resources=planner_resources)
     base_targets, ee_targets = sot.getVisualizationTargets()
     sim.import_target_markers(base_targets=base_targets, ee_targets=ee_targets)
 

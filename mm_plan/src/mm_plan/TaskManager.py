@@ -11,13 +11,26 @@ from mm_utils.enums import RefType
 class TaskManager:
     """Task manager that executes tasks sequentially and extracts references for MPC."""
 
-    def __init__(self, config):
+    def __init__(self, config, resources=None):
         self.config = config
+        self.resources = {} if resources is None else resources
         self.started = False
-        self.planners = [create_planner(task) for task in config["tasks"]]
+        self.planners = [
+            create_planner(task, resources=self.resources)
+            for task in config["tasks"]
+        ]
         self.planner_num = len(self.planners)
         self.curr_task_id = 0
         self.logger = logging.getLogger("Planner")
+
+    def setResources(self, resources):
+        """Attach runtime resources to planners after construction."""
+        if resources is None:
+            return
+        self.resources.update(resources)
+        for planner in self.planners:
+            if hasattr(planner, "set_resources"):
+                planner.set_resources(self.resources)
 
     def activatePlanners(self):
         """Activate all planners."""
@@ -76,6 +89,10 @@ class TaskManager:
         if is_current_task and planner.ref_type == RefType.PATH and not planner.started:
             planner.started = True
             planner.start_time = t
+        if is_current_task and hasattr(planner, "updatePlanningContext"):
+            planner.updatePlanningContext(
+                t, robot_states, num_horizon_points, dt
+            )
 
         # Process base references
         if planner.has_base_ref:

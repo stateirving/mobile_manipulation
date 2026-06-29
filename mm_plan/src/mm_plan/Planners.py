@@ -560,11 +560,12 @@ class PathPlanner(Planner):
         self.py_logger.info(f"{self.name} reset")
 
 
-def create_planner(config: dict):
+def create_planner(config: dict, resources=None):
     """Create a planner instance from configuration.
 
     Args:
         config (dict): Planner configuration dictionary containing "planner_type".
+        resources (dict, optional): Runtime resources shared with planners.
 
     Returns:
         Instance of the requested planner
@@ -581,8 +582,12 @@ def create_planner(config: dict):
         return WaypointPlanner(config)
     elif planner_type == "PathPlanner":
         return PathPlanner(config)
+    elif planner_type == "OMPLBasePlanner":
+        from mm_plan.ompl_base_planner import OMPLBasePlanner
+
+        return OMPLBasePlanner(config, resources=resources)
     else:
         raise ValueError(
             f"Unknown planner type: '{planner_type}'. "
-            f"Available: WaypointPlanner, PathPlanner"
+            f"Available: WaypointPlanner, PathPlanner, OMPLBasePlanner"
         )

@@ -212,5 +212,5 @@ include:
     path: "config/robot/stretch.yaml"
 
 logging:
-  log_dir: "validate_esdf_mpc_challenge"
+  log_dir: "stretch_esdf_offline"
   log_level: 20

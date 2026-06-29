@@ -1,13 +1,13 @@
 # Online nvblox ESDF MPC validation in the existing PyBullet experiment loop.
 # Run with:
-#   source install_clean/setup.bash
+#   source install/setup.bash
 #   python3 mm_control/scripts/generate_acados_code.py \
-#     --config $(ros2 pkg prefix mm_run)/share/mm_run/config/validate_online_nvblox_mpc_challenge.yaml
+#     --config $(ros2 pkg prefix mm_run)/share/mm_run/config/stretch_esdf_online_nvblox.yaml
 #   python3 mm_run/scripts/experiment_online_nvblox.py \
-#     --config $(ros2 pkg prefix mm_run)/share/mm_run/config/validate_online_nvblox_mpc_challenge.yaml \
+#     --config $(ros2 pkg prefix mm_run)/share/mm_run/config/stretch_esdf_online_nvblox.yaml \
 #     --GUI
 #
-# The acados model is the same ESDF model as validate_esdf_mpc_challenge.yaml;
+# The acados model is the same ESDF model as stretch_esdf_offline.yaml;
 # regenerate the solver only if the ESDF spheres/mode/model structure changes.
 
 planner:
@@ -264,5 +264,5 @@ include:
     path: "config/robot/stretch.yaml"
 
 logging:
-  log_dir: "validate_online_nvblox_mpc_challenge"
+  log_dir: "stretch_esdf_online_nvblox"
   log_level: 20

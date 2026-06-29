@@ -1,0 +1,89 @@
+# Online nvblox ESDF + OMPL base planner + existing whole-body MPC.
+#
+# OMPL plans a global SE(2) base path from the online ESDF map. The MPC still
+# tracks the resulting references with the full Stretch model and keeps the
+# existing ESDF collision cost active.
+
+include:
+  - package: "mm_run"
+    path: "config/stretch_esdf_online_nvblox.yaml"
+
+planner:
+  tasks:
+    - name: "OMPL Base To Work Area"
+      planner_type: OMPLBasePlanner
+      base_pose: [2.0, 0.0, 0.0]
+      base_mask: [true, true, false]
+      bounds_xy: [[-4.0, 4.0], [-4.0, 4.0]]
+      bounds_margin: 0.75
+      tracking_pos_err_tol: 0.15
+      tracking_ori_err_tol: 0.25
+      end_stop: false
+      ompl:
+        planner: "RRTConnect"
+        solve_time: 0.5
+        simplify: true
+        simplify_time: 0.05
+        range: 0.1
+        goal_tolerance: 0.08
+        state_validity_resolution: 0.01
+      path:
+        dt: 0.1
+        linear_speed: 0.25
+        angular_speed: 0.8
+        interpolation_resolution: 0.05
+        yaw_mode: "tangent"
+      esdf:
+        enabled: true
+        base_radius: 0.35
+        d_safe: 0.30
+        query_z: [0.15, 0.35]
+        unknown_is_valid: false
+        allow_straight_line_fallback: false
+      replan:
+        enabled: true
+        min_interval: 1.0
+        check_horizon: 2.0
+        check_dt: 0.2
+        min_clearance: 0.02
+        deviation_threshold: 0.4
+        force_periodic: True
+        keep_previous_on_failure: true
+
+    - name: "EE Approach"
+      planner_type: WaypointPlanner
+      ee_pose: [3.0, -0.5, 0.85, 0.0, 0.0, -0.0708]
+      ee_mask: [true, true, true, false, false, false]
+      tracking_pos_err_tol: 0.05
+      hold_period: 1.0
+
+    - name: "EE Reach Low"
+      planner_type: WaypointPlanner
+      ee_pose: [3.0, -0.5, 0.4, 0.0, 0.0, -0.0708]
+      ee_mask: [true, true, true, false, false, false]
+      tracking_pos_err_tol: 0.05
+      hold_period: 1.0
+
+controller:
+  cost_params:
+    ArmExtension:
+      enabled: True
+      joint_names: ["joint_arm_l3", "joint_arm_l2", "joint_arm_l1", "joint_arm_l0"]
+      upper: [0.08, 0.08, 0.08, 0.08]
+      base_task_upper: [0.03, 0.03, 0.03, 0.03]
+      weight: [2.0, 2.0, 2.0, 2.0]
+      smoothing: 5.0e-03
+
+simulation:
+  duration: 7.0
+
+online_nvblox_sim:
+  initial_scan:
+    enabled: true
+    update_esdf: true
+  realtime_scan:
+    enabled: true
+    update_esdf: false
+
+logging:
+  log_dir: "stretch_esdf_online_nvblox_ompl_wbmpc"
