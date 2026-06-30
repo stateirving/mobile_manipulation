@@ -177,6 +177,22 @@ Run the online nvblox PyBullet validation:
 python3 mm_run/scripts/experiment_online_nvblox.py --config $(ros2 pkg prefix mm_run)/share/mm_run/config/stretch_esdf_online_nvblox.yaml --GUI
 ```
 
+### OMPL Base Planner Online nvblox WB-MPC
+This config inherits `stretch_esdf_online_nvblox.yaml`, uses OMPL for the base
+path, and keeps the existing whole-body MPC controller.
+
+Compile the OMPL WB-MPC acados solver:
+
+```bash
+python3 mm_control/scripts/generate_acados_code.py --config $(ros2 pkg prefix mm_run)/share/mm_run/config/stretch_esdf_online_nvblox_ompl_wbmpc.yaml
+```
+
+Run the OMPL WB-MPC online nvblox validation:
+
+```bash
+python3 mm_run/scripts/experiment_online_nvblox.py --config $(ros2 pkg prefix mm_run)/share/mm_run/config/stretch_esdf_online_nvblox_ompl_wbmpc.yaml --GUI
+```
+
 ### CasADi Local Grid Online nvblox MPC
 This experimental config inherits `stretch_esdf_online_nvblox.yaml`
 and changes only the ESDF collision backend to a local CasADi interpolant.

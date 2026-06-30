@@ -100,6 +100,12 @@ class OMPLBasePlanner(Planner):
         self.replan_min_clearance = float(
             replan_config.get("min_clearance", 0.0)
         )
+        self.replan_validate_every_step = bool(
+            replan_config.get("validate_every_step", False)
+        )
+        self.replan_validate_remaining_path = bool(
+            replan_config.get("validate_remaining_path", False)
+        )
         self.replan_deviation_threshold = float(
             replan_config.get("deviation_threshold", 0.4)
         )
@@ -143,6 +149,13 @@ class OMPLBasePlanner(Planner):
             return
         if not self.replan_enabled:
             return
+        if self.replan_validate_every_step:
+            reason = self._replan_reason(
+                t, robot_states, num_pts, dt, allow_periodic=False
+            )
+            if reason is not None:
+                self._attempt_replan(robot_states, t, reason)
+            return
         if self.last_replan_time is not None:
             elapsed = t - self.last_replan_time
             if elapsed < self.replan_min_interval:
@@ -151,6 +164,9 @@ class OMPLBasePlanner(Planner):
         reason = self._replan_reason(t, robot_states, num_pts, dt)
         if reason is None:
             return
+        self._attempt_replan(robot_states, t, reason)
+
+    def _attempt_replan(self, robot_states, t, reason):
         try:
             self._set_plan_from_current_state(robot_states, t, reason)
         except Exception as exc:
@@ -277,8 +293,10 @@ class OMPLBasePlanner(Planner):
             self.replan_count,
         )
 
-    def _replan_reason(self, t, robot_states, num_pts=None, dt=None):
-        if self.replan_force_periodic:
+    def _replan_reason(
+        self, t, robot_states, num_pts=None, dt=None, allow_periodic=True
+    ):
+        if allow_periodic and self.replan_force_periodic:
             return "periodic"
 
         current_base = self._base_pose_from_robot_states(robot_states)
@@ -286,7 +304,10 @@ class OMPLBasePlanner(Planner):
         if deviation > self.replan_deviation_threshold:
             return f"path_deviation_{deviation:.3f}"
 
-        min_clearance = self._future_path_min_clearance(t, num_pts, dt)
+        if self.replan_validate_remaining_path:
+            min_clearance = self._remaining_path_min_clearance(t)
+        else:
+            min_clearance = self._future_path_min_clearance(t, num_pts, dt)
         if min_clearance < self.replan_min_clearance:
             return f"path_clearance_{min_clearance:.3f}"
         return None
@@ -314,6 +335,30 @@ class OMPLBasePlanner(Planner):
         times = time_offset + np.arange(0.0, horizon + 1.0e-9, check_dt)
         if times.size == 0:
             times = np.array([time_offset], dtype=np.float64)
+
+        min_clearance = np.inf
+        for query_time in times:
+            state = interpolate(query_time, self.base_plan)[0]
+            min_clearance = min(
+                min_clearance, self._state_clearance(state)
+            )
+        return float(min_clearance)
+
+    def _remaining_path_min_clearance(self, t):
+        if not self.esdf_enabled:
+            return np.inf
+        if self.esdf_map is None:
+            return np.inf
+        if self.base_plan is None or len(self.base_plan["p"]) == 0:
+            return -np.inf
+
+        time_offset = t - self.start_time if self.started else 0.0
+        path_end = float(self.base_plan["t"][-1])
+        time_offset = min(max(0.0, time_offset), path_end)
+        check_dt = max(self.replan_check_dt, 1.0e-3)
+        times = np.arange(time_offset, path_end + 1.0e-9, check_dt)
+        if times.size == 0 or times[-1] < path_end:
+            times = np.append(times, path_end)
 
         min_clearance = np.inf
         for query_time in times:
@@ -383,6 +428,7 @@ class OMPLBasePlanner(Planner):
         raw_path = self._extract_solution_path(setup.getSolutionPath())
         if len(raw_path) < 2:
             raise RuntimeError("OMPL solution path has fewer than two states")
+        self._ensure_goal_reached(raw_path[-1], goal)
         return self._densify_path(raw_path)
 
     def _make_ompl_planner(self, og, space_information):
@@ -401,6 +447,18 @@ class OMPLBasePlanner(Planner):
             state = solution_path.getState(idx)
             points.append([state.getX(), state.getY(), state.getYaw()])
         return np.asarray(points, dtype=np.float64)
+
+    def _ensure_goal_reached(self, endpoint, goal):
+        endpoint = np.asarray(endpoint, dtype=np.float64)
+        goal = np.asarray(goal, dtype=np.float64)
+        position_error = float(np.linalg.norm(endpoint[:2] - goal[:2]))
+        if position_error <= self.goal_tolerance:
+            return
+        raise RuntimeError(
+            f"OMPL {self.planner_name} solution endpoint is "
+            f"{position_error:.3f} m from goal, exceeding "
+            f"goal_tolerance {self.goal_tolerance:.3f}"
+        )
 
     def _is_state_valid(self, state):
         return bool(self._state_clearance(state) >= 0.0)

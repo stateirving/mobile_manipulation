@@ -12,15 +12,15 @@ planner:
   tasks:
     - name: "OMPL Base To Work Area"
       planner_type: OMPLBasePlanner
-      base_pose: [2.0, 0.0, 0.0]
-      base_mask: [true, true, false]
+      base_pose: [2.0, -2.0, 0.0]
+      base_mask: [true, true, true]
       bounds_xy: [[-4.0, 4.0], [-4.0, 4.0]]
       bounds_margin: 0.75
       tracking_pos_err_tol: 0.15
       tracking_ori_err_tol: 0.25
       end_stop: false
       ompl:
-        planner: "RRTConnect"
+        planner: "RRTstar"
         solve_time: 0.5
         simplify: true
         simplify_time: 0.05
@@ -35,19 +35,23 @@ planner:
         yaw_mode: "tangent"
       esdf:
         enabled: true
-        base_radius: 0.35
-        d_safe: 0.30
+        base_radius: 0.25
+        d_safe: 0.1
         query_z: [0.15, 0.35]
-        unknown_is_valid: false
+        # Treat unexplored ESDF cells as free for the initial optimistic RRT.
+        # Every-step path validation below will fold in newly observed obstacles.
+        unknown_is_valid: true
         allow_straight_line_fallback: false
       replan:
         enabled: true
+        validate_every_step: true
+        validate_remaining_path: true
         min_interval: 1.0
         check_horizon: 2.0
         check_dt: 0.2
         min_clearance: 0.02
         deviation_threshold: 0.4
-        force_periodic: True
+        force_periodic: false
         keep_previous_on_failure: true
 
     - name: "EE Approach"
@@ -66,18 +70,26 @@ planner:
 
 controller:
   cost_params:
+    BasePose:
+      Qk: [1.5, 1.5, 3.0]
+      P: [2.0, 2.0, 2.0]
+    BaseVel:
+      Qk: [0.01, 0.01, 0.25]
+      P: [0.01, 0.01, 0.10]
     ArmExtension:
       enabled: True
       joint_names: ["joint_arm_l3", "joint_arm_l2", "joint_arm_l1", "joint_arm_l0"]
       upper: [0.08, 0.08, 0.08, 0.08]
-      base_task_upper: [0.03, 0.03, 0.03, 0.03]
-      weight: [2.0, 2.0, 2.0, 2.0]
+      base_task_upper: [0.00, 0.00, 0.00, 0.00]
+      weight: [10.0, 10.0, 10.0, 10.0]
       smoothing: 5.0e-03
 
 simulation:
-  duration: 7.0
+  duration: 30.0
 
 online_nvblox_sim:
+  preview:
+    enabled: false
   initial_scan:
     enabled: true
     update_esdf: true
