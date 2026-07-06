@@ -586,8 +586,13 @@ def create_planner(config: dict, resources=None):
         from mm_plan.ompl_base_planner import OMPLBasePlanner
 
         return OMPLBasePlanner(config, resources=resources)
+    elif planner_type == "OMPLEEPlanner":
+        from mm_plan.ompl_ee_planner import OMPLEEPlanner
+
+        return OMPLEEPlanner(config, resources=resources)
     else:
         raise ValueError(
             f"Unknown planner type: '{planner_type}'. "
-            f"Available: WaypointPlanner, PathPlanner, OMPLBasePlanner"
+            "Available: WaypointPlanner, PathPlanner, OMPLBasePlanner, "
+            "OMPLEEPlanner"
         )

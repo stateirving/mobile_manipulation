@@ -491,7 +491,8 @@ class ControllerROSNode(Node):
         states = (self.robot_interface.q, self.robot_interface.v)
         self.get_logger().info(f"robot coord: {self.robot_interface.q}")
         planner_resources = {
-            "esdf_map": getattr(self.controller, "esdf_map", None)
+            "esdf_map": getattr(self.controller, "esdf_map", None),
+            "robot_model": getattr(self.controller, "robot", None),
         }
         self.sot = TaskManager(
             self.planner_config.copy(), resources=planner_resources

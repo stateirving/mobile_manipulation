@@ -530,6 +530,8 @@ class BulletSimulation:
         # ghost objects
         self.ghosts = []
         self.target_marker_ids = {"base": [], "ee": []}
+        self.planned_path_marker_ids = []
+        self.planned_path_marker_signature = None
         self.collision_sphere_marker_bodies = []
         self.collision_sphere_marker_specs = []
         self._setup_collision_sphere_markers()
@@ -635,6 +637,11 @@ class BulletSimulation:
             pyb.removeUserDebugItem(item_id)
         self.target_marker_ids[marker_type] = []
 
+    def _clear_planned_path_marker(self):
+        for item_id in self.planned_path_marker_ids:
+            pyb.removeUserDebugItem(item_id)
+        self.planned_path_marker_ids = []
+
     def _draw_cross_marker(self, position, color, size=0.12, line_width=3):
         position = np.asarray(position, dtype=float)
         offsets = (
@@ -686,6 +693,59 @@ class BulletSimulation:
                 )
             )
         return marker_ids
+
+    def import_planned_path_marker(self, planner, z=0.08):
+        """Draw the active planner path once per generated plan/replan."""
+        if not self.gui or planner is None:
+            return
+        if hasattr(planner, "planned") and not planner.planned:
+            return
+
+        plan = None
+        plan_kind = None
+        base_plan = getattr(planner, "base_plan", None)
+        ee_plan = getattr(planner, "ee_plan", None)
+        if isinstance(base_plan, dict) and "p" in base_plan:
+            plan = base_plan
+            plan_kind = "base"
+        elif isinstance(ee_plan, dict) and "p" in ee_plan:
+            plan = ee_plan
+            plan_kind = "ee"
+        else:
+            return
+
+        path = np.asarray(plan["p"], dtype=float)
+        if path.ndim != 2 or path.shape[0] < 2 or path.shape[1] < 2:
+            return
+
+        signature = (id(planner), plan_kind, getattr(planner, "replan_count", None))
+        if signature == self.planned_path_marker_signature:
+            return
+
+        self._clear_planned_path_marker()
+        if plan_kind == "base":
+            path_positions = np.column_stack(
+                [path[:, 0], path[:, 1], np.full(path.shape[0], float(z))]
+            )
+            color = [0.0, 0.85, 0.25]
+        else:
+            path_positions = path[:, :3]
+            color = [0.05, 0.8, 1.0]
+
+        self.planned_path_marker_ids.extend(
+            self._draw_polyline(
+                path_positions, color=color, line_width=4
+            )
+        )
+        self.planned_path_marker_ids.append(
+            pyb.addUserDebugText(
+                f"ompl {plan_kind} path",
+                list(path_positions[0] + np.array([0.0, 0.0, 0.08])),
+                textColorRGB=color,
+                textSize=1.1,
+            )
+        )
+        self.planned_path_marker_signature = signature
 
     def import_target_markers(self, base_targets=None, ee_targets=None):
         if not self.gui:

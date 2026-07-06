@@ -115,7 +115,10 @@ def main():
     controller = control_class(ctrl_config)
 
     # Task Manager (simplified - only sequential execution)
-    planner_resources = {"esdf_map": getattr(controller, "esdf_map", None)}
+    planner_resources = {
+        "esdf_map": getattr(controller, "esdf_map", None),
+        "robot_model": getattr(controller, "robot", None),
+    }
     sot = TaskManager(planner_config, resources=planner_resources)
     base_targets, ee_targets = sot.getVisualizationTargets()
     sim.import_target_markers(base_targets=base_targets, ee_targets=ee_targets)
@@ -163,6 +166,7 @@ def main():
 
         # Get references from TaskManager
         references = sot.getReferences(t, robot_states, controller.N + 1, controller.dt)
+        sim.import_planned_path_marker(sot.getPlanner())
 
         t0 = time.perf_counter()
         v_bar, u_bar = controller.control(t, robot_states, references)

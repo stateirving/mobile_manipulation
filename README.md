@@ -164,6 +164,22 @@ Run the PyBullet validation:
 python3 mm_run/scripts/experiment.py --config $(ros2 pkg prefix mm_run)/share/mm_run/config/stretch_esdf_offline.yaml --GUI
 ```
 
+### OMPL Base/EE Planner Offline ESDF WB-MPC
+This config inherits `stretch_esdf_offline.yaml`, uses OMPL for the base path
+and Cartesian EE path, and keeps the existing whole-body MPC controller.
+
+Compile the offline OMPL WB-MPC acados solver:
+
+```bash
+python3 mm_control/scripts/generate_acados_code.py --config $(ros2 pkg prefix mm_run)/share/mm_run/config/stretch_esdf_offline_ompl_wbmpc.yaml
+```
+
+Run the offline OMPL WB-MPC PyBullet validation:
+
+```bash
+python3 mm_run/scripts/experiment.py --config $(ros2 pkg prefix mm_run)/share/mm_run/config/stretch_esdf_offline_ompl_wbmpc.yaml --GUI
+```
+
 ### Online nvblox ESDF MPC Validation
 Compile the online ESDF MPC acados solver:
 
