@@ -7,7 +7,7 @@ controller:
   robot:
     time_discretization_dt: 0.1
   # prediction_horizon: 3.0
-  prediction_horizon: 4.0
+  prediction_horizon: 2.0
   ctrl_rate: 7 #hz
   cmd_vel_pub_rate: 20 # hz
   cmd_vel_type: "interpolation"         # integration: publish vel by integrating from acc_bar

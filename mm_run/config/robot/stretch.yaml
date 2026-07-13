@@ -134,12 +134,12 @@ controller:
         base_body_collision:
           parent_link: "base_link"
           type: "sphere"
-          radius: 0.24
+          radius: 0.20
           translation: [-0.10, 0.0, 0.12]
         lift_collision:
           parent_link: "link_lift"
           type: "sphere"
-          radius: 0.10
+          radius: 0.07
           translation: [0.0, 0.0, 0.10]
         lift_top_collision:
           parent_link: "link_lift"

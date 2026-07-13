@@ -118,11 +118,11 @@ controller:
       # - "wrist_roll_collision"
       - "gripper_body_collision"
       - "gripper_tip_collision"
-    d_safe: 0.05
+    d_safe: 0.10
     mode: "squared_hinge_cost"
     soft_cost:
       p: 1.0
-      mu: 10000.0
+      mu: 1000.0
       smoothing: 5.0e-03
     require_all_corners_valid: True
     invalid_distance: -1.0
@@ -173,7 +173,7 @@ controller:
       weight: [2.0, 2.0, 2.0, 2.0]
       smoothing: 5.0e-03
     WristYawLimit:
-      enabled: True
+      enabled: False
       joint_name: "joint_wrist_yaw"
       abs_limit: 1.5708
       weight: 2.0

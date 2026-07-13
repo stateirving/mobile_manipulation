@@ -37,8 +37,8 @@ planner:
         yaw_mode: "tangent"
       esdf:
         enabled: true
-        base_radius: 0.3
-        d_safe: 0.1
+        base_radius: 0.2
+        d_safe: 0.20
         query_z: [0.15, 0.35]
         unknown_is_valid: false
         allow_straight_line_fallback: false
@@ -49,7 +49,7 @@ planner:
         min_interval: 1.0
         check_horizon: 2.0
         check_dt: 0.2
-        min_clearance: 0.02
+        min_clearance: 0.0
         deviation_threshold: 0.4
         force_periodic: false
         keep_previous_on_failure: true
@@ -80,8 +80,8 @@ planner:
         yaw_mode: "tangent"
       esdf:
         enabled: true
-        base_radius: 0.3
-        d_safe: 0.1
+        base_radius: 0.2
+        d_safe: 0.20
         query_z: [0.15, 0.35]
         unknown_is_valid: false
         allow_straight_line_fallback: false
@@ -92,7 +92,7 @@ planner:
         min_interval: 1.0
         check_horizon: 2.0
         check_dt: 0.2
-        min_clearance: 0.02
+        min_clearance: 0.0
         deviation_threshold: 0.4
         force_periodic: false
         keep_previous_on_failure: true
@@ -122,7 +122,7 @@ planner:
         interpolation_resolution: 0.04
       esdf:
         enabled: true
-        tool_radius: 0.08
+        tool_radius: 0.05
         d_safe: 0.05
         unknown_is_valid: false
         allow_straight_line_fallback: false
@@ -133,7 +133,7 @@ planner:
         min_interval: 1.0
         check_horizon: 2.0
         check_dt: 0.2
-        min_clearance: 0.02
+        min_clearance: 0.0
         deviation_threshold: 0.25
         force_periodic: false
         keep_previous_on_failure: true
@@ -163,7 +163,7 @@ planner:
         interpolation_resolution: 0.04
       esdf:
         enabled: true
-        tool_radius: 0.08
+        tool_radius: 0.05
         d_safe: 0.05
         unknown_is_valid: false
         allow_straight_line_fallback: false
@@ -174,7 +174,7 @@ planner:
         min_interval: 1.0
         check_horizon: 2.0
         check_dt: 0.2
-        min_clearance: 0.02
+        min_clearance: 0.0
         deviation_threshold: 0.25
         force_periodic: false
         keep_previous_on_failure: true
@@ -204,7 +204,7 @@ planner:
         interpolation_resolution: 0.04
       esdf:
         enabled: true
-        tool_radius: 0.08
+        tool_radius: 0.05
         d_safe: 0.05
         unknown_is_valid: false
         allow_straight_line_fallback: false
@@ -215,7 +215,7 @@ planner:
         min_interval: 1.0
         check_horizon: 2.0
         check_dt: 0.2
-        min_clearance: 0.02
+        min_clearance: 0.0
         deviation_threshold: 0.25
         force_periodic: false
         keep_previous_on_failure: true
@@ -225,8 +225,8 @@ controller:
     source: "offline"
   cost_params:
     BasePose:
-      Qk: [2.0, 2.0, 3.0]
-      P: [2.0, 2.0, 2.0]
+      Qk: [10.0, 10.0, 15.0]
+      P: [10.0, 10.0, 15.0]
     BaseVel:
       Qk: [0.01, 0.01, 0.25]
       P: [0.01, 0.01, 0.10]

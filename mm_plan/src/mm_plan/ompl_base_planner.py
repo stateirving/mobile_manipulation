@@ -7,7 +7,7 @@ import numpy as np
 from mm_plan.Planners import Planner
 from mm_utils import parsing
 from mm_utils.enums import RefType
-from mm_utils.math import interpolate, wrap_pi_array, wrap_pi_scalar
+from mm_utils.math import wrap_pi_array, wrap_pi_scalar
 
 
 class OMPLBasePlanner(Planner):
@@ -123,6 +123,8 @@ class OMPLBasePlanner(Planner):
         self.base_plan = self._make_plan(
             np.asarray([self.base_target], dtype=np.float64)
         )
+        self.path_progress = 0.0
+        self.terminal_pose_active = False
         self.finished = False
         self.target_reached = False
         self.t_reached = 0.0
@@ -185,20 +187,33 @@ class OMPLBasePlanner(Planner):
     def getBaseTrackingPoint(self, t, robot_states=None):
         if robot_states is not None:
             self._ensure_plan(robot_states, reason="direct_point_request")
-        te = t - self.start_time if self.started else 0.0
-        return interpolate(te, self.base_plan)
+            current_base = self._base_pose_from_robot_states(robot_states)
+            if not self._activate_terminal_pose_if_reached(current_base):
+                self._update_path_progress(current_base)
+        if self.terminal_pose_active:
+            return self.base_target.copy(), np.zeros(3, dtype=np.float64)
+        return self._sample_plan_at_progress(self.path_progress)
 
     def getBaseTrackingPointArray(
         self, robot_states, num_pts, dt, time_offset=0
     ):
         self._ensure_plan(robot_states, reason="direct_array_request")
-        times = time_offset + np.arange(num_pts) * dt
-        positions = np.array(
-            [interpolate(t, self.base_plan)[0] for t in times]
-        )
-        velocities = np.array(
-            [interpolate(t, self.base_plan)[1] for t in times]
-        )
+        current_base = self._base_pose_from_robot_states(robot_states)
+        if self._activate_terminal_pose_if_reached(current_base):
+            return (
+                np.tile(self.base_target, (num_pts, 1)),
+                np.zeros((num_pts, 3), dtype=np.float64),
+            )
+        self._update_path_progress(current_base)
+
+        # OMPL references are progress-based.  `time_offset` is retained only
+        # for interface compatibility with the other PATH planners.
+        progress = self.path_progress + self.linear_speed * np.arange(num_pts) * dt
+        path_end = float(self.base_plan["s"][-1])
+        progress = np.clip(progress, 0.0, path_end)
+        samples = [self._sample_plan_at_progress(s) for s in progress]
+        positions = np.asarray([sample[0] for sample in samples])
+        velocities = np.asarray([sample[1] for sample in samples])
         return positions, velocities
 
     def getEETrackingPoint(self, t, robot_states=None):
@@ -279,6 +294,8 @@ class OMPLBasePlanner(Planner):
         self.started = False
         self.planned = False
         self.start_time = 0.0
+        self.path_progress = 0.0
+        self.terminal_pose_active = False
         self.base_plan = self._make_plan(
             np.asarray([self.base_target], dtype=np.float64)
         )
@@ -297,6 +314,8 @@ class OMPLBasePlanner(Planner):
         start = self._base_pose_from_robot_states(robot_states)
         path = self._plan_with_ompl(start, self.base_target)
         self.base_plan = self._make_plan(path)
+        self.path_progress = 0.0
+        self.terminal_pose_active = False
         self.planned = True
         self.start_time = float(t)
         self.last_replan_time = float(t)
@@ -321,6 +340,8 @@ class OMPLBasePlanner(Planner):
         deviation = self._path_deviation(current_base)
         if deviation > self.replan_deviation_threshold:
             return f"path_deviation_{deviation:.3f}"
+        if not self._activate_terminal_pose_if_reached(current_base):
+            self._update_path_progress(current_base)
 
         if self.replan_validate_remaining_path:
             min_clearance = self._remaining_path_min_clearance(t)
@@ -344,19 +365,24 @@ class OMPLBasePlanner(Planner):
             return np.inf
         if self.base_plan is None or len(self.base_plan["p"]) == 0:
             return -np.inf
+        if self.terminal_pose_active:
+            return float(self._state_clearance(self.base_target))
 
-        time_offset = t - self.start_time if self.started else 0.0
         horizon = self.replan_check_horizon
         if num_pts is not None and dt is not None:
             horizon = min(horizon, max(0.0, (int(num_pts) - 1) * float(dt)))
         check_dt = max(self.replan_check_dt, 1.0e-3)
-        times = time_offset + np.arange(0.0, horizon + 1.0e-9, check_dt)
-        if times.size == 0:
-            times = np.array([time_offset], dtype=np.float64)
+        offsets = np.arange(0.0, horizon + 1.0e-9, check_dt)
+        if offsets.size == 0:
+            offsets = np.array([0.0], dtype=np.float64)
+        path_end = float(self.base_plan["s"][-1])
+        progress = np.clip(
+            self.path_progress + self.linear_speed * offsets, 0.0, path_end
+        )
 
         min_clearance = np.inf
-        for query_time in times:
-            state = interpolate(query_time, self.base_plan)[0]
+        for query_progress in progress:
+            state = self._sample_plan_at_progress(query_progress)[0]
             min_clearance = min(
                 min_clearance, self._state_clearance(state)
             )
@@ -369,18 +395,24 @@ class OMPLBasePlanner(Planner):
             return np.inf
         if self.base_plan is None or len(self.base_plan["p"]) == 0:
             return -np.inf
+        if self.terminal_pose_active:
+            return float(self._state_clearance(self.base_target))
 
-        time_offset = t - self.start_time if self.started else 0.0
-        path_end = float(self.base_plan["t"][-1])
-        time_offset = min(max(0.0, time_offset), path_end)
+        path_end = float(self.base_plan["s"][-1])
+        start_progress = min(max(0.0, self.path_progress), path_end)
         check_dt = max(self.replan_check_dt, 1.0e-3)
-        times = np.arange(time_offset, path_end + 1.0e-9, check_dt)
-        if times.size == 0 or times[-1] < path_end:
-            times = np.append(times, path_end)
+        progress_step = max(
+            self.linear_speed * check_dt,
+            self.interpolation_resolution,
+            1.0e-6,
+        )
+        progress = np.arange(start_progress, path_end + 1.0e-9, progress_step)
+        if progress.size == 0 or progress[-1] < path_end:
+            progress = np.append(progress, path_end)
 
         min_clearance = np.inf
-        for query_time in times:
-            state = interpolate(query_time, self.base_plan)[0]
+        for query_progress in progress:
+            state = self._sample_plan_at_progress(query_progress)[0]
             min_clearance = min(
                 min_clearance, self._state_clearance(state)
             )
@@ -535,7 +567,7 @@ class OMPLBasePlanner(Planner):
 
         path = np.asarray(points, dtype=np.float64)
         if self.yaw_mode == "tangent":
-            path[:, 2] = self._path_tangent_yaw(path, self.base_target[2])
+            path[:, 2] = self._path_tangent_yaw(path)
         path[:, 2] = wrap_pi_array(path[:, 2])
         return path
 
@@ -550,6 +582,7 @@ class OMPLBasePlanner(Planner):
         if len(path) == 1:
             return {
                 "t": np.array([0.0], dtype=np.float64),
+                "s": np.array([0.0], dtype=np.float64),
                 "p": path.copy(),
                 "v": np.zeros_like(path),
             }
@@ -565,15 +598,129 @@ class OMPLBasePlanner(Planner):
             )
             times.append(times[-1] + duration)
         times = np.asarray(times, dtype=np.float64)
+        progress_speed = max(self.linear_speed, 1.0e-6)
+        cumulative = times * progress_speed
 
         velocities = np.zeros_like(path)
         dt = np.diff(times)
         dp = np.diff(path, axis=0)
         dp[:, 2] = [wrap_pi_scalar(v) for v in dp[:, 2]]
         velocities[:-1] = dp / dt[:, None]
-        return {"t": times, "p": path.copy(), "v": velocities}
+        return {
+            "t": times,
+            "s": cumulative,
+            "p": path.copy(),
+            "v": velocities,
+        }
 
-    def _path_tangent_yaw(self, path, goal_yaw):
+    def _update_path_progress(self, current_pose):
+        """Project the current base pose onto the path without going back."""
+        projected, _ = self._project_onto_path(
+            current_pose, minimum_progress=self.path_progress
+        )
+        self.path_progress = max(self.path_progress, projected)
+        return self.path_progress
+
+    def _activate_terminal_pose_if_reached(self, current_pose):
+        """Snap references to the final pose once the target XY is reached."""
+        if self.terminal_pose_active:
+            return True
+
+        current_pose = np.asarray(current_pose, dtype=np.float64)
+        position_error = np.linalg.norm(
+            (current_pose[:2] - self.base_target[:2])[self.base_mask[:2]]
+        )
+        if position_error < self.tracking_pos_err_tol:
+            self.terminal_pose_active = True
+            self.path_progress = float(self.base_plan["s"][-1])
+            self.py_logger.info(
+                "%s reached terminal XY (error=%.3f m); snapping to goal yaw %.3f",
+                self.name,
+                position_error,
+                self.base_target[2],
+            )
+        return self.terminal_pose_active
+
+    def _project_onto_path(self, pose, minimum_progress=0.0):
+        path = np.asarray(self.base_plan["p"], dtype=np.float64)
+        cumulative = np.asarray(self.base_plan["s"], dtype=np.float64)
+        pose = np.asarray(pose, dtype=np.float64)
+        path_end = float(cumulative[-1])
+        minimum_progress = float(np.clip(minimum_progress, 0.0, path_end))
+
+        if len(path) == 1 or path_end <= 1.0e-12:
+            return 0.0, float(np.linalg.norm(pose[:2] - path[0, :2]))
+
+        best_progress = minimum_progress
+        best_distance = np.inf
+        for idx, (p0, p1) in enumerate(zip(path[:-1], path[1:])):
+            segment_start = float(cumulative[idx])
+            segment_end = float(cumulative[idx + 1])
+            segment_length = segment_end - segment_start
+            if segment_end + 1.0e-12 < minimum_progress:
+                continue
+            if segment_length <= 1.0e-12:
+                continue
+
+            delta_xy = p1[:2] - p0[:2]
+            distance_sq = float(np.dot(delta_xy, delta_xy))
+            if distance_sq > 1.0e-12:
+                alpha = float(
+                    np.dot(pose[:2] - p0[:2], delta_xy) / distance_sq
+                )
+            else:
+                yaw_delta = wrap_pi_scalar(p1[2] - p0[2])
+                if abs(yaw_delta) <= 1.0e-12:
+                    continue
+                alpha = wrap_pi_scalar(pose[2] - p0[2]) / yaw_delta
+            minimum_alpha = max(
+                0.0, (minimum_progress - segment_start) / segment_length
+            )
+            alpha = float(np.clip(alpha, minimum_alpha, 1.0))
+            candidate_xy = p0[:2] + alpha * delta_xy
+            distance = float(np.linalg.norm(pose[:2] - candidate_xy))
+            if distance_sq <= 1.0e-12:
+                candidate_yaw = p0[2] + alpha * yaw_delta
+                yaw_error = abs(wrap_pi_scalar(pose[2] - candidate_yaw))
+                distance += yaw_error * self.linear_speed / max(
+                    self.angular_speed, 1.0e-6
+                )
+            candidate_progress = segment_start + alpha * segment_length
+            if distance < best_distance - 1.0e-12:
+                best_distance = distance
+                best_progress = candidate_progress
+
+        if not np.isfinite(best_distance):
+            best_distance = float(np.linalg.norm(pose[:2] - path[-1, :2]))
+            best_progress = path_end
+        return float(best_progress), best_distance
+
+    def _sample_plan_at_progress(self, progress):
+        path = np.asarray(self.base_plan["p"], dtype=np.float64)
+        cumulative = np.asarray(self.base_plan["s"], dtype=np.float64)
+        path_end = float(cumulative[-1])
+        progress = float(np.clip(progress, 0.0, path_end))
+
+        if len(path) == 1 or path_end <= 1.0e-12 or progress >= path_end:
+            return path[-1].copy(), np.zeros(3, dtype=np.float64)
+
+        idx = int(np.searchsorted(cumulative, progress, side="right") - 1)
+        idx = min(max(idx, 0), len(path) - 2)
+        while idx < len(path) - 2 and cumulative[idx + 1] <= cumulative[idx]:
+            idx += 1
+        segment_length = float(cumulative[idx + 1] - cumulative[idx])
+        if segment_length <= 1.0e-12:
+            return path[idx + 1].copy(), np.zeros(3, dtype=np.float64)
+
+        alpha = (progress - cumulative[idx]) / segment_length
+        delta = path[idx + 1] - path[idx]
+        delta[2] = wrap_pi_scalar(delta[2])
+        pose = path[idx] + alpha * delta
+        pose[2] = wrap_pi_scalar(pose[2])
+        velocity = delta / segment_length * self.linear_speed
+        return pose, velocity
+
+    def _path_tangent_yaw(self, path):
         yaw = np.zeros(len(path), dtype=np.float64)
         for idx in range(len(path) - 1):
             delta = path[idx + 1, :2] - path[idx, :2]
@@ -583,7 +730,10 @@ class OMPLBasePlanner(Planner):
                 yaw[idx] = yaw[idx - 1]
             else:
                 yaw[idx] = path[idx, 2]
-        yaw[-1] = goal_yaw if self.base_mask[2] else yaw[-2]
+        # Keep the final translation point aligned with the path tangent.  The
+        # reference switches directly to base_target yaw only after XY enters
+        # tracking_pos_err_tol; yaw is never blended into the final XY segment.
+        yaw[-1] = yaw[-2]
         return yaw
 
     def _bounds_containing(self, start, goal):
