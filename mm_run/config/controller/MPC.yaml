@@ -93,13 +93,6 @@ controller:
       base_task_upper: [0.03, 0.03, 0.03, 0.03]
       weight: [20.0, 20.0, 20.0, 20.0]
       smoothing: 1.0e-03
-    # Optional soft hinge cost for wrist yaw outside a preferred interval.
-    WristYawLimit:
-      enabled: False
-      joint_name: "joint_wrist_yaw"
-      abs_limit: 1.5708
-      weight: 2.0
-      smoothing: 1.0e-03
     # Regularization cost (optional)
     Regularization:
       eps: 1.0e-06

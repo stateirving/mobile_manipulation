@@ -180,26 +180,6 @@ class MPC(MPCBase):
             cost.base_task_bounds = base_task_upper
             costs.append(cost)
 
-        wrist_params = cost_params.get("WristYawLimit", {})
-        if wrist_params.get("enabled", False):
-            joint_name = wrist_params.get("joint_name", "joint_wrist_yaw")
-            q_idx = self._joint_names_to_q_indices([joint_name])[0]
-            limit = float(wrist_params.get("abs_limit", np.pi / 2.0))
-            lower = float(wrist_params.get("lower", -limit))
-            upper = float(wrist_params.get("upper", limit))
-            weight = float(wrist_params.get("weight", 10.0))
-            costs.append(
-                JointSquaredHingeCostFunction(
-                    self.robot,
-                    q_indices=[q_idx, q_idx],
-                    bounds=[upper, lower],
-                    signs=[1.0, -1.0],
-                    weights=[weight, weight],
-                    smoothing=wrist_params.get("smoothing", 1.0e-3),
-                    name="WristYawLimit",
-                )
-            )
-
         return costs
 
     def _joint_names_to_q_indices(self, joint_names):

@@ -61,6 +61,9 @@ class OMPLBasePlanner(Planner):
         ompl_config = dict(config.get("ompl", {}))
         self.planner_name = str(ompl_config.get("planner", "RRTConnect"))
         self.solve_time = float(ompl_config.get("solve_time", 0.5))
+        self.solve_attempts = int(ompl_config.get("solve_attempts", 1))
+        if self.solve_attempts < 1:
+            raise ValueError("ompl.solve_attempts must be at least 1")
         self.goal_tolerance = float(ompl_config.get("goal_tolerance", 0.05))
         self.planner_range = ompl_config.get("range")
         self.simplify = bool(ompl_config.get("simplify", True))
@@ -419,17 +422,31 @@ class OMPLBasePlanner(Planner):
         return float(min_clearance)
 
     def _plan_with_ompl(self, start, goal):
-        try:
-            return self._solve_ompl(start, goal)
-        except Exception as exc:
-            if not self.allow_fallback:
-                raise
-            self.py_logger.warning(
-                "%s OMPL planning failed (%s); using straight-line fallback",
-                self.name,
-                exc,
-            )
-            return self._straight_line_path(start, goal)
+        last_exception = None
+        for attempt in range(1, self.solve_attempts + 1):
+            try:
+                return self._solve_ompl(start, goal)
+            except Exception as exc:
+                last_exception = exc
+                if attempt < self.solve_attempts:
+                    self.py_logger.warning(
+                        "%s OMPL planning attempt %d/%d failed (%s); retrying",
+                        self.name,
+                        attempt,
+                        self.solve_attempts,
+                        exc,
+                    )
+
+        if not self.allow_fallback:
+            raise last_exception
+        self.py_logger.warning(
+            "%s OMPL planning failed after %d attempts (%s); "
+            "using straight-line fallback",
+            self.name,
+            self.solve_attempts,
+            last_exception,
+        )
+        return self._straight_line_path(start, goal)
 
     def _solve_ompl(self, start, goal):
         from ompl import base as ob

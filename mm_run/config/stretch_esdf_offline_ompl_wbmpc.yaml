@@ -10,215 +10,111 @@ include:
     path: "config/stretch_esdf_offline.yaml"
 
 planner:
+  task_defaults:
+    base:
+      planner_type: OMPLBasePlanner
+      base_mask: [true, true, true]
+      bounds_xy: [[-4.0, 4.0], [-4.0, 4.0]]
+      bounds_margin: 0.75
+      tracking_pos_err_tol: 0.25
+      tracking_ori_err_tol: 0.25
+      hold_period: 1.0
+      end_stop: false
+      ompl:
+        planner: "RRTstar"
+        solve_time: 0.5
+        solve_attempts: 3
+        simplify: true
+        simplify_time: 0.05
+        range: 0.1
+        goal_tolerance: 0.08
+        state_validity_resolution: 0.01
+      path:
+        dt: 0.1
+        linear_speed: 0.25
+        angular_speed: 0.8
+        interpolation_resolution: 0.05
+        yaw_mode: "tangent"
+      esdf:
+        enabled: true
+        base_radius: 0.2
+        d_safe: 0.20
+        query_z: [0.15, 0.35]
+        unknown_is_valid: false
+        allow_straight_line_fallback: false
+      replan:
+        enabled: true
+        validate_every_step: false
+        validate_remaining_path: false
+        min_interval: 1.0
+        check_horizon: 2.0
+        check_dt: 0.2
+        min_clearance: 0.0
+        deviation_threshold: 0.4
+        force_periodic: false
+        keep_previous_on_failure: true
+
+    ee:
+      planner_type: OMPLEEPlanner
+      ee_mask: [true, true, true, false, false, false]
+      bounds_xyz: [[0.0, 3.5], [-2.5, 1.0], [0.25, 1.3]]
+      bounds_margin: 0.25
+      tracking_pos_err_tol: 0.05
+      tracking_ori_err_tol: 0.25
+      hold_period: 1.0
+      end_stop: false
+      ompl:
+        planner: "RRTConnect"
+        solve_time: 0.5
+        solve_attempts: 3
+        simplify: true
+        simplify_time: 0.05
+        range: 0.12
+        goal_tolerance: 0.04
+        state_validity_resolution: 0.01
+      path:
+        dt: 0.1
+        linear_speed: 0.12
+        angular_speed: 0.8
+        interpolation_resolution: 0.04
+      esdf:
+        enabled: true
+        tool_radius: 0.05
+        d_safe: 0.05
+        unknown_is_valid: false
+        allow_straight_line_fallback: true
+      replan:
+        enabled: true
+        validate_every_step: false
+        validate_remaining_path: false
+        min_interval: 1.0
+        check_horizon: 2.0
+        check_dt: 0.2
+        min_clearance: 0.0
+        deviation_threshold: 0.25
+        force_periodic: false
+        keep_previous_on_failure: true
+
   tasks:
-    - name: "OMPL Base To Work Area"
-      planner_type: OMPLBasePlanner
+    - defaults: base
+      name: "OMPL Base To Work Area"
       base_pose: [2.0, -2.0, 0.0]
-      base_mask: [true, true, true]
-      bounds_xy: [[-4.0, 4.0], [-4.0, 4.0]]
-      bounds_margin: 0.75
-      tracking_pos_err_tol: 0.25
-      tracking_ori_err_tol: 0.25
-      hold_period: 1.0
-      end_stop: false
-      ompl:
-        planner: "RRTstar"
-        solve_time: 0.5
-        simplify: true
-        simplify_time: 0.05
-        range: 0.1
-        goal_tolerance: 0.08
-        state_validity_resolution: 0.01
-      path:
-        dt: 0.1
-        linear_speed: 0.25
-        angular_speed: 0.8
-        interpolation_resolution: 0.05
-        yaw_mode: "tangent"
-      esdf:
-        enabled: true
-        base_radius: 0.2
-        d_safe: 0.20
-        query_z: [0.15, 0.35]
-        unknown_is_valid: false
-        allow_straight_line_fallback: false
-      replan:
-        enabled: true
-        validate_every_step: false
-        validate_remaining_path: false
-        min_interval: 1.0
-        check_horizon: 2.0
-        check_dt: 0.2
-        min_clearance: 0.0
-        deviation_threshold: 0.4
-        force_periodic: false
-        keep_previous_on_failure: true
 
-    - name: "OMPL Base Goal 2"
-      planner_type: OMPLBasePlanner
+    - defaults: base
+      name: "OMPL Base Goal 2"
       base_pose: [2.0, 0.0, 0.0]
-      base_mask: [true, true, true]
-      bounds_xy: [[-4.0, 4.0], [-4.0, 4.0]]
-      bounds_margin: 0.75
-      tracking_pos_err_tol: 0.25
-      tracking_ori_err_tol: 0.25
-      hold_period: 1.0
-      end_stop: false
-      ompl:
-        planner: "RRTstar"
-        solve_time: 0.5
-        simplify: true
-        simplify_time: 0.05
-        range: 0.1
-        goal_tolerance: 0.08
-        state_validity_resolution: 0.01
-      path:
-        dt: 0.1
-        linear_speed: 0.25
-        angular_speed: 0.8
-        interpolation_resolution: 0.05
-        yaw_mode: "tangent"
-      esdf:
-        enabled: true
-        base_radius: 0.2
-        d_safe: 0.20
-        query_z: [0.15, 0.35]
-        unknown_is_valid: false
-        allow_straight_line_fallback: false
-      replan:
-        enabled: true
-        validate_every_step: false
-        validate_remaining_path: false
-        min_interval: 1.0
-        check_horizon: 2.0
-        check_dt: 0.2
-        min_clearance: 0.0
-        deviation_threshold: 0.4
-        force_periodic: false
-        keep_previous_on_failure: true
 
-    - name: "EE Approach"
-      planner_type: OMPLEEPlanner
+    - defaults: ee
+      name: "EE Approach"
       ee_pose: [3.0, -0.5, 0.85, 0.0, 0.0, -0.0708]
-      ee_mask: [true, true, true, false, false, false]
-      bounds_xyz: [[0.0, 3.5], [-2.5, 1.0], [0.25, 1.3]]
-      bounds_margin: 0.25
-      tracking_pos_err_tol: 0.05
-      tracking_ori_err_tol: 0.25
-      hold_period: 1.0
-      end_stop: false
-      ompl:
-        planner: "RRTConnect"
-        solve_time: 0.5
-        simplify: true
-        simplify_time: 0.05
-        range: 0.12
-        goal_tolerance: 0.04
-        state_validity_resolution: 0.01
-      path:
-        dt: 0.1
-        linear_speed: 0.12
-        angular_speed: 0.8
-        interpolation_resolution: 0.04
-      esdf:
-        enabled: true
-        tool_radius: 0.05
-        d_safe: 0.05
-        unknown_is_valid: false
-        allow_straight_line_fallback: false
-      replan:
-        enabled: true
-        validate_every_step: false
-        validate_remaining_path: false
-        min_interval: 1.0
-        check_horizon: 2.0
-        check_dt: 0.2
-        min_clearance: 0.0
-        deviation_threshold: 0.25
-        force_periodic: false
-        keep_previous_on_failure: true
 
-    - name: "EE Reach Low"
-      planner_type: OMPLEEPlanner
+    - defaults: ee
+      name: "EE Reach Low"
       ee_pose: [3.0, -0.5, 0.4, 0.0, 0.0, -0.0708]
-      ee_mask: [true, true, true, false, false, false]
-      bounds_xyz: [[0.0, 3.5], [-2.5, 1.0], [0.25, 1.3]]
-      bounds_margin: 0.25
-      tracking_pos_err_tol: 0.05
-      tracking_ori_err_tol: 0.25
-      hold_period: 1.0
-      end_stop: false
-      ompl:
-        planner: "RRTConnect"
-        solve_time: 0.5
-        simplify: true
-        simplify_time: 0.05
-        range: 0.12
-        goal_tolerance: 0.04
-        state_validity_resolution: 0.01
-      path:
-        dt: 0.1
-        linear_speed: 0.12
-        angular_speed: 0.8
-        interpolation_resolution: 0.04
-      esdf:
-        enabled: true
-        tool_radius: 0.05
-        d_safe: 0.05
-        unknown_is_valid: false
-        allow_straight_line_fallback: false
-      replan:
-        enabled: true
-        validate_every_step: false
-        validate_remaining_path: false
-        min_interval: 1.0
-        check_horizon: 2.0
-        check_dt: 0.2
-        min_clearance: 0.0
-        deviation_threshold: 0.25
-        force_periodic: false
-        keep_previous_on_failure: true
 
-    - name: "EE Reach Side"
-      planner_type: OMPLEEPlanner
+    - defaults: ee
+      name: "EE Reach Side"
       ee_pose: [3.0, 0.5, 0.4, 0.0, 0.0, -0.0708]
-      ee_mask: [true, true, true, false, false, false]
-      bounds_xyz: [[0.0, 3.5], [-2.5, 1.0], [0.25, 1.3]]
-      bounds_margin: 0.25
-      tracking_pos_err_tol: 0.05
-      tracking_ori_err_tol: 0.25
-      hold_period: 1.0
-      end_stop: false
-      ompl:
-        planner: "RRTConnect"
-        solve_time: 0.5
-        simplify: true
-        simplify_time: 0.05
-        range: 0.12
-        goal_tolerance: 0.04
-        state_validity_resolution: 0.01
-      path:
-        dt: 0.1
-        linear_speed: 0.12
-        angular_speed: 0.8
-        interpolation_resolution: 0.04
-      esdf:
-        enabled: true
-        tool_radius: 0.05
-        d_safe: 0.05
-        unknown_is_valid: false
-        allow_straight_line_fallback: false
-      replan:
-        enabled: true
-        validate_every_step: false
-        validate_remaining_path: false
-        min_interval: 1.0
-        check_horizon: 2.0
-        check_dt: 0.2
-        min_clearance: 0.0
-        deviation_threshold: 0.25
-        force_periodic: false
-        keep_previous_on_failure: true
 
 controller:
   esdf_collision:

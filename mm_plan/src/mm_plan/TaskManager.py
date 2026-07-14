@@ -1,11 +1,39 @@
 """TaskManager - manages task execution and extracts references for MPC."""
 
 import logging
+from copy import deepcopy
 
 import numpy as np
 
 from mm_plan.Planners import create_planner
 from mm_utils.enums import RefType
+from mm_utils.parsing import recursive_dict_update
+
+
+def resolve_task_configs(config):
+    """Expand named task defaults and apply per-task overrides recursively."""
+    task_defaults = config.get("task_defaults", {})
+    if not isinstance(task_defaults, dict):
+        raise TypeError("planner.task_defaults must be a mapping")
+
+    resolved_tasks = []
+    for task in config["tasks"]:
+        task_config = deepcopy(task)
+        defaults_name = task_config.pop("defaults", None)
+        if defaults_name is None:
+            resolved_tasks.append(task_config)
+            continue
+        if defaults_name not in task_defaults:
+            raise KeyError(f"Unknown planner task defaults: {defaults_name!r}")
+
+        defaults = task_defaults[defaults_name]
+        if not isinstance(defaults, dict):
+            raise TypeError(
+                f"planner.task_defaults.{defaults_name} must be a mapping"
+            )
+        resolved_tasks.append(recursive_dict_update(deepcopy(defaults), task_config))
+
+    return resolved_tasks
 
 
 class TaskManager:
@@ -15,9 +43,10 @@ class TaskManager:
         self.config = config
         self.resources = {} if resources is None else resources
         self.started = False
+        self.task_configs = resolve_task_configs(config)
         self.planners = [
             create_planner(task, resources=self.resources)
-            for task in config["tasks"]
+            for task in self.task_configs
         ]
         self.planner_num = len(self.planners)
         self.curr_task_id = 0
