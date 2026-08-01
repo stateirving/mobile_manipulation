@@ -209,35 +209,6 @@ Run the OMPL WB-MPC online nvblox validation:
 python3 mm_run/scripts/experiment_online_nvblox.py --config $(ros2 pkg prefix mm_run)/share/mm_run/config/stretch_esdf_online_nvblox_ompl_wbmpc.yaml --GUI
 ```
 
-### CasADi Local Grid Online nvblox MPC
-This experimental config inherits `stretch_esdf_online_nvblox.yaml`
-and changes only the ESDF collision backend to a local CasADi interpolant.
-
-Full command sequence:
-
-```bash
-cd ~/repo/mobile_manipulation
-pixi shell
-colcon build && source install/setup.bash
-python3 mm_control/scripts/generate_acados_code.py --config $(ros2 pkg prefix mm_run)/share/mm_run/config/stretch_esdf_online_nvblox_casadi_local_grid.yaml
-python3 mm_run/scripts/experiment_online_nvblox.py --config $(ros2 pkg prefix mm_run)/share/mm_run/config/stretch_esdf_online_nvblox_casadi_local_grid.yaml --GUI
-```
-
-If the package is already built and `install/setup.bash` is already sourced,
-only rerun the last command to repeat the same experiment:
-
-```bash
-python3 mm_run/scripts/experiment_online_nvblox.py --config $(ros2 pkg prefix mm_run)/share/mm_run/config/stretch_esdf_online_nvblox_casadi_local_grid.yaml --GUI
-```
-
-Quick checks:
-
-```bash
-python3 -c "from mm_control.local_esdf_grid import LocalESDFGridSampler; print(LocalESDFGridSampler({}).shape)"
-```
-
 If you edit the ESDF MPC model structure or solver options such as
 `nlp_solver_max_iter`, rebuild `mm_run` and run the matching compile command
-again before running the experiment. For the CasADi local grid backend, changing
-`voxel_size`, `size_xy`, `z_range`, or `acados.name` also requires regenerating
-the solver.
+again before running the experiment.

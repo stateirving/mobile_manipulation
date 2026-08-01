@@ -963,33 +963,3 @@ def main():
 
 if __name__ == "__main__":
     main()
-
-# Example usage:
-# 
-# python mm_run/scripts/export_nvblox_esdf.py \
-#   --config mm_run/config/aws_small_warehouse_esdf.yaml \
-#   --output mm_run/results/nvblox_esdf/aws_small_warehouse_env \
-#   --bounds -7 -10 0 7 10 3 \
-#   --far 20 \
-#   --base-spin-origins 0 0 0  2 0 0  4 0 0 \
-#   --base-spin-camera-height 1.2 \
-#   --base-spin-yaw-offset-deg 15 \
-#   --num-views 12 \
-#   --width 320 \
-#   --height 240 \
-#   --grid-resolution 0.2 \
-#   --renderer hardware \
-#   --save-frames
-# 
-# python mm_run/scripts/export_nvblox_esdf.py \
-#   --config mm_run/config/aws_small_warehouse_esdf.yaml \
-#   --output /tmp/nvblox_scene_view \
-#   --bounds -7 -10 0 7 10 3 \
-#   --scan-mode base-spin \
-#   --base-spin-origin 0 0 0 \
-#   --base-spin-camera-height 1.2 \
-#   --num-views 1 \
-#   --width 320 \
-#   --height 240 \
-#   --grid-resolution 0.5 \
-#   --gui --keep-open

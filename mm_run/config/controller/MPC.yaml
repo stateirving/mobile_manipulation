@@ -36,7 +36,9 @@ controller:
   # changes the acados model and requires solver regeneration.
   esdf_collision:
     enabled: False
-    map_path: "mm_run/results/nvblox_esdf/aws_small_warehouse_env/2026-06-02_19-51-55/esdf_grid.npz"
+    map_path:
+      package: "mm_run"
+      path: "results/nvblox_esdf/esdf_test_room_full_2cm_dense/2026-06-15_12-32-10/esdf_grid.npz"
     spheres:
       - "base_body_collision"
     d_safe: 0.10

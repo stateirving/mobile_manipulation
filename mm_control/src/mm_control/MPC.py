@@ -6,9 +6,7 @@ from numpy.typing import NDArray
 from scipy.interpolate import interp1d
 
 from mm_control.esdf_map import ESDFMap, OnlineNvbloxESDFMap
-from mm_control.local_esdf_grid import LocalESDFGridSampler
 from mm_control.MPCConstraints import (
-    CasadiLocalGridESDFConstraint,
     LinearizedESDFConstraint,
     NonholonomicBaseConstraint,
 )
@@ -101,8 +99,7 @@ class MPC(MPCBase):
             constraints.append(self.esdfCollisionCst)
         elif (
             self.esdf_collision_enabled
-            and self.esdf_collision_mode
-            in {"squared_hinge_cost", "casadi_local_grid"}
+            and self.esdf_collision_mode == "squared_hinge_cost"
         ):
             costs.append(self.esdfCollisionSoftCst)
 
@@ -251,13 +248,11 @@ class MPC(MPCBase):
         self.esdfCollisionCst = None
         self.esdfCollisionSoftCst = None
         self.esdf_linearization = None
-        self.esdf_local_grid_sampler = None
-        self.esdf_local_grid_data = None
 
         if not self.esdf_collision_enabled:
             return
 
-        supported_modes = {"constraint", "squared_hinge_cost", "casadi_local_grid"}
+        supported_modes = {"constraint", "squared_hinge_cost"}
         if self.esdf_collision_mode not in supported_modes:
             raise ValueError(
                 f"Unsupported esdf_collision.mode '{self.esdf_collision_mode}'. "
@@ -297,32 +292,15 @@ class MPC(MPCBase):
             len(sphere_names), np.nan
         )
 
-        if self.esdf_collision_mode == "casadi_local_grid":
-            local_grid_config = dict(self.esdf_collision_config.get("local_grid", {}))
-            local_grid_config.setdefault("invalid_distance", self.esdf_invalid_distance)
-            self.esdf_local_grid_sampler = LocalESDFGridSampler(
-                local_grid_config,
-                invalid_distance=self.esdf_invalid_distance,
-            )
-            self.esdfCollisionCst = CasadiLocalGridESDFConstraint(
-                self.robot,
-                self.esdf_sphere_names,
-                self.esdf_sphere_radii,
-                self.esdf_safety_margin,
-                self.esdf_local_grid_sampler.shape,
-                self.esdf_constraint_name,
-                clamp_to_grid=local_grid_config.get("clamp_to_grid", True),
-            )
-        else:
-            self.esdfCollisionCst = LinearizedESDFConstraint(
-                self.robot,
-                self.esdf_sphere_names,
-                self.esdf_sphere_radii,
-                self.esdf_safety_margin,
-                self.esdf_constraint_name,
-            )
+        self.esdfCollisionCst = LinearizedESDFConstraint(
+            self.robot,
+            self.esdf_sphere_names,
+            self.esdf_sphere_radii,
+            self.esdf_safety_margin,
+            self.esdf_constraint_name,
+        )
 
-        if self.esdf_collision_mode in {"squared_hinge_cost", "casadi_local_grid"}:
+        if self.esdf_collision_mode == "squared_hinge_cost":
             soft_cost_config = self.esdf_collision_config.get("soft_cost", {})
             self.esdfCollisionSoftCst = SoftConstraintsSquaredHingeCostFunction(
                 soft_cost_config.get("mu", self.esdf_collision_config.get("mu", 1.0)),
@@ -549,10 +527,7 @@ class MPC(MPCBase):
             if "time" in key:
                 self.log[key] = 0
 
-        if self.esdf_collision_mode == "casadi_local_grid":
-            self._update_esdf_local_grid(x_bar_initial)
-        else:
-            self._update_esdf_linearization(x_bar_initial)
+        self._update_esdf_linearization(x_bar_initial)
 
         for i in range(self.N + 1):
             curr_p_map = self.p_struct(0)
@@ -572,19 +547,10 @@ class MPC(MPCBase):
         if not self.esdf_collision_enabled:
             return
 
-        suffix = self.esdf_constraint_name
-        if self.esdf_collision_mode == "casadi_local_grid":
-            if self.esdf_local_grid_data is None:
-                raise RuntimeError("ESDF local grid data was not initialized")
-            curr_p_map[f"x_grid_{suffix}"] = self.esdf_local_grid_data["x_grid"]
-            curr_p_map[f"y_grid_{suffix}"] = self.esdf_local_grid_data["y_grid"]
-            curr_p_map[f"z_grid_{suffix}"] = self.esdf_local_grid_data["z_grid"]
-            curr_p_map[f"value_{suffix}"] = self.esdf_local_grid_data["value"]
-            return
-
         if self.esdf_linearization is None:
             raise RuntimeError("ESDF linearization data was not initialized")
 
+        suffix = self.esdf_constraint_name
         curr_p_map[f"c0_{suffix}"] = self.esdf_linearization["c0"][i].T
         curr_p_map[f"n0_{suffix}"] = self.esdf_linearization["n0"][i].T
         curr_p_map[f"d0_{suffix}"] = self.esdf_linearization["d0"][i].reshape((-1, 1))
@@ -665,34 +631,6 @@ class MPC(MPCBase):
         self.log["esdf_min_margin_per_sphere"] = min_margins_per_sphere
         t2 = time.perf_counter()
         self.log["time_esdf_linearization"] = t2 - t1
-
-    def _update_esdf_local_grid(self, x_bar_initial):
-        """Sample a local ESDF grid for the CasADi interpolant backend."""
-        if not self.esdf_collision_enabled:
-            self.esdf_local_grid_data = None
-            return
-        if self.esdf_local_grid_sampler is None:
-            raise RuntimeError("ESDF local grid sampler was not initialized")
-        if self.esdf_map is None:
-            raise RuntimeError(
-                "ESDF local-grid collision is enabled but no ESDF map is initialized. "
-                "Set esdf_collision.initialize_map to true for runtime control."
-            )
-
-        q_bar = x_bar_initial[:, : self.DoF]
-        grid_data = self.esdf_local_grid_sampler.sample(self.esdf_map, q_bar)
-        self.esdf_local_grid_data = grid_data
-
-        valid_count = grid_data["valid_count"]
-        total_count = grid_data["total_count"]
-        self.log["time_esdf_local_grid"] = grid_data["sample_time"]
-        self.log["esdf_grid_valid_count"] = valid_count
-        self.log["esdf_grid_total_count"] = total_count
-        self.log["esdf_grid_valid_ratio"] = (
-            float(valid_count) / float(total_count) if total_count else 0.0
-        )
-        self.log["esdf_grid_min_distance"] = grid_data["min_distance"]
-        self.log["esdf_grid_max_distance"] = grid_data["max_distance"]
 
     def _compute_esdf_sphere_centers(self, q_bar):
         """Evaluate configured collision sphere centers for a q trajectory."""
@@ -1039,7 +977,6 @@ class MPC(MPCBase):
             "time_ocp_set_params_tracking": 0,
             "time_ocp_set_params_setp": 0,
             "time_esdf_linearization": 0,
-            "time_esdf_local_grid": 0,
             "state_constraint": 0,
             "control_constraint": 0,
             "esdf_all_valid": False,
@@ -1048,11 +985,6 @@ class MPC(MPCBase):
             "esdf_min_distance": np.nan,
             "esdf_min_clearance": np.nan,
             "esdf_min_margin": np.nan,
-            "esdf_grid_valid_count": 0,
-            "esdf_grid_total_count": 0,
-            "esdf_grid_valid_ratio": 0.0,
-            "esdf_grid_min_distance": np.nan,
-            "esdf_grid_max_distance": np.nan,
             "esdf_constraint": 0,
             "base_only_task_active": False,
             "x_bar": 0,

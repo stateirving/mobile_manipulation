@@ -113,8 +113,32 @@ controller:
         base:
           - "base_body_collision"
         rack:
-          - "lift_collision"
-          - "lift_top_collision"
+          - "lift_mast_collision_00"
+          - "lift_mast_collision_01"
+          - "lift_mast_collision_02"
+          - "lift_mast_collision_03"
+          - "lift_mast_collision_04"
+          - "lift_mast_collision_05"
+          - "lift_mast_collision_06"
+          - "lift_mast_collision_07"
+          - "lift_mast_collision_08"
+          - "lift_mast_collision_09"
+          - "lift_mast_collision_10"
+          - "lift_mast_collision_11"
+          - "lift_mast_collision_12"
+          - "lift_mast_collision_13"
+          - "lift_mast_collision_14"
+          - "lift_mast_collision_15"
+          - "lift_mast_collision_16"
+          - "lift_mast_collision_17"
+          - "lift_mast_collision_18"
+          - "lift_mast_collision_19"
+          - "lift_mast_collision_20"
+          - "lift_mast_collision_21"
+          - "lift_mast_collision_22"
+          - "lift_mast_collision_23"
+          - "lift_mast_collision_24"
+          - "lift_mast_collision_25"
         upper_arm:
           - "arm_l4_collision"
           - "arm_l3_collision"
@@ -136,16 +160,137 @@ controller:
           type: "sphere"
           radius: 0.20
           translation: [-0.10, 0.0, 0.12]
-        lift_collision:
-          parent_link: "link_lift"
+        # The mast is fixed to the base. These spheres must not follow joint_lift.
+        lift_mast_collision_00:
+          parent_link: "link_mast"
           type: "sphere"
-          radius: 0.07
-          translation: [0.0, 0.0, 0.10]
-        lift_top_collision:
-          parent_link: "link_lift"
+          radius: 0.03
+          translation: [0.0, 0.075, 0.0]
+        lift_mast_collision_01:
+          parent_link: "link_mast"
           type: "sphere"
-          radius: 0.06
-          translation: [0.00, 0.00, 0.387]
+          radius: 0.03
+          translation: [0.0, 0.125, 0.0]
+        lift_mast_collision_02:
+          parent_link: "link_mast"
+          type: "sphere"
+          radius: 0.03
+          translation: [0.0, 0.175, 0.0]
+        lift_mast_collision_03:
+          parent_link: "link_mast"
+          type: "sphere"
+          radius: 0.03
+          translation: [0.0, 0.225, 0.0]
+        lift_mast_collision_04:
+          parent_link: "link_mast"
+          type: "sphere"
+          radius: 0.03
+          translation: [0.0, 0.275, 0.0]
+        lift_mast_collision_05:
+          parent_link: "link_mast"
+          type: "sphere"
+          radius: 0.03
+          translation: [0.0, 0.325, 0.0]
+        lift_mast_collision_06:
+          parent_link: "link_mast"
+          type: "sphere"
+          radius: 0.03
+          translation: [0.0, 0.375, 0.0]
+        lift_mast_collision_07:
+          parent_link: "link_mast"
+          type: "sphere"
+          radius: 0.03
+          translation: [0.0, 0.425, 0.0]
+        lift_mast_collision_08:
+          parent_link: "link_mast"
+          type: "sphere"
+          radius: 0.03
+          translation: [0.0, 0.475, 0.0]
+        lift_mast_collision_09:
+          parent_link: "link_mast"
+          type: "sphere"
+          radius: 0.03
+          translation: [0.0, 0.525, 0.0]
+        lift_mast_collision_10:
+          parent_link: "link_mast"
+          type: "sphere"
+          radius: 0.03
+          translation: [0.0, 0.575, 0.0]
+        lift_mast_collision_11:
+          parent_link: "link_mast"
+          type: "sphere"
+          radius: 0.03
+          translation: [0.0, 0.625, 0.0]
+        lift_mast_collision_12:
+          parent_link: "link_mast"
+          type: "sphere"
+          radius: 0.03
+          translation: [0.0, 0.675, 0.0]
+        lift_mast_collision_13:
+          parent_link: "link_mast"
+          type: "sphere"
+          radius: 0.03
+          translation: [0.0, 0.725, 0.0]
+        lift_mast_collision_14:
+          parent_link: "link_mast"
+          type: "sphere"
+          radius: 0.03
+          translation: [0.0, 0.775, 0.0]
+        lift_mast_collision_15:
+          parent_link: "link_mast"
+          type: "sphere"
+          radius: 0.03
+          translation: [0.0, 0.825, 0.0]
+        lift_mast_collision_16:
+          parent_link: "link_mast"
+          type: "sphere"
+          radius: 0.03
+          translation: [0.0, 0.875, 0.0]
+        lift_mast_collision_17:
+          parent_link: "link_mast"
+          type: "sphere"
+          radius: 0.03
+          translation: [0.0, 0.925, 0.0]
+        lift_mast_collision_18:
+          parent_link: "link_mast"
+          type: "sphere"
+          radius: 0.03
+          translation: [0.0, 0.975, 0.0]
+        lift_mast_collision_19:
+          parent_link: "link_mast"
+          type: "sphere"
+          radius: 0.03
+          translation: [0.0, 1.025, 0.0]
+        lift_mast_collision_20:
+          parent_link: "link_mast"
+          type: "sphere"
+          radius: 0.03
+          translation: [0.0, 1.075, 0.0]
+        lift_mast_collision_21:
+          parent_link: "link_mast"
+          type: "sphere"
+          radius: 0.03
+          translation: [0.0, 1.125, 0.0]
+        lift_mast_collision_22:
+          parent_link: "link_mast"
+          type: "sphere"
+          radius: 0.03
+          translation: [0.0, 1.175, 0.0]
+        lift_mast_collision_23:
+          parent_link: "link_mast"
+          type: "sphere"
+          radius: 0.03
+          translation: [0.0, 1.225, 0.0]
+        lift_mast_collision_24:
+          parent_link: "link_mast"
+          type: "sphere"
+          radius: 0.03
+          translation: [0.0, 1.275, 0.0]
+        lift_mast_collision_25:
+          parent_link: "link_mast"
+          type: "sphere"
+          radius: 0.03
+          translation: [0.0, 1.325, 0.0]
         arm_l4_collision:
           parent_link: "link_arm_l4"
           type: "sphere"

@@ -135,7 +135,7 @@ controller:
       smoothing: 5.0e-03
 
 simulation:
-  duration: 60.0
+  duration: 80.0
 
 logging:
   log_dir: "stretch_esdf_offline_ompl_wbmpc"
