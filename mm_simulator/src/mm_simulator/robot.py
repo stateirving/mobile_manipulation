@@ -28,16 +28,15 @@ def integrate_acceleration_command(
     measured_velocity = np.asarray(measured_velocity, dtype=float)
     command += acceleration * float(timestep)
 
-    if str(base_type).lower() != "nonholonomic" or str(
-        nonholonomic_mode
-    ).lower() != "dynamics":
+    if (
+        str(base_type).lower() != "nonholonomic"
+        or str(nonholonomic_mode).lower() != "dynamics"
+    ):
         return command
 
     theta = float(q[2])
     c, s = np.cos(theta), np.sin(theta)
-    measured_forward_velocity = (
-        c * measured_velocity[0] + s * measured_velocity[1]
-    )
+    measured_forward_velocity = c * measured_velocity[0] + s * measured_velocity[1]
     forward_acceleration = c * acceleration[0] + s * acceleration[1]
     commanded_forward_velocity = (
         measured_forward_velocity + forward_acceleration * float(timestep)

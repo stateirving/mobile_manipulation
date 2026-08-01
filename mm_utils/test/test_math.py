@@ -15,7 +15,9 @@ def _rotz(theta):
 def test_casadi_so3_log_identity_has_finite_value_and_jacobian():
     angle = cs.MX.sym("angle")
     omega = casadi_SO3_log(_rotz(angle))
-    function = cs.Function("so3_log_and_jacobian", [angle], [omega, cs.jacobian(omega, angle)])
+    function = cs.Function(
+        "so3_log_and_jacobian", [angle], [omega, cs.jacobian(omega, angle)]
+    )
 
     value, jacobian = function(0.0)
 
@@ -26,7 +28,9 @@ def test_casadi_so3_log_identity_has_finite_value_and_jacobian():
 
 def test_casadi_so3_log_recovers_small_rotation():
     angle = cs.MX.sym("angle")
-    function = cs.Function("so3_log_small_angle", [angle], [casadi_SO3_log(_rotz(angle))])
+    function = cs.Function(
+        "so3_log_small_angle", [angle], [casadi_SO3_log(_rotz(angle))]
+    )
 
     value = function(1.0e-4).full().reshape(-1)
 

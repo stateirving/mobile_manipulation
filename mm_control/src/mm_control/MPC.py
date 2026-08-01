@@ -6,11 +6,11 @@ from numpy.typing import NDArray
 from scipy.interpolate import interp1d
 
 from mm_control.esdf_map import ESDFMap, OnlineNvbloxESDFMap
+from mm_control.MPCBase import MPCBase
 from mm_control.MPCConstraints import (
     LinearizedESDFConstraint,
     NonholonomicBaseConstraint,
 )
-from mm_control.MPCBase import MPCBase
 from mm_control.MPCCostFunctions import (
     CostFunctionRegistry,
     JointSquaredHingeCostFunction,
@@ -232,9 +232,7 @@ class MPC(MPCBase):
         self.esdf_map = None
         self.esdf_sphere_names = []
         self.esdf_sphere_radii = np.zeros(0)
-        self.esdf_safety_margin = float(
-            self.esdf_collision_config.get("d_safe", 0.05)
-        )
+        self.esdf_safety_margin = float(self.esdf_collision_config.get("d_safe", 0.05))
         self.esdf_invalid_distance = float(
             self.esdf_collision_config.get("invalid_distance", -1.0)
         )
@@ -242,9 +240,7 @@ class MPC(MPCBase):
             self.esdf_collision_config.get("accept_status2_min_margin", 0.0)
         )
         self.esdf_constraint_name = self.esdf_collision_config.get("name", "esdf")
-        self.esdf_collision_mode = self.esdf_collision_config.get(
-            "mode", "constraint"
-        )
+        self.esdf_collision_mode = self.esdf_collision_config.get("mode", "constraint")
         self.esdfCollisionCst = None
         self.esdfCollisionSoftCst = None
         self.esdf_linearization = None
@@ -285,12 +281,8 @@ class MPC(MPCBase):
         self.log["esdf_node0_distances"] = np.full(len(sphere_names), np.nan)
         self.log["esdf_node0_margins"] = np.full(len(sphere_names), np.nan)
         self.log["esdf_node0_valid"] = np.zeros(len(sphere_names), dtype=bool)
-        self.log["esdf_min_distance_per_sphere"] = np.full(
-            len(sphere_names), np.nan
-        )
-        self.log["esdf_min_margin_per_sphere"] = np.full(
-            len(sphere_names), np.nan
-        )
+        self.log["esdf_min_distance_per_sphere"] = np.full(len(sphere_names), np.nan)
+        self.log["esdf_min_margin_per_sphere"] = np.full(len(sphere_names), np.nan)
 
         self.esdfCollisionCst = LinearizedESDFConstraint(
             self.robot,
@@ -321,9 +313,7 @@ class MPC(MPCBase):
         return parse_path(str(map_path))
 
     def _create_esdf_map(self):
-        source = str(
-            self.esdf_collision_config.get("source", "offline")
-        ).lower()
+        source = str(self.esdf_collision_config.get("source", "offline")).lower()
         if source in {"offline", "offline_npz", "npz", "exported_nvblox"}:
             map_path = self._resolve_esdf_map_path(
                 self.esdf_collision_config["map_path"]
@@ -340,8 +330,8 @@ class MPC(MPCBase):
             online_config = dict(config.get("online_nvblox", {}))
             if "initial_map_path" in online_config:
                 initial_map_path = online_config["initial_map_path"]
-                online_config["initial_map_path"] = (
-                    self._resolve_esdf_map_path(initial_map_path)
+                online_config["initial_map_path"] = self._resolve_esdf_map_path(
+                    initial_map_path
                 )
             elif "initial_map_path" in config:
                 config["initial_map_path"] = self._resolve_esdf_map_path(
@@ -643,9 +633,9 @@ class MPC(MPCBase):
             for node_idx in range(num_nodes):
                 pos, _ = fk_fcn(q_bar[node_idx])
                 pos_np = pos.toarray() if hasattr(pos, "toarray") else pos
-                centers[node_idx, sphere_idx] = np.asarray(
-                    pos_np, dtype=float
-                ).reshape(3)
+                centers[node_idx, sphere_idx] = np.asarray(pos_np, dtype=float).reshape(
+                    3
+                )
         return centers
 
     def _evaluate_solution_esdf_margins(self, x_bar):
@@ -671,7 +661,9 @@ class MPC(MPCBase):
             "all_valid": bool(np.all(valid)),
             "valid_count": int(np.count_nonzero(valid)),
             "total_count": int(valid.size),
-            "min_margin": float(np.min(valid_margins)) if valid_margins.size else np.nan,
+            "min_margin": (
+                float(np.min(valid_margins)) if valid_margins.size else np.nan
+            ),
         }
 
     def _set_initial_guess(self, curr_p_map, i, x_bar_initial, u_bar_initial):
@@ -842,9 +834,7 @@ class MPC(MPCBase):
                 return
 
             if self.params["acados"]["raise_exception_on_failure"]:
-                raise Exception(
-                    f"acados_ocp_solver returned status {status}"
-                )
+                raise Exception(f"acados_ocp_solver returned status {status}")
 
             self._apply_solver_failure_fallback(xo, t, status)
             return

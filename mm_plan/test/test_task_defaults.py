@@ -44,6 +44,4 @@ def test_resolve_task_configs_keeps_legacy_tasks_unchanged():
 
 def test_resolve_task_configs_rejects_unknown_defaults():
     with pytest.raises(KeyError, match="Unknown planner task defaults"):
-        resolve_task_configs(
-            {"task_defaults": {}, "tasks": [{"defaults": "missing"}]}
-        )
+        resolve_task_configs({"task_defaults": {}, "tasks": [{"defaults": "missing"}]})

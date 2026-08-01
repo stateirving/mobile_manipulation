@@ -7,6 +7,7 @@ import time
 
 import numpy as np
 import pybullet as pyb
+from export_nvblox_esdf import make_base_spin_camera_poses, render_camera_pose
 from scipy.interpolate import interp1d
 from scipy.spatial.transform import Rotation as Rot
 
@@ -17,19 +18,13 @@ from mm_simulator.robot import integrate_acceleration_command
 from mm_utils import parsing
 from mm_utils.logging import DataLogger
 
-from export_nvblox_esdf import make_base_spin_camera_poses, render_camera_pose
-
 
 class CameraPreview:
     def __init__(self, config):
         preview_config = config.get("preview", {})
         self.enabled = bool(preview_config.get("enabled", False))
-        self.show_initial_scan = bool(
-            preview_config.get("show_initial_scan", True)
-        )
-        self.show_realtime_scan = bool(
-            preview_config.get("show_realtime_scan", True)
-        )
+        self.show_initial_scan = bool(preview_config.get("show_initial_scan", True))
+        self.show_realtime_scan = bool(preview_config.get("show_realtime_scan", True))
         self.mode = str(preview_config.get("mode", "rgb_depth")).lower()
         self.window_name = str(
             preview_config.get("window_name", "online nvblox camera")
@@ -40,8 +35,8 @@ class CameraPreview:
 
         if not self.enabled:
             return
-        display_available = (
-            os.environ.get("DISPLAY") or os.environ.get("WAYLAND_DISPLAY")
+        display_available = os.environ.get("DISPLAY") or os.environ.get(
+            "WAYLAND_DISPLAY"
         )
         if not display_available:
             logging.getLogger("Controller").warning(
@@ -116,9 +111,7 @@ class OnlineNvbloxDiagnostics:
     def __init__(self, sim, config, controller):
         diag_config = config.get("diagnostics", {})
         self.enabled = bool(diag_config.get("enabled", False))
-        self.unknown_distance = float(
-            diag_config.get("unknown_distance", 100.0)
-        )
+        self.unknown_distance = float(diag_config.get("unknown_distance", 100.0))
         self.unknown_tolerance = float(
             diag_config.get("unknown_distance_tolerance", 1.0e-3)
         )
@@ -170,12 +163,8 @@ class OnlineNvbloxDiagnostics:
                 ],
                 dtype=np.int64,
             ),
-            "target_visible_pixels": np.zeros(
-                self.target_count, dtype=np.int64
-            ),
-            "target_integrated_pixels": np.zeros(
-                self.target_count, dtype=np.int64
-            ),
+            "target_visible_pixels": np.zeros(self.target_count, dtype=np.int64),
+            "target_integrated_pixels": np.zeros(self.target_count, dtype=np.int64),
             "target_visible_pixels_total": 0,
             "target_integrated_pixels_total": 0,
             "target_visible_pixels_max": 0,
@@ -236,14 +225,10 @@ class OnlineNvbloxDiagnostics:
             np.sum(stats["target_integrated_pixels"])
         )
         stats["target_visible_pixels_max"] = int(
-            np.max(stats["target_visible_pixels"])
-            if self.target_count
-            else 0
+            np.max(stats["target_visible_pixels"]) if self.target_count else 0
         )
         stats["target_integrated_pixels_max"] = int(
-            np.max(stats["target_integrated_pixels"])
-            if self.target_count
-            else 0
+            np.max(stats["target_integrated_pixels"]) if self.target_count else 0
         )
         self._update_target_z_stats(
             stats,
@@ -265,18 +250,12 @@ class OnlineNvbloxDiagnostics:
             return
 
         log = getattr(controller, "log", {})
-        node0_distances = np.asarray(
-            log.get("esdf_node0_distances", []), dtype=float
-        )
-        node0_margins = np.asarray(
-            log.get("esdf_node0_margins", []), dtype=float
-        )
+        node0_distances = np.asarray(log.get("esdf_node0_distances", []), dtype=float)
+        node0_margins = np.asarray(log.get("esdf_node0_margins", []), dtype=float)
         min_distances = np.asarray(
             log.get("esdf_min_distance_per_sphere", []), dtype=float
         )
-        min_margins = np.asarray(
-            log.get("esdf_min_margin_per_sphere", []), dtype=float
-        )
+        min_margins = np.asarray(log.get("esdf_min_margin_per_sphere", []), dtype=float)
         sphere_names = list(getattr(controller, "esdf_sphere_names", []))
         if self.base_sphere_name in sphere_names:
             base_idx = sphere_names.index(self.base_sphere_name)
@@ -287,27 +266,18 @@ class OnlineNvbloxDiagnostics:
             base_distance = float(node0_distances[base_idx])
             stats["base_esdf_node0_distance"] = base_distance
             if base_idx < node0_margins.size:
-                stats["base_esdf_node0_margin"] = float(
-                    node0_margins[base_idx]
-                )
+                stats["base_esdf_node0_margin"] = float(node0_margins[base_idx])
             stats["base_esdf_node0_unknown"] = bool(
                 np.isfinite(base_distance)
-                and abs(base_distance - self.unknown_distance)
-                <= self.unknown_tolerance
+                and abs(base_distance - self.unknown_distance) <= self.unknown_tolerance
             )
 
         if base_idx >= 0 and base_idx < min_distances.size:
-            stats["base_esdf_min_horizon_distance"] = float(
-                min_distances[base_idx]
-            )
+            stats["base_esdf_min_horizon_distance"] = float(min_distances[base_idx])
         if base_idx >= 0 and base_idx < min_margins.size:
-            stats["base_esdf_min_horizon_margin"] = float(
-                min_margins[base_idx]
-            )
+            stats["base_esdf_min_horizon_margin"] = float(min_margins[base_idx])
         if node0_margins.size and np.any(np.isfinite(node0_margins)):
-            stats["min_sphere_node0_margin"] = float(
-                np.nanmin(node0_margins)
-            )
+            stats["min_sphere_node0_margin"] = float(np.nanmin(node0_margins))
         if min_margins.size and np.any(np.isfinite(min_margins)):
             min_idx = int(np.nanargmin(min_margins))
             stats["min_sphere_horizon_margin"] = float(min_margins[min_idx])
@@ -435,9 +405,7 @@ class OnlineNvbloxDiagnostics:
         z_w = np.asarray(world_z, dtype=np.float64)
         body_uid = seg & ((1 << 24) - 1)
         link_idx = (seg >> 24) - 1
-        for idx, (target_body_uid, target_link_idx) in enumerate(
-            self.target_specs
-        ):
+        for idx, (target_body_uid, target_link_idx) in enumerate(self.target_specs):
             if target_body_uid < 0 or target_link_idx < -1:
                 continue
             target_mask = (
@@ -499,10 +467,7 @@ def _camera_from_render_config(config):
 
 
 def _online_nvblox_stats(prefix, stats):
-    return {
-        f"online_nvblox_{prefix}_{key}": value
-        for key, value in stats.items()
-    }
+    return {f"online_nvblox_{prefix}_{key}": value for key, value in stats.items()}
 
 
 def _zero_integration_stats():
@@ -729,9 +694,7 @@ def _pose_matrix(pos, quat_xyzw):
 
 def _local_rpy_transform(rpy):
     transform = np.eye(4, dtype=np.float32)
-    transform[:3, :3] = Rot.from_euler(
-        "xyz", np.asarray(rpy, dtype=float)
-    ).as_matrix()
+    transform[:3, :3] = Rot.from_euler("xyz", np.asarray(rpy, dtype=float)).as_matrix()
     return transform
 
 
@@ -749,13 +712,9 @@ def _camera_link_pose(robot, link_name, frame_convention, correction_rpy):
     if convention in {"optical", "ros_optical", "depth_optical"}:
         pass
     elif convention in {"ros_link", "camera_link", "link"}:
-        t_w_c = t_w_c @ _local_rpy_transform(
-            [-math.pi / 2.0, 0.0, -math.pi / 2.0]
-        )
+        t_w_c = t_w_c @ _local_rpy_transform([-math.pi / 2.0, 0.0, -math.pi / 2.0])
     else:
-        raise ValueError(
-            "camera_frame_convention must be 'optical' or 'ros_link'"
-        )
+        raise ValueError("camera_frame_convention must be 'optical' or 'ros_link'")
 
     t_w_c = t_w_c @ _local_rpy_transform(correction_rpy)
     return t_w_c
@@ -787,23 +746,15 @@ def _realtime_camera_configs(scan_config):
     return camera_configs
 
 
-def _realtime_camera_poses_from_config(
-    sim, scan_config, base_pose, step_idx, interval
-):
+def _realtime_camera_poses_from_config(sim, scan_config, base_pose, step_idx, interval):
     pose_source = str(scan_config.get("pose_source", "camera_link")).lower()
     camera_name = str(scan_config.get("name", pose_source))
     name_prefix = f"realtime_{step_idx:06d}_{camera_name}"
 
     if pose_source in {"camera_link", "link", "onboard"}:
-        link_name = scan_config.get(
-            "camera_link_name", "camera_depth_optical_frame"
-        )
-        frame_convention = scan_config.get(
-            "camera_frame_convention", "optical"
-        )
-        correction_rpy = scan_config.get(
-            "pose_correction_rpy", [0.0, 0.0, 0.0]
-        )
+        link_name = scan_config.get("camera_link_name", "camera_depth_optical_frame")
+        frame_convention = scan_config.get("camera_frame_convention", "optical")
+        correction_rpy = scan_config.get("pose_correction_rpy", [0.0, 0.0, 0.0])
         return [
             (
                 f"{name_prefix}_{link_name}",
@@ -815,14 +766,10 @@ def _realtime_camera_poses_from_config(
 
     if pose_source in {"base_spin", "base"}:
         num_views = int(scan_config.get("num_views", 1))
-        yaw_offset = math.radians(
-            float(scan_config.get("yaw_offset_deg", 0.0))
-        )
+        yaw_offset = math.radians(float(scan_config.get("yaw_offset_deg", 0.0)))
         if scan_config.get("cycle_yaw_offset", False):
             cycle = max(1, int(scan_config.get("cycle_length", 8)))
-            yaw_offset += (
-                2.0 * math.pi * ((step_idx // interval) % cycle) / cycle
-            )
+            yaw_offset += 2.0 * math.pi * ((step_idx // interval) % cycle) / cycle
         return make_base_spin_camera_poses(
             np.asarray(base_pose, dtype=float),
             num_views,
@@ -993,17 +940,14 @@ def main():
     _configure_loggers(config)
     preview = CameraPreview(online_config)
 
-    if (
-        "limits" not in sim_config.get("robot", {})
-        and "limits" in ctrl_config.get("robot", {})
+    if "limits" not in sim_config.get("robot", {}) and "limits" in ctrl_config.get(
+        "robot", {}
     ):
         sim_config["robot"]["limits"] = ctrl_config["robot"]["limits"]
     # The controller collision model is the authoritative robot-interface
     # representation used for simulator markers as well.
     if "collision_model" in ctrl_config.get("robot", {}):
-        sim_config["robot"]["collision_model"] = ctrl_config["robot"][
-            "collision_model"
-        ]
+        sim_config["robot"]["collision_model"] = ctrl_config["robot"]["collision_model"]
 
     timestamp = datetime.datetime.now()
     sim = simulation.BulletSimulation(
@@ -1070,9 +1014,7 @@ def main():
     )
     cmd_vel_clip_count = 0
     step_idx = 0
-    timing_log_interval = int(
-        online_config.get("timing_log_interval_steps", 0)
-    )
+    timing_log_interval = int(online_config.get("timing_log_interval_steps", 0))
 
     while t <= sim.duration:
         robot_states = robot.joint_states(add_noise=False)
@@ -1089,13 +1031,9 @@ def main():
                 preview,
                 diagnostics,
             )
-            controller.log.update(
-                _online_nvblox_stats("realtime", realtime_stats)
-            )
+            controller.log.update(_online_nvblox_stats("realtime", realtime_stats))
 
-        references = sot.getReferences(
-            t, robot_states, controller.N + 1, controller.dt
-        )
+        references = sot.getReferences(t, robot_states, controller.N + 1, controller.dt)
         sim.import_planned_path_marker(sot.getPlanner())
 
         t0 = time.perf_counter()
@@ -1104,13 +1042,9 @@ def main():
         map_timing = _online_map_timing(controller)
         diagnostics.add_controller_stats(diagnostic_stats, controller)
         controller.log.update(
-            _online_nvblox_stats(
-                "enabled", {"value": 1 if online_enabled else 0}
-            )
+            _online_nvblox_stats("enabled", {"value": 1 if online_enabled else 0})
         )
-        logging.getLogger("Controller").log(
-            20, f"Controller Run Time: {t1 - t0}"
-        )
+        logging.getLogger("Controller").log(20, f"Controller Run Time: {t1 - t0}")
         if (
             online_enabled
             and timing_log_interval > 0
@@ -1172,9 +1106,7 @@ def main():
             )
             u = v_interp(sim.timestep)
         else:
-            raise ValueError(
-                f"Unknown cmd_vel_type: {ctrl_config['cmd_vel_type']}"
-            )
+            raise ValueError(f"Unknown cmd_vel_type: {ctrl_config['cmd_vel_type']}")
 
         u_raw = np.asarray(u, dtype=float).copy()
         cmd_vel_clipped = False
@@ -1185,8 +1117,7 @@ def main():
                 cmd_vel_clip_count += 1
                 if cmd_vel_clip_count <= 5:
                     logging.getLogger("Controller").warning(
-                        "Command velocity clipped at t=%.3f: "
-                        "raw=%s clipped=%s",
+                        "Command velocity clipped at t=%.3f: " "raw=%s clipped=%s",
                         t,
                         u_raw,
                         u,
@@ -1241,9 +1172,7 @@ def main():
         logger.append("v_ew_ws", ee_linear_vel_world)
         logger.append("omega_ew_ws", ee_angular_vel_world)
         logger.append("r_bw_ws", robot_states[0][:2])
-        _append_prefixed_stats(
-            logger, "online_nvblox_realtime", realtime_stats
-        )
+        _append_prefixed_stats(logger, "online_nvblox_realtime", realtime_stats)
         _append_prefixed_stats(logger, "online_nvblox_map", map_timing)
         _append_prefixed_stats(logger, "online_nvblox_diag", diagnostic_stats)
 

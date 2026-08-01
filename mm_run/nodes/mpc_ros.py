@@ -8,7 +8,6 @@ import time
 
 import numpy as np
 import rclpy
-from rclpy.node import Node
 import tf_transformations as tf
 from geometry_msgs.msg import Point, PoseStamped, Quaternion, Transform, Twist
 from mobile_manipulation_central import PointToPointTrajectory, bound_array
@@ -18,12 +17,13 @@ from mobile_manipulation_central.ros_interface import (
     ViconObjectInterface,
 )
 from nav_msgs.msg import Path
+from rclpy.executors import MultiThreadedExecutor
+from rclpy.node import Node
 from scipy.interpolate import interp1d
 from scipy.spatial.transform import Rotation as Rot
 from spatialmath.base import r2q, rpy2r
 from trajectory_msgs.msg import MultiDOFJointTrajectory, MultiDOFJointTrajectoryPoint
 from visualization_msgs.msg import Marker, MarkerArray
-from rclpy.executors import MultiThreadedExecutor
 
 import mm_control.MPC as MPC
 from mm_control.robot import CasadiModelInterface, MobileManipulator3D
@@ -78,7 +78,7 @@ class ControllerROSNode(Node):
             config["logging"]["log_dir"] = os.path.join(
                 config["logging"]["log_dir"], args.logging_sub_folder
             )
-        
+
         self.ctrl_config = config["controller"]
         self.planner_config = config["planner"].copy()
         self.get_logger().info(f"Controller type: {self.ctrl_config['type']}")
@@ -144,7 +144,8 @@ class ControllerROSNode(Node):
         # create robot ros2 interface, vicon tool ros2 interface, and joystick ros2 interface
         # /home/miao/repo/mobile_manipulation/mobile_manipulation_central/src/mobile_manipulation_central/ros_interface.py
         joint_names = self.ctrl_config["robot"].get(
-            "joint_names", config.get("simulation", {}).get("robot", {}).get("joint_names")
+            "joint_names",
+            config.get("simulation", {}).get("robot", {}).get("joint_names"),
         )
         if joint_names is None:
             raise KeyError(
@@ -195,9 +196,7 @@ class ControllerROSNode(Node):
         self.current_plan_visualization_pub = self.create_publisher(
             Marker, "current_plan_visualization", 10
         )
-        self.controller_ref_pub = self.create_publisher(
-            Path, "controller_reference", 5
-        )
+        self.controller_ref_pub = self.create_publisher(Path, "controller_reference", 5)
 
         self.tracking_point_pub = self.create_publisher(
             MultiDOFJointTrajectory, "controller_tracking_pt", 5
@@ -361,8 +360,12 @@ class ControllerROSNode(Node):
                     quat = tf.quaternion_from_euler(0, 0, planner.base_target[2])
                     pose_msg = PoseStamped()
                     pose_msg.header.stamp = self.get_clock().now().to_msg()
-                    pose_msg.pose.position = Point(x=planner.base_target[0], y=planner.base_target[1], z=0.25)
-                    pose_msg.pose.orientation = Quaternion(x=quat[0], y=quat[1], z=quat[2], w=quat[3])
+                    pose_msg.pose.position = Point(
+                        x=planner.base_target[0], y=planner.base_target[1], z=0.25
+                    )
+                    pose_msg.pose.orientation = Quaternion(
+                        x=quat[0], y=quat[1], z=quat[2], w=quat[3]
+                    )
                     self.pose_plan_visualization_pub.publish(pose_msg)
                 elif planner.ref_type == RefType.PATH:
                     marker_plan = self._make_marker(
@@ -382,8 +385,14 @@ class ControllerROSNode(Node):
                     pose_msg = PoseStamped()
                     pose_msg.header.stamp = self.get_clock().now().to_msg()
                     pose_msg.header.frame_id = "world"
-                    pose_msg.pose.position = Point(x=planner.ee_target[0], y=planner.ee_target[1], z=planner.ee_target[2])
-                    pose_msg.pose.orientation = Quaternion(x=quat[0], y=quat[1], z=quat[2], w=quat[3])
+                    pose_msg.pose.position = Point(
+                        x=planner.ee_target[0],
+                        y=planner.ee_target[1],
+                        z=planner.ee_target[2],
+                    )
+                    pose_msg.pose.orientation = Quaternion(
+                        x=quat[0], y=quat[1], z=quat[2], w=quat[3]
+                    )
                     self.pose_plan_visualization_pub.publish(pose_msg)
                 elif planner.ref_type == RefType.PATH:
                     marker_plan = self._make_marker(
@@ -392,7 +401,9 @@ class ControllerROSNode(Node):
                         rgba=color + [1],
                         scale=[0.1, 0.1, 0.1],
                     )
-                    marker_plan.points = [Point(x=pt[0], y=pt[1], z=pt[2]) for pt in planner.ee_plan["p"]]
+                    marker_plan.points = [
+                        Point(x=pt[0], y=pt[1], z=pt[2]) for pt in planner.ee_plan["p"]
+                    ]
                     marker_plan.lifetime.sec = 0
                     marker_plan.lifetime.nanosec = int(0.1 * 1e9)
                     self.plan_visualization_pub.publish(marker_plan)
@@ -404,8 +415,12 @@ class ControllerROSNode(Node):
                 quat = tf.quaternion_from_euler(0, 0, planner.base_target[2])
                 pose_msg = PoseStamped()
                 pose_msg.header.stamp = self.get_clock().now().to_msg()
-                pose_msg.pose.position = Point(x=planner.base_target[0], y=planner.base_target[1], z=0.25)
-                pose_msg.pose.orientation = Quaternion(x=quat[0], y=quat[1], z=quat[2], w=quat[3])
+                pose_msg.pose.position = Point(
+                    x=planner.base_target[0], y=planner.base_target[1], z=0.25
+                )
+                pose_msg.pose.orientation = Quaternion(
+                    x=quat[0], y=quat[1], z=quat[2], w=quat[3]
+                )
                 self.pose_plan_visualization_pub.publish(pose_msg)
             elif planner.ref_type == RefType.PATH:
                 marker_plan = self._make_marker(
@@ -428,8 +443,14 @@ class ControllerROSNode(Node):
                 pose_msg = PoseStamped()
                 pose_msg.header.frame_id = "world"
                 pose_msg.header.stamp = self.get_clock().now().to_msg()
-                pose_msg.pose.position = Point(x=planner.ee_target[0], y=planner.ee_target[1], z=planner.ee_target[2])
-                pose_msg.pose.orientation = Quaternion(x=quat[0], y=quat[1], z=quat[2], w=quat[3])
+                pose_msg.pose.position = Point(
+                    x=planner.ee_target[0],
+                    y=planner.ee_target[1],
+                    z=planner.ee_target[2],
+                )
+                pose_msg.pose.orientation = Quaternion(
+                    x=quat[0], y=quat[1], z=quat[2], w=quat[3]
+                )
                 self.pose_plan_visualization_pub.publish(pose_msg)
             elif planner.ref_type == RefType.PATH:
                 marker_plan = self._make_marker(
@@ -438,7 +459,9 @@ class ControllerROSNode(Node):
                     rgba=[0, 1, 0, 1],
                     scale=[0.1, 0.1, 0.1],
                 )
-                marker_plan.points = [Point(x=pt[0], y=pt[1], z=pt[2]) for pt in planner.ee_plan["p"]]
+                marker_plan.points = [
+                    Point(x=pt[0], y=pt[1], z=pt[2]) for pt in planner.ee_plan["p"]
+                ]
                 marker_plan.lifetime.sec = 0
                 marker_plan.lifetime.nanosec = int(0.1 * 1e9)
                 self.current_plan_visualization_pub.publish(marker_plan)
@@ -450,14 +473,19 @@ class ControllerROSNode(Node):
         marker_ee = self._make_marker(
             Marker.POINTS, 0, rgba=[1.0, 1.0, 1.0, 1], scale=[0.1, 0.1, 0.1]
         )
-        marker_ee.points = [Point(x=float(pt[0]), y=float(pt[1]), z=float(pt[2])) for pt in controller.ee_bar]
+        marker_ee.points = [
+            Point(x=float(pt[0]), y=float(pt[1]), z=float(pt[2]))
+            for pt in controller.ee_bar
+        ]
         self.controller_visualization_pub.publish(marker_ee)
 
         # base prediction
         marker_base = self._make_marker(
             Marker.POINTS, 1, rgba=[1.0, 1.0, 1.0, 1], scale=[0.1, 0.1, 0.1]
         )
-        marker_base.points = [Point(x=float(pt[0]), y=float(pt[1]), z=0.0) for pt in controller.base_bar]
+        marker_base.points = [
+            Point(x=float(pt[0]), y=float(pt[1]), z=0.0) for pt in controller.base_bar
+        ]
         self.controller_visualization_pub.publish(marker_base)
 
         # ee tracking points
@@ -465,14 +493,19 @@ class ControllerROSNode(Node):
             marker_ree = self._make_marker(
                 Marker.POINTS, 2, rgba=[0.0, 1.0, 1.0, 1], scale=[0.1, 0.1, 0.1]
             )
-            marker_ree.points = [Point(x=float(pt[0]), y=float(pt[1]), z=float(pt[2])) for pt in controller.ree_bar]
+            marker_ree.points = [
+                Point(x=float(pt[0]), y=float(pt[1]), z=float(pt[2]))
+                for pt in controller.ree_bar
+            ]
             self.controller_visualization_pub.publish(marker_ree)
 
         # base tracking points
         marker_rbase = self._make_marker(
             Marker.POINTS, 3, rgba=[0.0, 0.0, 1, 1], scale=[0.1] * 3
         )
-        marker_rbase.points = [Point(x=float(pt[0]), y=float(pt[1]), z=0.0) for pt in controller.rbase_bar]
+        marker_rbase.points = [
+            Point(x=float(pt[0]), y=float(pt[1]), z=0.0) for pt in controller.rbase_bar
+        ]
         self.controller_visualization_pub.publish(marker_rbase)
 
     def run(self):
@@ -494,9 +527,7 @@ class ControllerROSNode(Node):
             "esdf_map": getattr(self.controller, "esdf_map", None),
             "robot_model": getattr(self.controller, "robot", None),
         }
-        self.sot = TaskManager(
-            self.planner_config.copy(), resources=planner_resources
-        )
+        self.sot = TaskManager(self.planner_config.copy(), resources=planner_resources)
 
         self.get_logger().info("-----Checking Planners----- ")
         for planner in self.sot.planners:
@@ -520,7 +551,9 @@ class ControllerROSNode(Node):
                     targets.append(f"EE: {planner.ee_target}")
                 else:
                     targets.append(f"EE: path with {len(planner.ee_plan['p'])} points")
-            self.get_logger().info(f"planner {planner.name} targets: {', '.join(targets)}")
+            self.get_logger().info(
+                f"planner {planner.name} targets: {', '.join(targets)}"
+            )
 
         self.get_logger().info("-----Checking Vicon Tool messages----- ")
         use_vicon_tool_data = True
@@ -810,7 +843,7 @@ class ControllerROSNode(Node):
 
 def main(args=None):
     rclpy.init(args=args)
-    
+
     node = ControllerROSNode(sys.argv)
 
     # Run executor in background thread
@@ -825,6 +858,7 @@ def main(args=None):
     executor.shutdown()
     node.destroy_node()
     rclpy.shutdown()
+
 
 if __name__ == "__main__":
     main()

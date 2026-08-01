@@ -1,9 +1,6 @@
 import numpy as np
 
-from mm_simulator.robot import (
-    OmnidirectionalBaseMapping,
-    PyBulletInputMapping,
-)
+from mm_simulator.robot import OmnidirectionalBaseMapping, PyBulletInputMapping
 
 
 def test_mapping_factory_keeps_mobile_robot_coordinates_unchanged():

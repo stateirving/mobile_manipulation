@@ -1,5 +1,5 @@
-from typing import Dict, List
 from pathlib import Path
+from typing import Dict, List
 
 import casadi as cs
 import numpy as np
@@ -174,7 +174,6 @@ class PinocchioInterface:
         self.model, self.collision_model, self.visual_model = pin.buildModelsFromUrdf(
             urdf_path, package_dirs=package_dirs
         )
-
 
         # 2. add scene model
         if config["scene"]["enabled"]:
@@ -377,7 +376,9 @@ class PinocchioInterface:
 
         parent_link = spec.get("parent_link")
         if parent_link is None:
-            raise ValueError(f"Configured collision object '{name}' is missing parent_link")
+            raise ValueError(
+                f"Configured collision object '{name}' is missing parent_link"
+            )
 
         frame_id = self.model.getFrameId(parent_link)
         if frame_id >= len(self.model.frames):
@@ -499,10 +500,14 @@ class CasadiModelInterface:
         pairs = []
         for spec in pair_specs:
             if len(spec) != 2:
-                raise ValueError(f"Collision pair spec must contain exactly two items: {spec}")
+                raise ValueError(
+                    f"Collision pair spec must contain exactly two items: {spec}"
+                )
             left_targets = self._expandCollisionTargets(spec[0])
             right_targets = self._expandCollisionTargets(spec[1])
-            pairs.extend(self._addCollisionPairFromTwoGroups(left_targets, right_targets))
+            pairs.extend(
+                self._addCollisionPairFromTwoGroups(left_targets, right_targets)
+            )
         return pairs
 
     def _expandObstaclePairTargets(self, obstacle, targets):
@@ -541,9 +546,11 @@ class CasadiModelInterface:
         target_specs = (
             DEFAULT_DETAILED_GROUND_TARGETS
             if detailed and obstacle == "ground"
-            else DEFAULT_GROUND_TARGETS
-            if obstacle == "ground"
-            else DEFAULT_STATIC_OBSTACLE_TARGETS
+            else (
+                DEFAULT_GROUND_TARGETS
+                if obstacle == "ground"
+                else DEFAULT_STATIC_OBSTACLE_TARGETS
+            )
         )
         return self._expandObstaclePairTargets(obstacle, target_specs)
 
@@ -596,8 +603,8 @@ class CasadiModelInterface:
         elif legacy_collision_pairs.get("self", False):
             self.collision_pairs_detailed["self"] = legacy_collision_pairs["self"]
         else:
-            self.collision_pairs_detailed["self"] = self._buildDefaultSelfCollisionPairs(
-                detailed=True
+            self.collision_pairs_detailed["self"] = (
+                self._buildDefaultSelfCollisionPairs(detailed=True)
             )
 
         for obstacle in self.scene.collision_link_names.get("static_obstacles", []):
@@ -610,7 +617,9 @@ class CasadiModelInterface:
                         collision_model["pinocchio_static_obstacle_pairs"][obstacle],
                     )
                 )
-            elif legacy_collision_pairs.get("static_obstacles", {}).get(obstacle, False):
+            elif legacy_collision_pairs.get("static_obstacles", {}).get(
+                obstacle, False
+            ):
                 self.collision_pairs_detailed["static_obstacles"][obstacle] = (
                     self._expandObstaclePairTargets(
                         obstacle,
@@ -875,9 +884,9 @@ class MobileManipulator3D:
         self.lb_u = parsing.parse_array(self.config["limits"]["input"]["lower"])
         self._sync_joint_position_limits_from_urdf()
         self.base_type = self.config.get("base_type", "omnidirectional").lower()
-        self.nonholonomic_mode = (
-            self.config.get("nonholonomic_mode", "constraint").lower()
-        )
+        self.nonholonomic_mode = self.config.get(
+            "nonholonomic_mode", "constraint"
+        ).lower()
         self.link_names = self.config["link_names"]
         self.tool_link_name = self.config["tool_link_name"]
         self.base_link_name = self.config["base_link_name"]
@@ -1008,9 +1017,7 @@ class MobileManipulator3D:
         translation = cs.DM(
             np.asarray(spec.get("translation", [0.0, 0.0, 0.0]), dtype=float)
         )
-        rotation = cs.DM(
-            rotation_matrix_from_rpy(spec.get("rpy", [0.0, 0.0, 0.0]))
-        )
+        rotation = cs.DM(rotation_matrix_from_rpy(spec.get("rpy", [0.0, 0.0, 0.0])))
         object_pos = parent_pos + parent_rot @ translation
         object_rot = parent_rot @ rotation
         return cs.Function(
@@ -1178,7 +1185,9 @@ class MobileManipulator3D:
             k4 = fmdl(x_sym + dt * k3, u_sym)
             xk1_eqn = x_sym + (dt / 6.0) * (k1 + 2 * k2 + 2 * k3 + k4)
 
-        fdsc_fcn = cs.Function("fmdlk", [x_sym, u_sym], [xk1_eqn], ["xk", "uk"], ["xk1"])
+        fdsc_fcn = cs.Function(
+            "fmdlk", [x_sym, u_sym], [xk1_eqn], ["xk", "uk"], ["xk1"]
+        )
         return fdsc_fcn
 
     @staticmethod

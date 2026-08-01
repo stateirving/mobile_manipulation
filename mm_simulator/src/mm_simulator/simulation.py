@@ -2,8 +2,8 @@ import numpy as np
 import pybullet as pyb
 import pybullet_data
 from pyb_utils.frame import debug_frame_world
-from spatialmath.base import rotz
 from scipy.spatial.transform import Rotation as Rot
+from spatialmath.base import rotz
 
 from mm_simulator.camera import VideoManager
 from mm_simulator.robot import SimulatedRobot
@@ -496,9 +496,7 @@ class BulletSimulation:
         self.static_obstacles_uid = None
         static_obstacles_config = config.get("static_obstacles", {})
         if static_obstacles_config.get("enabled", False):
-            urdf_path = parsing.parse_and_compile_urdf(
-                static_obstacles_config["urdf"]
-            )
+            urdf_path = parsing.parse_and_compile_urdf(static_obstacles_config["urdf"])
             self.static_obstacles_uid = pyb.loadURDF(parsing.parse_path(urdf_path))
             pyb.changeDynamics(self.static_obstacles_uid, -1, mass=0)
             if not static_obstacles_config.get("collision_enabled", True):
@@ -545,9 +543,7 @@ class BulletSimulation:
             return
 
         collision_objects = (
-            self.config.get("robot", {})
-            .get("collision_model", {})
-            .get("objects", {})
+            self.config.get("robot", {}).get("collision_model", {}).get("objects", {})
         )
         if not collision_objects:
             return
@@ -733,9 +729,7 @@ class BulletSimulation:
             color = [0.05, 0.8, 1.0]
 
         self.planned_path_marker_ids.extend(
-            self._draw_polyline(
-                path_positions, color=color, line_width=4
-            )
+            self._draw_polyline(path_positions, color=color, line_width=4)
         )
         self.planned_path_marker_ids.append(
             pyb.addUserDebugText(
@@ -757,7 +751,11 @@ class BulletSimulation:
         if base_targets is not None:
             base_targets = np.atleast_2d(np.asarray(base_targets, dtype=float))
             base_positions = np.column_stack(
-                [base_targets[:, 0], base_targets[:, 1], np.full(base_targets.shape[0], 0.05)]
+                [
+                    base_targets[:, 0],
+                    base_targets[:, 1],
+                    np.full(base_targets.shape[0], 0.05),
+                ]
             )
             self.target_marker_ids["base"].extend(
                 self._draw_polyline(base_positions, color=[1.0, 0.2, 0.2], line_width=2)
@@ -803,7 +801,9 @@ class BulletSimulation:
                         ee_target[:3], color=[0.2, 0.55, 1.0], size=0.06, line_width=2
                     )
                 )
-                if ee_target.shape[0] >= 6 and (idx % frame_stride == 0 or idx == len(ee_targets) - 1):
+                if ee_target.shape[0] >= 6 and (
+                    idx % frame_stride == 0 or idx == len(ee_targets) - 1
+                ):
                     ee_orientation = Rot.from_euler("xyz", ee_target[3:6]).as_quat()
                     self.target_marker_ids["ee"].extend(
                         self._draw_frame_marker(

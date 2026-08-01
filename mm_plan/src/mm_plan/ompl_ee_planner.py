@@ -40,12 +40,8 @@ class OMPLEEPlanner(Planner):
         if self.ee_mask.shape != (6,):
             raise ValueError("ee_mask must have shape (6,)")
 
-        self.tracking_pos_err_tol = float(
-            config.get("tracking_pos_err_tol", 0.05)
-        )
-        self.tracking_ori_err_tol = float(
-            config.get("tracking_ori_err_tol", 0.2)
-        )
+        self.tracking_pos_err_tol = float(config.get("tracking_pos_err_tol", 0.05))
+        self.tracking_ori_err_tol = float(config.get("tracking_ori_err_tol", 0.2))
         self.hold_period = float(config.get("hold_period", 0.0))
         self.end_stop = bool(config.get("end_stop", False))
 
@@ -90,16 +86,10 @@ class OMPLEEPlanner(Planner):
 
         replan_config = dict(config.get("replan", {}))
         self.replan_enabled = bool(replan_config.get("enabled", False))
-        self.replan_min_interval = float(
-            replan_config.get("min_interval", 1.0)
-        )
-        self.replan_check_horizon = float(
-            replan_config.get("check_horizon", 2.0)
-        )
+        self.replan_min_interval = float(replan_config.get("min_interval", 1.0))
+        self.replan_check_horizon = float(replan_config.get("check_horizon", 2.0))
         self.replan_check_dt = float(replan_config.get("check_dt", 0.2))
-        self.replan_min_clearance = float(
-            replan_config.get("min_clearance", 0.0)
-        )
+        self.replan_min_clearance = float(replan_config.get("min_clearance", 0.0))
         self.replan_validate_every_step = bool(
             replan_config.get("validate_every_step", False)
         )
@@ -109,9 +99,7 @@ class OMPLEEPlanner(Planner):
         self.replan_deviation_threshold = float(
             replan_config.get("deviation_threshold", 0.25)
         )
-        self.replan_force_periodic = bool(
-            replan_config.get("force_periodic", False)
-        )
+        self.replan_force_periodic = bool(replan_config.get("force_periodic", False))
         self.keep_previous_on_replan_failure = bool(
             replan_config.get("keep_previous_on_failure", True)
         )
@@ -193,9 +181,7 @@ class OMPLEEPlanner(Planner):
             self._update_path_progress(current_ee)
         return self._sample_plan_at_progress(self.path_progress)
 
-    def getEETrackingPointArray(
-        self, robot_states, num_pts, dt, time_offset=0
-    ):
+    def getEETrackingPointArray(self, robot_states, num_pts, dt, time_offset=0):
         self._ensure_plan(robot_states, reason="direct_array_request")
         current_ee = self._ee_pose_from_robot_states(robot_states)
         self._update_path_progress(current_ee)
@@ -226,9 +212,7 @@ class OMPLEEPlanner(Planner):
         if self.end_stop:
             ee_vel = states["EE"].get("velocity")
             ee_finished = (
-                ee_finished
-                and ee_vel is not None
-                and np.linalg.norm(ee_vel) < 1e-2
+                ee_finished and ee_vel is not None and np.linalg.norm(ee_vel) < 1e-2
             )
 
         if ee_finished:
@@ -341,9 +325,7 @@ class OMPLEEPlanner(Planner):
         min_clearance = np.inf
         for query_progress in progress:
             state = self._sample_plan_at_progress(query_progress)[0]
-            min_clearance = min(
-                min_clearance, self._state_clearance(state[:3])
-            )
+            min_clearance = min(min_clearance, self._state_clearance(state[:3]))
         return float(min_clearance)
 
     def _remaining_path_min_clearance(self, t):
@@ -369,9 +351,7 @@ class OMPLEEPlanner(Planner):
         min_clearance = np.inf
         for query_progress in progress:
             state = self._sample_plan_at_progress(query_progress)[0]
-            min_clearance = min(
-                min_clearance, self._state_clearance(state[:3])
-            )
+            min_clearance = min(min_clearance, self._state_clearance(state[:3]))
         return float(min_clearance)
 
     def _plan_with_ompl(self, start, goal):
@@ -426,9 +406,7 @@ class OMPLEEPlanner(Planner):
         for idx in range(3):
             start_state[idx] = float(start[idx])
             goal_state[idx] = float(goal[idx])
-        setup.setStartAndGoalStates(
-            start_state, goal_state, self.goal_tolerance
-        )
+        setup.setStartAndGoalStates(start_state, goal_state, self.goal_tolerance)
 
         planner = self._make_ompl_planner(og, setup.getSpaceInformation())
         if self.planner_range is not None and hasattr(planner, "setRange"):
@@ -516,9 +494,7 @@ class OMPLEEPlanner(Planner):
         points = [raw_path[0].copy()]
         for start, goal in zip(raw_path[:-1], raw_path[1:]):
             dist = float(np.linalg.norm(goal[:3] - start[:3]))
-            steps = max(
-                1, int(math.ceil(dist / self.interpolation_resolution))
-            )
+            steps = max(1, int(math.ceil(dist / self.interpolation_resolution)))
             for idx in range(1, steps + 1):
                 alpha = idx / steps
                 point = (1.0 - alpha) * start[:3] + alpha * goal[:3]
@@ -622,9 +598,7 @@ class OMPLEEPlanner(Planner):
             delta_xyz = p1[:3] - p0[:3]
             distance_sq = float(np.dot(delta_xyz, delta_xyz))
             if distance_sq > 1.0e-12:
-                alpha = float(
-                    np.dot(pose[:3] - p0[:3], delta_xyz) / distance_sq
-                )
+                alpha = float(np.dot(pose[:3] - p0[:3], delta_xyz) / distance_sq)
             else:
                 orientation_delta = _wrap_pi(p1[3:] - p0[3:])
                 orientation_norm_sq = float(
@@ -634,8 +608,7 @@ class OMPLEEPlanner(Planner):
                     continue
                 current_delta = _wrap_pi(pose[3:] - p0[3:])
                 alpha = float(
-                    np.dot(current_delta, orientation_delta)
-                    / orientation_norm_sq
+                    np.dot(current_delta, orientation_delta) / orientation_norm_sq
                 )
             minimum_alpha = max(
                 0.0, (minimum_progress - segment_start) / segment_length
@@ -648,8 +621,10 @@ class OMPLEEPlanner(Planner):
                 orientation_error = np.linalg.norm(
                     _wrap_pi(pose[3:] - candidate_orientation)
                 )
-                distance += orientation_error * self.linear_speed / max(
-                    self.angular_speed, 1.0e-6
+                distance += (
+                    orientation_error
+                    * self.linear_speed
+                    / max(self.angular_speed, 1.0e-6)
                 )
             candidate_progress = segment_start + alpha * segment_length
             if distance < best_distance - 1.0e-12:
@@ -707,9 +682,7 @@ class OMPLEEPlanner(Planner):
             raise RuntimeError("OMPLEEPlanner requires current robot_states")
         q = np.asarray(robot_states[0], dtype=np.float64)
         ee_position, ee_quat = self.robot_model.getEE(q)
-        ee_euler = Rot.from_quat(
-            np.asarray(ee_quat, dtype=np.float64)
-        ).as_euler("xyz")
+        ee_euler = Rot.from_quat(np.asarray(ee_quat, dtype=np.float64)).as_euler("xyz")
         return np.hstack((np.asarray(ee_position, dtype=np.float64), ee_euler))
 
     def _parse_ee_target(self, config):
@@ -722,9 +695,7 @@ class OMPLEEPlanner(Planner):
         return np.asarray(target, dtype=np.float64)
 
     def _parse_bounds_xyz(self, config):
-        raw = config.get(
-            "bounds_xyz", [[0.0, 3.5], [-2.5, 1.0], [0.25, 1.3]]
-        )
+        raw = config.get("bounds_xyz", [[0.0, 3.5], [-2.5, 1.0], [0.25, 1.3]])
         bounds = np.asarray(raw, dtype=np.float64)
         if bounds.shape != (3, 2):
             raise ValueError(
@@ -758,8 +729,6 @@ class _EEStateValidityChecker:
                 self.parent = parent
 
             def isValid(self, state):
-                return self.parent._is_state_valid(
-                    [state[0], state[1], state[2]]
-                )
+                return self.parent._is_state_valid([state[0], state[1], state[2]])
 
         return Checker(space_information, planner)

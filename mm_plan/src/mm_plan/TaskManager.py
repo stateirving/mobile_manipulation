@@ -28,9 +28,7 @@ def resolve_task_configs(config):
 
         defaults = task_defaults[defaults_name]
         if not isinstance(defaults, dict):
-            raise TypeError(
-                f"planner.task_defaults.{defaults_name} must be a mapping"
-            )
+            raise TypeError(f"planner.task_defaults.{defaults_name} must be a mapping")
         resolved_tasks.append(recursive_dict_update(deepcopy(defaults), task_config))
 
     return resolved_tasks
@@ -45,8 +43,7 @@ class TaskManager:
         self.started = False
         self.task_configs = resolve_task_configs(config)
         self.planners = [
-            create_planner(task, resources=self.resources)
-            for task in self.task_configs
+            create_planner(task, resources=self.resources) for task in self.task_configs
         ]
         self.planner_num = len(self.planners)
         self.curr_task_id = 0
@@ -119,9 +116,7 @@ class TaskManager:
             planner.started = True
             planner.start_time = t
         if is_current_task and hasattr(planner, "updatePlanningContext"):
-            planner.updatePlanningContext(
-                t, robot_states, num_horizon_points, dt
-            )
+            planner.updatePlanningContext(t, robot_states, num_horizon_points, dt)
 
         # Process base references
         if planner.has_base_ref:

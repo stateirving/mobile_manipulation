@@ -90,9 +90,8 @@ def main():
     sim_config = config["simulation"]
     ctrl_config = config["controller"]
     planner_config = config["planner"]
-    if (
-        "limits" not in sim_config.get("robot", {})
-        and "limits" in ctrl_config.get("robot", {})
+    if "limits" not in sim_config.get("robot", {}) and "limits" in ctrl_config.get(
+        "robot", {}
     ):
         sim_config["robot"]["limits"] = ctrl_config["robot"]["limits"]
     # Collision primitives belong to the robot interface.  Keep simulator

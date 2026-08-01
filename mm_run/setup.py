@@ -1,5 +1,6 @@
 from glob import glob
 from os.path import isfile
+
 from setuptools import find_packages, setup
 
 package_name = "mm_run"
@@ -20,7 +21,10 @@ setup(
         ("share/" + package_name + "/config/sensor", glob("config/sensor/*")),
         ("share/" + package_name + "/config/sim", glob("config/sim/*")),
         ("share/" + package_name + "/config/teleop", glob("config/teleop/*")),
-        ("share/" + package_name + "/config/test_experiment", glob("config/test_experiment/*")),
+        (
+            "share/" + package_name + "/config/test_experiment",
+            glob("config/test_experiment/*"),
+        ),
         ("share/" + package_name + "/config", glob("config/*.yaml")),
         ("share/" + package_name + "/config", glob("config/*.md")),
         (

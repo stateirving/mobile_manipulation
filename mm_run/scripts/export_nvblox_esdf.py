@@ -287,7 +287,9 @@ def query_esdf_grid(
     return xs, ys, zs, distances, gradients, valid
 
 
-def save_slice_images(out_dir, xs, ys, zs, distances, valid, slice_zs, max_abs_distance):
+def save_slice_images(
+    out_dir, xs, ys, zs, distances, valid, slice_zs, max_abs_distance
+):
     os.environ.setdefault("MPLCONFIGDIR", "/tmp/matplotlib")
     import matplotlib.pyplot as plt
 
@@ -569,8 +571,12 @@ def parse_args():
         default=15.0,
         help="Yaw offset for --scan-mode base-spin, in degrees. Avoids PyBullet renderer hangs at exact cardinal directions.",
     )
-    parser.add_argument("--width", type=int, default=640, help="Rendered image width in pixels.")
-    parser.add_argument("--height", type=int, default=480, help="Rendered image height in pixels.")
+    parser.add_argument(
+        "--width", type=int, default=640, help="Rendered image width in pixels."
+    )
+    parser.add_argument(
+        "--height", type=int, default=480, help="Rendered image height in pixels."
+    )
     parser.add_argument(
         "--fov-y-deg",
         type=float,
@@ -719,7 +725,9 @@ def parse_args():
 def main():
     args = parse_args()
     if not torch.cuda.is_available():
-        raise RuntimeError("nvblox-torch requires a CUDA device for this export script.")
+        raise RuntimeError(
+            "nvblox-torch requires a CUDA device for this export script."
+        )
 
     config = parsing.load_config(args.config)
 
@@ -727,7 +735,9 @@ def main():
     timestep = load_environment_scene(config["simulation"], bool(args.gui))
 
     root = Path(args.output)
-    out_dir = root if args.no_timestamp else root / timestamp.strftime("%Y-%m-%d_%H-%M-%S")
+    out_dir = (
+        root if args.no_timestamp else root / timestamp.strftime("%Y-%m-%d_%H-%M-%S")
+    )
     out_dir.mkdir(parents=True, exist_ok=True)
     frame_dir = out_dir / "frames"
 

@@ -38,19 +38,13 @@ class OMPLBasePlanner(Planner):
             self.ee_target = parsing.parse_array(config["ee_pose"])
             if len(self.ee_target) != 6:
                 raise ValueError("ee_pose must be SE3 [x, y, z, r, p, y]")
-            self.ee_mask = np.array(
-                config.get("ee_mask", [True] * 6), dtype=bool
-            )
+            self.ee_mask = np.array(config.get("ee_mask", [True] * 6), dtype=bool)
             if self.ee_mask.shape != (6,):
                 raise ValueError("ee_mask must have shape (6,)")
             self.has_ee_ref = True
 
-        self.tracking_pos_err_tol = float(
-            config.get("tracking_pos_err_tol", 0.15)
-        )
-        self.tracking_ori_err_tol = float(
-            config.get("tracking_ori_err_tol", 0.2)
-        )
+        self.tracking_pos_err_tol = float(config.get("tracking_pos_err_tol", 0.15))
+        self.tracking_ori_err_tol = float(config.get("tracking_ori_err_tol", 0.2))
         self.hold_period = float(config.get("hold_period", 0.0))
         self.end_stop = bool(config.get("end_stop", False))
 
@@ -94,16 +88,10 @@ class OMPLBasePlanner(Planner):
 
         replan_config = dict(config.get("replan", {}))
         self.replan_enabled = bool(replan_config.get("enabled", False))
-        self.replan_min_interval = float(
-            replan_config.get("min_interval", 1.0)
-        )
-        self.replan_check_horizon = float(
-            replan_config.get("check_horizon", 2.0)
-        )
+        self.replan_min_interval = float(replan_config.get("min_interval", 1.0))
+        self.replan_check_horizon = float(replan_config.get("check_horizon", 2.0))
         self.replan_check_dt = float(replan_config.get("check_dt", 0.2))
-        self.replan_min_clearance = float(
-            replan_config.get("min_clearance", 0.0)
-        )
+        self.replan_min_clearance = float(replan_config.get("min_clearance", 0.0))
         self.replan_validate_every_step = bool(
             replan_config.get("validate_every_step", False)
         )
@@ -113,9 +101,7 @@ class OMPLBasePlanner(Planner):
         self.replan_deviation_threshold = float(
             replan_config.get("deviation_threshold", 0.4)
         )
-        self.replan_force_periodic = bool(
-            replan_config.get("force_periodic", False)
-        )
+        self.replan_force_periodic = bool(replan_config.get("force_periodic", False))
         self.keep_previous_on_replan_failure = bool(
             replan_config.get("keep_previous_on_failure", True)
         )
@@ -197,9 +183,7 @@ class OMPLBasePlanner(Planner):
             return self.base_target.copy(), np.zeros(3, dtype=np.float64)
         return self._sample_plan_at_progress(self.path_progress)
 
-    def getBaseTrackingPointArray(
-        self, robot_states, num_pts, dt, time_offset=0
-    ):
+    def getBaseTrackingPointArray(self, robot_states, num_pts, dt, time_offset=0):
         self._ensure_plan(robot_states, reason="direct_array_request")
         current_base = self._base_pose_from_robot_states(robot_states)
         if self._activate_terminal_pose_if_reached(current_base):
@@ -224,9 +208,7 @@ class OMPLBasePlanner(Planner):
             return None, None
         return self.ee_target.copy(), np.zeros(6)
 
-    def getEETrackingPointArray(
-        self, robot_states, num_pts, dt, time_offset=0
-    ):
+    def getEETrackingPointArray(self, robot_states, num_pts, dt, time_offset=0):
         if not self.has_ee_ref:
             return None, None
         return (
@@ -261,9 +243,7 @@ class OMPLBasePlanner(Planner):
             ee_pose = np.asarray(states["EE"]["pose"], dtype=np.float64)
             pos_mask = self.ee_mask[:3]
             ori_mask = self.ee_mask[3:]
-            pos_err = np.linalg.norm(
-                (ee_pose[:3] - self.ee_target[:3])[pos_mask]
-            )
+            pos_err = np.linalg.norm((ee_pose[:3] - self.ee_target[:3])[pos_mask])
             ori_err = np.linalg.norm(
                 wrap_pi_array(ee_pose[3:] - self.ee_target[3:])[ori_mask]
             )
@@ -386,9 +366,7 @@ class OMPLBasePlanner(Planner):
         min_clearance = np.inf
         for query_progress in progress:
             state = self._sample_plan_at_progress(query_progress)[0]
-            min_clearance = min(
-                min_clearance, self._state_clearance(state)
-            )
+            min_clearance = min(min_clearance, self._state_clearance(state))
         return float(min_clearance)
 
     def _remaining_path_min_clearance(self, t):
@@ -416,9 +394,7 @@ class OMPLBasePlanner(Planner):
         min_clearance = np.inf
         for query_progress in progress:
             state = self._sample_plan_at_progress(query_progress)[0]
-            min_clearance = min(
-                min_clearance, self._state_clearance(state)
-            )
+            min_clearance = min(min_clearance, self._state_clearance(state))
         return float(min_clearance)
 
     def _plan_with_ompl(self, start, goal):
@@ -477,9 +453,7 @@ class OMPLBasePlanner(Planner):
         goal_state.setX(float(goal[0]))
         goal_state.setY(float(goal[1]))
         goal_state.setYaw(float(goal[2]))
-        setup.setStartAndGoalStates(
-            start_state, goal_state, self.goal_tolerance
-        )
+        setup.setStartAndGoalStates(start_state, goal_state, self.goal_tolerance)
 
         planner = self._make_ompl_planner(og, setup.getSpaceInformation())
         if self.planner_range is not None and hasattr(planner, "setRange"):
@@ -571,9 +545,7 @@ class OMPLBasePlanner(Planner):
         points = [raw_path[0].copy()]
         for start, goal in zip(raw_path[:-1], raw_path[1:]):
             dist = float(np.linalg.norm(goal[:2] - start[:2]))
-            steps = max(
-                1, int(math.ceil(dist / self.interpolation_resolution))
-            )
+            steps = max(1, int(math.ceil(dist / self.interpolation_resolution)))
             yaw_delta = wrap_pi_scalar(goal[2] - start[2])
             for idx in range(1, steps + 1):
                 alpha = idx / steps
@@ -682,9 +654,7 @@ class OMPLBasePlanner(Planner):
             delta_xy = p1[:2] - p0[:2]
             distance_sq = float(np.dot(delta_xy, delta_xy))
             if distance_sq > 1.0e-12:
-                alpha = float(
-                    np.dot(pose[:2] - p0[:2], delta_xy) / distance_sq
-                )
+                alpha = float(np.dot(pose[:2] - p0[:2], delta_xy) / distance_sq)
             else:
                 yaw_delta = wrap_pi_scalar(p1[2] - p0[2])
                 if abs(yaw_delta) <= 1.0e-12:
@@ -699,8 +669,8 @@ class OMPLBasePlanner(Planner):
             if distance_sq <= 1.0e-12:
                 candidate_yaw = p0[2] + alpha * yaw_delta
                 yaw_error = abs(wrap_pi_scalar(pose[2] - candidate_yaw))
-                distance += yaw_error * self.linear_speed / max(
-                    self.angular_speed, 1.0e-6
+                distance += (
+                    yaw_error * self.linear_speed / max(self.angular_speed, 1.0e-6)
                 )
             candidate_progress = segment_start + alpha * segment_length
             if distance < best_distance - 1.0e-12:
@@ -756,18 +726,10 @@ class OMPLBasePlanner(Planner):
     def _bounds_containing(self, start, goal):
         bounds = self.bounds_xy.copy()
         if self.auto_expand_bounds:
-            bounds[0, 0] = (
-                min(bounds[0, 0], start[0], goal[0]) - self.bounds_margin
-            )
-            bounds[0, 1] = (
-                max(bounds[0, 1], start[0], goal[0]) + self.bounds_margin
-            )
-            bounds[1, 0] = (
-                min(bounds[1, 0], start[1], goal[1]) - self.bounds_margin
-            )
-            bounds[1, 1] = (
-                max(bounds[1, 1], start[1], goal[1]) + self.bounds_margin
-            )
+            bounds[0, 0] = min(bounds[0, 0], start[0], goal[0]) - self.bounds_margin
+            bounds[0, 1] = max(bounds[0, 1], start[0], goal[0]) + self.bounds_margin
+            bounds[1, 0] = min(bounds[1, 0], start[1], goal[1]) - self.bounds_margin
+            bounds[1, 1] = max(bounds[1, 1], start[1], goal[1]) + self.bounds_margin
         return bounds
 
     def _base_pose_from_robot_states(self, robot_states):

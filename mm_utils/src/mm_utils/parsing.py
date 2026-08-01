@@ -6,9 +6,9 @@ import subprocess
 from pathlib import Path
 
 import numpy as np
-from ament_index_python.packages import get_package_share_directory
 import xacro
 import yaml
+from ament_index_python.packages import get_package_share_directory
 
 
 def recursive_dict_update(default, custom):

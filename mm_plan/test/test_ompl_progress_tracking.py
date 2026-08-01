@@ -85,12 +85,8 @@ def test_base_horizon_starts_at_projected_progress_and_ignores_elapsed_time():
 
 def test_base_progress_is_monotonic_and_advances_around_corner():
     planner = _base_planner()
-    planner.getBaseTrackingPointArray(
-        _robot_states([0.4, 0.0, 0.0]), num_pts=1, dt=0.1
-    )
-    planner.getBaseTrackingPointArray(
-        _robot_states([0.2, 0.0, 0.0]), num_pts=1, dt=0.1
-    )
+    planner.getBaseTrackingPointArray(_robot_states([0.4, 0.0, 0.0]), num_pts=1, dt=0.1)
+    planner.getBaseTrackingPointArray(_robot_states([0.2, 0.0, 0.0]), num_pts=1, dt=0.1)
     assert np.isclose(planner.path_progress, 0.4)
 
     positions, _ = planner.getBaseTrackingPointArray(
@@ -107,9 +103,7 @@ def test_base_terminal_pose_snaps_directly_to_goal_yaw():
     )
     states = _robot_states([0.9, 0.9, 0.0])
 
-    positions, velocities = planner.getBaseTrackingPointArray(
-        states, num_pts=3, dt=0.1
-    )
+    positions, velocities = planner.getBaseTrackingPointArray(states, num_pts=3, dt=0.1)
 
     assert planner.terminal_pose_active
     np.testing.assert_allclose(positions, np.tile(planner.base_target, (3, 1)))
@@ -124,9 +118,7 @@ def test_base_terminal_pose_snaps_directly_to_goal_yaw():
 
 def test_tangent_path_does_not_blend_goal_yaw_before_xy_is_reached():
     planner = _base_planner()
-    path = planner._densify_path(
-        np.array([[0.0, 0.0, 0.0], [1.0, 1.0, np.pi / 2.0]])
-    )
+    path = planner._densify_path(np.array([[0.0, 0.0, 0.0], [1.0, 1.0, np.pi / 2.0]]))
     planner.base_plan = planner._make_plan(path)
 
     positions, _ = planner.getBaseTrackingPointArray(

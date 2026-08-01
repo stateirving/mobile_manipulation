@@ -1,6 +1,6 @@
-from pathlib import Path
 import threading
 import time
+from pathlib import Path
 
 import numpy as np
 
@@ -45,9 +45,7 @@ class ESDFMap:
     def from_config(cls, config):
         return cls(
             config["map_path"],
-            require_all_corners_valid=config.get(
-                "require_all_corners_valid", True
-            ),
+            require_all_corners_valid=config.get("require_all_corners_valid", True),
         )
 
     def query(self, point):
@@ -98,16 +96,10 @@ class ESDFMap:
                     corner_valid = self.valid[ix + dx, iy + dy, iz + dz]
                     if self.require_all_corners_valid:
                         interp_valid &= corner_valid
-                    corner_distance = self.distance[
-                        ix + dx, iy + dy, iz + dz
-                    ]
-                    corner_gradient = self.gradient[
-                        ix + dx, iy + dy, iz + dz
-                    ]
+                    corner_distance = self.distance[ix + dx, iy + dy, iz + dz]
+                    corner_gradient = self.gradient[ix + dx, iy + dy, iz + dz]
                     interp_distance += weight * corner_distance
-                    interp_gradient += (
-                        weight[:, None] * corner_gradient
-                    )
+                    interp_gradient += weight[:, None] * corner_gradient
 
         if not self.require_all_corners_valid:
             interp_valid &= np.isfinite(interp_distance)
@@ -127,9 +119,7 @@ class ESDFMap:
             ("zs", self.zs),
         ):
             if not np.all(np.diff(axis) > 0.0):
-                raise ValueError(
-                    f"ESDF axis {axis_name} must be strictly increasing"
-                )
+                raise ValueError(f"ESDF axis {axis_name} must be strictly increasing")
 
         expected_shape = (len(self.xs), len(self.ys), len(self.zs))
         if self.distance.shape != expected_shape:
@@ -139,8 +129,7 @@ class ESDFMap:
             )
         if self.valid.shape != expected_shape:
             raise ValueError(
-                f"valid shape {self.valid.shape} does not match "
-                f"{expected_shape}"
+                f"valid shape {self.valid.shape} does not match " f"{expected_shape}"
             )
         if self.gradient.shape != expected_shape + (3,):
             expected_gradient_shape = expected_shape + (3,)
@@ -181,9 +170,7 @@ def _load_nvblox_torch():
         import torch
         from nvblox_torch.constants import constants
         from nvblox_torch.mapper import Mapper, QueryType
-        from nvblox_torch.projective_integrator_types import (
-            ProjectiveIntegratorType,
-        )
+        from nvblox_torch.projective_integrator_types import ProjectiveIntegratorType
         from nvblox_torch.sensor import Sensor
     except ImportError as exc:
         raise NvbloxUnavailableError(
@@ -301,16 +288,12 @@ class OnlineNvbloxESDFMap:
         """Integrate one depth frame into the online TSDF/ESDF map."""
         mapper_id = self.mapper_id if mapper_id is None else int(mapper_id)
         sensor = self._resolve_sensor(sensor)
-        depth = self._as_device_tensor(
-            depth_frame, self._torch.float32, "depth_frame"
-        )
+        depth = self._as_device_tensor(depth_frame, self._torch.float32, "depth_frame")
         pose = self._as_pose_tensor(t_w_c)
         mask = (
             None
             if mask_frame is None
-            else self._as_device_tensor(
-                mask_frame, self._torch.uint8, "mask_frame"
-            )
+            else self._as_device_tensor(mask_frame, self._torch.uint8, "mask_frame")
         )
 
         with self._lock:
@@ -338,16 +321,12 @@ class OnlineNvbloxESDFMap:
     ):
         mapper_id = self.mapper_id if mapper_id is None else int(mapper_id)
         sensor = self._resolve_sensor(sensor)
-        color = self._as_device_tensor(
-            color_frame, self._torch.uint8, "color_frame"
-        )
+        color = self._as_device_tensor(color_frame, self._torch.uint8, "color_frame")
         pose = self._as_pose_tensor(t_w_c)
         mask = (
             None
             if mask_frame is None
-            else self._as_device_tensor(
-                mask_frame, self._torch.uint8, "mask_frame"
-            )
+            else self._as_device_tensor(mask_frame, self._torch.uint8, "mask_frame")
         )
 
         with self._lock:
@@ -388,9 +367,7 @@ class OnlineNvbloxESDFMap:
             out = self.mapper.query_layer(
                 self._QueryType.ESDF_GRAD, query, mapper_id=self.mapper_id
             )
-            self._timing["query_layer_time"] = (
-                time.perf_counter() - query_layer_start
-            )
+            self._timing["query_layer_time"] = time.perf_counter() - query_layer_start
 
         out_np = out.detach().cpu().numpy()
         raw_gradients = out_np[:, :3].astype(np.float64, copy=False)
@@ -405,9 +382,7 @@ class OnlineNvbloxESDFMap:
         distances[valid] = raw_distances[valid]
         gradients[valid] = raw_gradients[valid]
         with self._lock:
-            self._timing["query_total_time"] = (
-                time.perf_counter() - query_total_start
-            )
+            self._timing["query_total_time"] = time.perf_counter() - query_total_start
         return distances, gradients, valid
 
     def save_map(self, path, mapper_id=None):
@@ -478,16 +453,12 @@ class OnlineNvbloxESDFMap:
         tensor = self._torch.as_tensor(value, device=self.device, dtype=dtype)
         if field_name in ("depth_frame", "mask_frame") and tensor.ndim != 2:
             raise ValueError(f"{field_name} must have shape (H, W)")
-        if field_name == "color_frame" and (
-            tensor.ndim != 3 or tensor.shape[2] != 3
-        ):
+        if field_name == "color_frame" and (tensor.ndim != 3 or tensor.shape[2] != 3):
             raise ValueError("color_frame must have shape (H, W, 3)")
         return tensor
 
     def _as_pose_tensor(self, t_w_c):
-        pose = self._torch.as_tensor(
-            t_w_c, dtype=self._torch.float32, device="cpu"
-        )
+        pose = self._torch.as_tensor(t_w_c, dtype=self._torch.float32, device="cpu")
         if pose.shape != (4, 4):
             raise ValueError("t_w_c must have shape (4, 4)")
         return pose
@@ -550,9 +521,7 @@ class OnlineNvbloxESDFMap:
             return points, False
         raise ValueError("point must have shape (3,) or (N, 3)")
 
-    def _parse_integrator_type(
-        self, integrator_type, ProjectiveIntegratorType
-    ):
+    def _parse_integrator_type(self, integrator_type, ProjectiveIntegratorType):
         if isinstance(integrator_type, ProjectiveIntegratorType):
             return integrator_type
         value = str(integrator_type).lower()
@@ -561,6 +530,5 @@ class OnlineNvbloxESDFMap:
         if value == "occupancy":
             return ProjectiveIntegratorType.OCCUPANCY
         raise ValueError(
-            "integrator_type must be 'tsdf' or 'occupancy', "
-            f"got {integrator_type!r}"
+            "integrator_type must be 'tsdf' or 'occupancy', " f"got {integrator_type!r}"
         )

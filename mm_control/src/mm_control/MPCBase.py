@@ -39,7 +39,9 @@ class MPCBase:
         if "robot" in config and "x0" in config["robot"]:
             self.home = parse_array(config["robot"]["x0"])
         else:
-            home_path = parse_ros_path({"package": "mm_assets", "path": "config/home.yaml"})
+            home_path = parse_ros_path(
+                {"package": "mm_assets", "path": "config/home.yaml"}
+            )
             with open(home_path) as f:
                 self.home = np.array(yaml.safe_load(f)[config.get("home", "default")])
 

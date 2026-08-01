@@ -6,11 +6,11 @@ import time
 
 import numpy as np
 import rclpy
-from rclpy.utilities import remove_ros_args
 from mobile_manipulation_central.simulation_ros_interface import (
     SimulatedMobileManipulatorROSInterface,
     SimulatedViconObjectInterface,
 )
+from rclpy.utilities import remove_ros_args
 
 from mm_simulator import simulation
 from mm_utils import parsing
@@ -19,14 +19,14 @@ from mm_utils.logging import DataLogger
 
 def main(argv=None):
     np.set_printoptions(precision=3, suppress=True)
-    
+
     # Use sys.argv if argv is not provided
     if argv is None:
         argv = sys.argv
-    
+
     # Initialize ROS2 (this must be done before removing ROS args)
     rclpy.init(args=argv)
-    
+
     # Remove ROS-specific arguments before parsing script arguments
     argv_without_ros = remove_ros_args(args=argv)
 
@@ -100,7 +100,9 @@ def main(argv=None):
         "joint_names", config.get("controller", {}).get("robot", {}).get("joint_names")
     )
     if joint_names is None:
-        raise KeyError("Missing robot.joint_names in both simulation and controller config")
+        raise KeyError(
+            "Missing robot.joint_names in both simulation and controller config"
+        )
     arm_joint_names = joint_names[3:]
     ros_interface = SimulatedMobileManipulatorROSInterface(
         node, arm_joint_names=arm_joint_names
