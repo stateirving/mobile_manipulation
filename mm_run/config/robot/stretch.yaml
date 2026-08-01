@@ -46,7 +46,6 @@ simulation:
     base_link_name: "base_link"
     base_type: nonholonomic
     nonholonomic_mode: dynamics
-    nonholonomic_lateral_damping: 20.0
     urdf:
       package: "mm_assets"
       path: "stretch/stretch_sim.urdf"
@@ -104,7 +103,6 @@ controller:
     base_link_name: "base_link"
     base_type: nonholonomic
     nonholonomic_mode: dynamics
-    nonholonomic_lateral_damping: 20.0
 
     tool_vicon_name: "StretchTool"
 

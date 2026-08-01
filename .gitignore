@@ -51,4 +51,8 @@ install_*/
 .mypy_cache/
 .ipynb_checkpoints/
 
+# Local validation tests for the nonholonomic dynamics changes
+/mm_control/test/test_nonholonomic_dynamics.py
+/mm_simulator/test/test_acceleration_command.py
+
 ros1/

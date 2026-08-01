@@ -13,6 +13,7 @@ from scipy.spatial.transform import Rotation as Rot
 import mm_control.MPC as MPC
 from mm_plan.TaskManager import TaskManager
 from mm_simulator import simulation
+from mm_simulator.robot import integrate_acceleration_command
 from mm_utils import parsing
 from mm_utils.logging import DataLogger
 
@@ -1150,7 +1151,15 @@ def main():
         if solver_fallback:
             u = np.zeros_like(u)
         elif ctrl_config["cmd_vel_type"] == "integration":
-            u += u_bar[0] * sim.timestep
+            u = integrate_acceleration_command(
+                u,
+                u_bar[0],
+                sim.timestep,
+                robot_states[0],
+                robot_states[1],
+                ctrl_config["robot"].get("base_type", "omnidirectional"),
+                ctrl_config["robot"].get("nonholonomic_mode", "constraint"),
+            )
         elif ctrl_config["cmd_vel_type"] == "interpolation":
             n_nodes = v_bar.shape[0]
             t_v_bar = np.arange(n_nodes) * controller.dt

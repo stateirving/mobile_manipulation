@@ -5,6 +5,50 @@ from spatialmath.base import rotz
 from mm_utils import parsing
 
 
+def integrate_acceleration_command(
+    previous_command,
+    acceleration,
+    timestep,
+    q,
+    measured_velocity,
+    base_type,
+    nonholonomic_mode,
+):
+    """Integrate an MPC acceleration into a simulator velocity command.
+
+    Omnidirectional robots retain the existing open-loop integration behavior.
+    For the embedded nonholonomic dynamics, the base command is reconstructed
+    from measured forward/yaw velocity every cycle.  This prevents velocity that
+    the simulator rejected as lateral motion from accumulating in the command.
+    Arm-joint accelerations keep the existing integration behavior.
+    """
+    command = np.asarray(previous_command, dtype=float).copy()
+    acceleration = np.asarray(acceleration, dtype=float)
+    q = np.asarray(q, dtype=float)
+    measured_velocity = np.asarray(measured_velocity, dtype=float)
+    command += acceleration * float(timestep)
+
+    if str(base_type).lower() != "nonholonomic" or str(
+        nonholonomic_mode
+    ).lower() != "dynamics":
+        return command
+
+    theta = float(q[2])
+    c, s = np.cos(theta), np.sin(theta)
+    measured_forward_velocity = (
+        c * measured_velocity[0] + s * measured_velocity[1]
+    )
+    forward_acceleration = c * acceleration[0] + s * acceleration[1]
+    commanded_forward_velocity = (
+        measured_forward_velocity + forward_acceleration * float(timestep)
+    )
+
+    command[0] = c * commanded_forward_velocity
+    command[1] = s * commanded_forward_velocity
+    command[2] = measured_velocity[2] + acceleration[2] * float(timestep)
+    return command
+
+
 class OmnidirectionalBaseMapping:
     @staticmethod
     def forward(q, v, bodyframe=False):

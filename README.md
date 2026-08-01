@@ -212,3 +212,19 @@ python3 mm_run/scripts/experiment_online_nvblox.py --config $(ros2 pkg prefix mm
 If you edit the ESDF MPC model structure or solver options such as
 `nlp_solver_max_iter`, rebuild `mm_run` and run the matching compile command
 again before running the experiment.
+
+### UR10 OMPL Base/EE Planner Offline ESDF WB-MPC
+This config uses the UR10 mounted on a holonomic planar base, OMPL for the base
+and Cartesian EE paths, and whole-body MPC with offline ESDF collision avoidance.
+
+Compile the UR10 offline OMPL WB-MPC acados solver:
+
+```bash
+python3 mm_control/scripts/generate_acados_code.py --config $(ros2 pkg prefix mm_run)/share/mm_run/config/ur10_esdf_offline_ompl_wbmpc.yaml
+```
+
+Run the UR10 offline OMPL WB-MPC PyBullet validation:
+
+```bash
+python3 mm_run/scripts/experiment.py --config $(ros2 pkg prefix mm_run)/share/mm_run/config/ur10_esdf_offline_ompl_wbmpc.yaml --GUI
+```

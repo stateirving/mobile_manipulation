@@ -47,6 +47,50 @@ def rotation_matrix_from_rpy(rpy):
     )
 
 
+def nonholonomic_base_dynamics(q_base, v_base, u_base):
+    """Return an embedded second-order unicycle model.
+
+    The surrounding controller stores planar velocity in the redundant world-frame
+    form ``[vx, vy, yaw_rate]`` and expects three base acceleration inputs.  To keep
+    that public interface stable, the first two inputs are projected onto the
+    vehicle heading and therefore represent one chassis-level forward acceleration.
+    Their lateral component has no effect on the motion.
+
+    On the no-slip manifold this is the standard second-order unicycle model::
+
+        x_dot = v_forward * cos(yaw)
+        y_dot = v_forward * sin(yaw)
+        yaw_dot = yaw_rate
+        v_forward_dot = a_forward
+        yaw_rate_dot = yaw_acceleration
+
+    The world-frame velocity derivative includes the normal acceleration required
+    to rotate the velocity vector while turning.  There is no lateral damping or
+    lateral acceleration model: lateral motion is absent by construction.
+    """
+    theta = q_base[2]
+    c = cs.cos(theta)
+    s = cs.sin(theta)
+
+    vx, vy, yaw_rate = v_base[0], v_base[1], v_base[2]
+    ax_world, ay_world, yaw_acceleration = u_base[0], u_base[1], u_base[2]
+
+    v_forward = c * vx + s * vy
+    a_forward = c * ax_world + s * ay_world
+
+    # Normal acceleration rotates [vx, vy] with the chassis heading while the
+    # scalar forward speed changes only through a_forward.
+    normal_acceleration = yaw_rate * v_forward
+
+    qdot_base = cs.vertcat(c * v_forward, s * v_forward, yaw_rate)
+    vdot_base = cs.vertcat(
+        c * a_forward - s * normal_acceleration,
+        s * a_forward + c * normal_acceleration,
+        yaw_acceleration,
+    )
+    return qdot_base, vdot_base
+
+
 def get_robot_collision_groups(robot_config):
     """Resolve collision groups from the new collision model or the legacy config."""
     collision_model = robot_config.get("collision_model", {})
@@ -834,10 +878,6 @@ class MobileManipulator3D:
         self.nonholonomic_mode = (
             self.config.get("nonholonomic_mode", "constraint").lower()
         )
-        self.nonholonomic_lateral_damping = float(
-            self.config.get("nonholonomic_lateral_damping", 20.0)
-        )
-
         self.link_names = self.config["link_names"]
         self.tool_link_name = self.config["tool_link_name"]
         self.base_link_name = self.config["base_link_name"]
@@ -908,19 +948,13 @@ class MobileManipulator3D:
         }
 
         if use_nonholonomic_dynamics:
-            theta = self.qb_sym[2]
-            c = cs.cos(theta)
-            s = cs.sin(theta)
-            vx, vy = self.vb_sym[0], self.vb_sym[1]
-            ax, ay = self.u_sym[0], self.u_sym[1]
-
-            v_lat = -s * vx + c * vy
-            a_fwd = c * ax + s * ay
-            a_lat = -s * ax + c * ay - self.nonholonomic_lateral_damping * v_lat
-            a_base = cs.vertcat(c * a_fwd - s * a_lat, s * a_fwd + c * a_lat)
-
-            qdot = self.v_sym
-            vdot = cs.vertcat(a_base, self.u_sym[2:])
+            qdot_base, vdot_base = nonholonomic_base_dynamics(
+                self.qb_sym,
+                self.vb_sym,
+                self.u_sym[:3],
+            )
+            qdot = cs.vertcat(qdot_base, self.va_sym)
+            vdot = cs.vertcat(vdot_base, self.u_sym[3:])
             xdot = cs.vertcat(qdot, vdot)
         else:
             A = cs.DM.zeros((nx, nx))
