@@ -300,11 +300,18 @@ def casadi_SO3_log(R):
     Returns:
         casadi.MX: Rotation vector (axis-angle representation), shape (3,).
     """
-    theta = cs.acos((cs.trace(R) - 1) / 2)
+    # Numerical round-off can put cos(theta) slightly outside [-1, 1].  Keep
+    # the inverse cosine finite and leave a small margin from the singular
+    # endpoints used by the large-angle expression.
+    cos_theta = (cs.trace(R) - 1) / 2
+    cos_theta = cs.fmin(1.0 - 1.0e-12, cs.fmax(-1.0 + 1.0e-12, cos_theta))
+    theta = cs.acos(cos_theta)
     coeff_large_angle = theta / (2 * cs.sin(theta))
-    coeff_small_angle = theta / (2 * (theta - theta**3 / 6 + theta**5 / 120))
     omega_cross_large_angle = coeff_large_angle * (R - R.T)
-    omega_cross_small_angle = coeff_small_angle * (R - R.T)
+    # lim(theta->0) theta/(2 sin(theta)) = 1/2.  Using the limit directly
+    # avoids the previous 0/0 at identical current and reference rotations and
+    # also gives a finite symbolic Jacobian at the identity.
+    omega_cross_small_angle = 0.5 * (R - R.T)
     omega_large_angle = cs.vertcat(
         omega_cross_large_angle[2, 1],
         omega_cross_large_angle[0, 2],
@@ -316,7 +323,6 @@ def casadi_SO3_log(R):
         omega_cross_small_angle[1, 0],
     )
 
-    omega_list = [omega_small_angle, omega_large_angle]
-    omega = cs.conditional(theta > 1e-2, omega_list, 0, False)
+    omega = cs.if_else(theta > 1e-2, omega_large_angle, omega_small_angle)
 
     return omega

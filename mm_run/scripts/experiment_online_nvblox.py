@@ -997,10 +997,9 @@ def main():
         and "limits" in ctrl_config.get("robot", {})
     ):
         sim_config["robot"]["limits"] = ctrl_config["robot"]["limits"]
-    if (
-        "collision_model" not in sim_config.get("robot", {})
-        and "collision_model" in ctrl_config.get("robot", {})
-    ):
+    # The controller collision model is the authoritative robot-interface
+    # representation used for simulator markers as well.
+    if "collision_model" in ctrl_config.get("robot", {}):
         sim_config["robot"]["collision_model"] = ctrl_config["robot"][
             "collision_model"
         ]

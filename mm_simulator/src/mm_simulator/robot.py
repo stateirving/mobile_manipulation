@@ -5,36 +5,6 @@ from spatialmath.base import rotz
 from mm_utils import parsing
 
 
-class FixedBaseMapping:
-    @staticmethod
-    def forward(q, v, bodyframe=False):
-        """Forward mapping from robot coordinates to PyBullet coordinates.
-
-        Args:
-            q (ndarray): Joint positions.
-            v (ndarray): Joint velocities.
-            bodyframe (bool): If True, transform velocities to body frame (unused for fixed base).
-
-        Returns:
-            tuple: (q_pyb, v_pyb) PyBullet coordinates.
-        """
-        return q.copy(), v.copy()
-
-    @staticmethod
-    def inverse(q_pyb, v_pyb, bodyframe=False):
-        """Inverse mapping from PyBullet coordinates to robot coordinates.
-
-        Args:
-            q_pyb (ndarray): PyBullet joint positions.
-            v_pyb (ndarray): PyBullet joint velocities.
-            bodyframe (bool): If True, transform velocities from body frame (unused for fixed base).
-
-        Returns:
-            tuple: (q, v) Robot coordinates.
-        """
-        return q_pyb.copy(), v_pyb.copy()
-
-
 class OmnidirectionalBaseMapping:
     @staticmethod
     def forward(q, v, bodyframe=False):
@@ -131,7 +101,7 @@ class PyBulletInputMapping:
         """Create base mapping class from string identifier.
 
         Args:
-            s (str): Base type string ("fixed", "nonholonomic", or "omnidirectional").
+            s (str): Base type string ("nonholonomic" or "omnidirectional").
 
         Returns:
             class: Base mapping class.
@@ -140,9 +110,7 @@ class PyBulletInputMapping:
             ValueError: If string identifier is not recognized.
         """
         s = s.lower()
-        if s == "fixed":
-            return FixedBaseMapping
-        elif s == "nonholonomic":
+        if s == "nonholonomic":
             return NonholonomicBaseMapping
         elif s == "omnidirectional":
             return OmnidirectionalBaseMapping
@@ -187,6 +155,11 @@ class SimulatedRobot:
         self.nx = config["robot"]["dims"]["x"]  # num states
         self.nu = config["robot"]["dims"]["u"]  # num inputs
 
+        if self.home.size != self.nq:
+            raise ValueError(
+                f"Robot home dimension {self.home.size} does not match q dimension {self.nq}"
+            )
+
         # noise
         self.q_meas_std_dev = config["robot"]["noise"]["measurement"]["q_std_dev"]
         self.v_meas_std_dev = config["robot"]["noise"]["measurement"]["v_std_dev"]
@@ -207,6 +180,12 @@ class SimulatedRobot:
         for name in config["robot"]["joint_names"]:
             idx = self.joints[name][0]
             self.robot_joint_indices.append(idx)
+
+        expected_nq = len(self.robot_joint_indices)
+        if self.nq != expected_nq or self.nv != expected_nq:
+            raise ValueError(
+                "Robot q/v dimensions must equal the actuated PyBullet joints"
+            )
 
         # Position limits are taken from the loaded URDF so simulation can
         # enforce the same bounds even when simulation YAML does not define
@@ -281,15 +260,19 @@ class SimulatedRobot:
         cmd_vel = np.asarray(cmd_vel, dtype=float)
         cmd_vel = np.clip(cmd_vel, self.v_lb, self.v_ub)
 
-        # convert to PyBullet coordinates
-        _, v_pyb = self.pyb_mapping.forward(q, cmd_vel, bodyframe=bodyframe)
-
         # If the current state is already outside a bounded interval, snap it
         # back before sending the next velocity command.
         q_clamped = np.clip(q, self.q_lb, self.q_ub)
         if not np.allclose(q, q_clamped):
             self.reset_joint_configuration(q_clamped)
             q = q_clamped
+
+        upper_mask = np.isfinite(self.q_ub) & (q >= self.q_ub) & (cmd_vel > 0)
+        lower_mask = np.isfinite(self.q_lb) & (q <= self.q_lb) & (cmd_vel < 0)
+        cmd_vel[upper_mask | lower_mask] = 0.0
+
+        # convert to PyBullet actuator coordinates
+        _, v_pyb = self.pyb_mapping.forward(q, cmd_vel, bodyframe=bodyframe)
 
         # add process noise
         if add_noise:
@@ -300,10 +283,6 @@ class SimulatedRobot:
             v_pyb_noisy = v_pyb
 
         v_pyb_noisy = np.array(v_pyb_noisy, copy=True)
-        upper_mask = np.isfinite(self.q_ub) & (q >= self.q_ub) & (v_pyb_noisy > 0)
-        lower_mask = np.isfinite(self.q_lb) & (q <= self.q_lb) & (v_pyb_noisy < 0)
-        v_pyb_noisy[upper_mask | lower_mask] = 0.0
-
         pyb.setJointMotorControlArray(
             self.uid,
             self.robot_joint_indices,
@@ -312,7 +291,10 @@ class SimulatedRobot:
         )
 
         # return the actual commanded velocity
-        return v_pyb_noisy
+        _, v_actual = self.pyb_mapping.inverse(
+            np.zeros_like(v_pyb_noisy), v_pyb_noisy, bodyframe=bodyframe
+        )
+        return v_actual
 
     def joint_states(self, add_noise=False, bodyframe=False):
         """Get the current state of the joints.

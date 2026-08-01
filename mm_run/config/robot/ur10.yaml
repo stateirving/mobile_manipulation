@@ -1,11 +1,15 @@
+# UR10 mobile manipulator with a holonomic planar base:
+# [base x, base y, base yaw, six UR10 joints].
+
 simulation:
   robot:
-    home: [0.5pi, -0.25pi, 0.5pi, -0.25pi, 0.5pi, 0.417pi]  # standard
+    # wrist_3=0 avoids an XYZ-Euler singularity at the standard arm pose.
+    home: [0.0, 0.0, 0.0, 0.5pi, -0.25pi, 0.5pi, -0.25pi, 0.5pi, 0.0]
     dims:
-      q: 6  # generalized position
-      v: 6  # generalized velocity
-      x: 18 # state
-      u: 6  # input
+      q: 9
+      v: 9
+      x: 18
+      u: 9
     noise:
       measurement:
         q_std_dev: 0
@@ -13,75 +17,581 @@ simulation:
       process:
         v_std_dev: 0
     joint_names:
+      - "x_to_world_joint"
+      - "y_to_x_joint"
+      - "base_to_y_joint"
       - "ur10_arm_shoulder_pan_joint"
       - "ur10_arm_shoulder_lift_joint"
       - "ur10_arm_elbow_joint"
       - "ur10_arm_wrist_1_joint"
       - "ur10_arm_wrist_2_joint"
       - "ur10_arm_wrist_3_joint"
-    locked_joints:
-      x_to_world_joint: -1.0
-      y_to_x_joint: 1.0
-      base_to_y_joint: 0
     tool_joint_name: "gripped_object_joint"
-    base_type: fixed
+    base_joint_name: "base_to_y_joint"
+    tool_link_name: "gripped_object"
+    base_link_name: "base"
+    base_type: omnidirectional
     urdf:
-      package: "upright_assets"
-      path: "thing/urdf/thing_pyb.urdf"
+      package: "mm_assets"
+      path: "thing/urdf/thing_sim.urdf"
       includes:
-        - "$(find upright_assets)/thing/xacro/cartesian_base_joints.urdf.xacro"
+        - "$(find mm_assets)/thing/xacro/cartesian_base_joints.urdf.xacro"
         - "$(find mm_assets)/thing/xacro/thing_no_wheels.urdf.xacro"
-        - "$(find upright_assets)/thing/xacro/end_effectors/gripped_object.urdf.xacro"
-        - "$(find upright_assets)/thing/xacro/collision_links.urdf.xacro"
+        - "$(find mm_assets)/thing/xacro/end_effector_empty.urdf.xacro"
       args:
         use_collision: "false"
-        transform_params: "$(find upright_cmd)/config/robots/calibration/tray_transforms_real.yaml"
+        transform_params: "$(find mm_run)/config/robot/urdf_transforms.yaml"
 
 controller:
-  # robot parameters
   robot:
     dims:
-      q: 6  # generalized position
-      v: 6  # generalized velocity
-      x: 18 # state
-      u: 6  # input
-    x0: [0.5pi, -0.25pi, 0.5pi, -0.25pi, 0.5pi, 0.417pi, 0rep6, 0rep6]  # standard
-    base_pose: [-1.0, 1, 0]  # planar: x, y, θ
+      q: 9
+      v: 9
+      x: 18
+      u: 9
+    # MPC warm-start configuration in common controller coordinates.
+    x0: [0.0, 0.0, 0.0, 0.5pi, -0.25pi, 0.5pi, -0.25pi, 0.5pi, 0.0]
+    joint_names:
+      - "ur10_arm_shoulder_pan_joint"
+      - "ur10_arm_shoulder_lift_joint"
+      - "ur10_arm_elbow_joint"
+      - "ur10_arm_wrist_1_joint"
+      - "ur10_arm_wrist_2_joint"
+      - "ur10_arm_wrist_3_joint"
+
+    limits:
+      input:
+        lower: [-1.0, -1.0, -0.75, -2.16, -2.16, -3.15, -3.2, -3.2, -3.2]
+        upper: [1.0, 1.0, 0.75, 2.16, 2.16, 3.15, 3.2, 3.2, 3.2]
+      state:
+        lower: [-10.0, -10.0, -2pi, -2pi, -2pi, -2pi, -2pi, -2pi, -2pi,
+                -1.0, -1.0, -0.4, -2.0, -2.0, -3.0, -3.0, -3.0, -3.0]
+        upper: [10.0, 10.0, 2pi, 2pi, 2pi, 2pi, 2pi, 2pi, 2pi,
+                1.0, 1.0, 0.4, 2.0, 2.0, 3.0, 3.0, 3.0, 3.0]
+    time_discretization_dt: 0.1
+
+    link_names:
+      - "base"
+      - "ur10_arm_base_link"
+      - "ur10_arm_shoulder_link"
+      - "ur10_arm_upper_arm_link"
+      - "ur10_arm_forearm_link"
+      - "ur10_arm_wrist_1_link"
+      - "ur10_arm_wrist_2_link"
+      - "ur10_arm_wrist_3_link"
+      - "gripped_object"
+    tool_link_name: "gripped_object"
+    base_link_name: "base"
+    base_type: omnidirectional
+    tool_vicon_name: "ThingContainer"
+
+    collision_model:
+      groups:
+        base:
+          - "base_sphere_00"
+          - "base_sphere_01"
+          - "base_sphere_02"
+          - "base_sphere_03"
+          - "base_sphere_04"
+          - "base_sphere_05"
+          - "base_sphere_09"
+          - "base_sphere_10"
+          - "base_sphere_14"
+          - "base_sphere_15"
+          - "base_sphere_16"
+          - "base_sphere_17"
+          - "base_sphere_18"
+          - "base_sphere_19"
+          - "base_sphere_20"
+          - "base_sphere_21"
+          - "base_sphere_22"
+          - "base_sphere_23"
+          - "base_sphere_24"
+          - "base_sphere_25"
+          - "base_sphere_29"
+          - "base_sphere_30"
+          - "base_sphere_34"
+          - "base_sphere_35"
+          - "base_sphere_36"
+          - "base_sphere_37"
+          - "base_sphere_38"
+          - "base_sphere_39"
+        rack:
+          - "arch_sphere_00"
+          - "arch_sphere_01"
+          - "arch_sphere_02"
+          - "arch_sphere_03"
+          - "arch_sphere_04"
+          - "arch_sphere_05"
+          - "arch_sphere_06"
+          - "arch_sphere_07"
+          - "arch_sphere_08"
+          - "arch_sphere_09"
+          - "arch_sphere_10"
+          - "arch_sphere_11"
+          - "arch_sphere_12"
+          - "arch_sphere_13"
+          - "arch_sphere_14"
+          - "arch_sphere_15"
+          - "arch_sphere_16"
+          - "arch_sphere_17"
+          - "arch_sphere_18"
+          - "arch_sphere_19"
+          - "arch_sphere_20"
+          - "arch_sphere_21"
+          - "arch_sphere_22"
+          - "arch_sphere_23"
+          - "arch_sphere_24"
+          - "arch_sphere_25"
+          - "arch_sphere_26"
+          - "arch_sphere_27"
+          - "arch_sphere_28"
+          - "arch_sphere_29"
+          - "arch_sphere_30"
+          - "arch_sphere_31"
+          - "arch_sphere_32"
+          - "arch_sphere_33"
+          - "arch_sphere_34"
+          - "arch_sphere_35"
+          - "arm_mount_sphere"
+        upper_arm:
+          - "ur10_shoulder_sphere"
+          - "ur10_upper_arm_sphere_0"
+          - "ur10_upper_arm_sphere_1"
+          - "ur10_upper_arm_sphere_2"
+          - "ur10_upper_arm_sphere_3"
+          - "ur10_upper_arm_sphere_4"
+          - "ur10_upper_arm_sphere_5"
+          - "ur10_upper_arm_sphere_6"
+          - "ur10_upper_arm_sphere_7"
+          - "ur10_upper_arm_sphere_8"
+          - "ur10_upper_arm_sphere_9"
+        forearm:
+          - "ur10_forearm_sphere_0"
+          - "ur10_forearm_sphere_1"
+          - "ur10_forearm_sphere_2"
+          - "ur10_forearm_sphere_3"
+          - "ur10_forearm_sphere_4"
+          - "ur10_forearm_sphere_5"
+          - "ur10_forearm_sphere_6"
+          - "ur10_forearm_sphere_7"
+          - "ur10_forearm_sphere_8"
+        wrist:
+          - "ur10_wrist_1_sphere"
+          - "ur10_wrist_2_sphere"
+          - "ur10_wrist_3_sphere"
+        tool:
+          - "ur10_gripper_sphere_0"
+          - "ur10_gripper_sphere_1"
+          - "ur10_gripper_sphere_2"
+          - "ur10_gripper_sphere_3"
+          - "ur10_gripper_sphere_4"
+
+      # Reusable YAML fragments. The objects below remain the single source of
+      # truth for Pinocchio collision geometry, ESDF constraints, and the blue
+      # PyBullet markers.
+      sphere_templates:
+        base: &base_sphere_template
+          parent_link: "chassis_link"
+          type: "sphere"
+          radius: 0.153
+        arch: &arch_sphere_template
+          parent_link: "arch_link"
+          type: "sphere"
+        upper_arm: &upper_arm_sphere_template
+          parent_link: "ur10_arm_upper_arm_link"
+          type: "sphere"
+        forearm: &forearm_sphere_template
+          parent_link: "ur10_arm_forearm_link"
+          type: "sphere"
+        gripper: &gripper_sphere_template
+          parent_link: "gripper"
+          type: "sphere"
+          radius: 0.032
+      # Sphere centers and radii are fitted from the actual URDF collision
+      # meshes. The chassis keeps only the perimeter of its 5x4 grid at two
+      # heights; the arch uses a deterministic surface clustering of
+      # tor11_mech.dae; elongated arm links use local mesh slices with varying
+      # radii.
+      objects:
+        base_sphere_00:
+          <<: *base_sphere_template
+          translation: [-0.3730, -0.2962, 0.0717]
+        base_sphere_01:
+          <<: *base_sphere_template
+          translation: [-0.1865, -0.2962, 0.0717]
+        base_sphere_02:
+          <<: *base_sphere_template
+          translation: [0.0000, -0.2962, 0.0717]
+        base_sphere_03:
+          <<: *base_sphere_template
+          translation: [0.1865, -0.2962, 0.0717]
+        base_sphere_04:
+          <<: *base_sphere_template
+          translation: [0.3730, -0.2962, 0.0717]
+        base_sphere_05:
+          <<: *base_sphere_template
+          translation: [-0.3730, -0.0987, 0.0717]
+        base_sphere_09:
+          <<: *base_sphere_template
+          translation: [0.3730, -0.0987, 0.0717]
+        base_sphere_10:
+          <<: *base_sphere_template
+          translation: [-0.3730, 0.0987, 0.0717]
+        base_sphere_14:
+          <<: *base_sphere_template
+          translation: [0.3730, 0.0987, 0.0717]
+        base_sphere_15:
+          <<: *base_sphere_template
+          translation: [-0.3730, 0.2962, 0.0717]
+        base_sphere_16:
+          <<: *base_sphere_template
+          translation: [-0.1865, 0.2962, 0.0717]
+        base_sphere_17:
+          <<: *base_sphere_template
+          translation: [0.0000, 0.2962, 0.0717]
+        base_sphere_18:
+          <<: *base_sphere_template
+          translation: [0.1865, 0.2962, 0.0717]
+        base_sphere_19:
+          <<: *base_sphere_template
+          translation: [0.3730, 0.2962, 0.0717]
+        base_sphere_20:
+          <<: *base_sphere_template
+          translation: [-0.3730, -0.2962, 0.2076]
+        base_sphere_21:
+          <<: *base_sphere_template
+          translation: [-0.1865, -0.2962, 0.2076]
+        base_sphere_22:
+          <<: *base_sphere_template
+          translation: [0.0000, -0.2962, 0.2076]
+        base_sphere_23:
+          <<: *base_sphere_template
+          translation: [0.1865, -0.2962, 0.2076]
+        base_sphere_24:
+          <<: *base_sphere_template
+          translation: [0.3730, -0.2962, 0.2076]
+        base_sphere_25:
+          <<: *base_sphere_template
+          translation: [-0.3730, -0.0987, 0.2076]
+        base_sphere_29:
+          <<: *base_sphere_template
+          translation: [0.3730, -0.0987, 0.2076]
+        base_sphere_30:
+          <<: *base_sphere_template
+          translation: [-0.3730, 0.0987, 0.2076]
+        base_sphere_34:
+          <<: *base_sphere_template
+          translation: [0.3730, 0.0987, 0.2076]
+        base_sphere_35:
+          <<: *base_sphere_template
+          translation: [-0.3730, 0.2962, 0.2076]
+        base_sphere_36:
+          <<: *base_sphere_template
+          translation: [-0.1865, 0.2962, 0.2076]
+        base_sphere_37:
+          <<: *base_sphere_template
+          translation: [0.0000, 0.2962, 0.2076]
+        base_sphere_38:
+          <<: *base_sphere_template
+          translation: [0.1865, 0.2962, 0.2076]
+        base_sphere_39:
+          <<: *base_sphere_template
+          translation: [0.3730, 0.2962, 0.2076]
+
+        arch_sphere_00:
+          <<: *arch_sphere_template
+          radius: 0.0585
+          translation: [-0.0900, 0.4701, 0.0194]
+        arch_sphere_01:
+          <<: *arch_sphere_template
+          radius: 0.0585
+          translation: [0.0900, 0.4701, 0.0194]
+        arch_sphere_02:
+          <<: *arch_sphere_template
+          radius: 0.0583
+          translation: [0.0000, 0.1602, 0.0196]
+        arch_sphere_03:
+          <<: *arch_sphere_template
+          radius: 0.0887
+          translation: [-0.2100, 0.1746, 0.0197]
+        arch_sphere_04:
+          <<: *arch_sphere_template
+          radius: 0.0895
+          translation: [0.2103, 0.1760, 0.0200]
+        arch_sphere_05:
+          <<: *arch_sphere_template
+          radius: 0.0667
+          translation: [0.2381, 0.4558, 0.0232]
+        arch_sphere_06:
+          <<: *arch_sphere_template
+          radius: 0.0669
+          translation: [-0.2385, 0.4562, 0.0234]
+        arch_sphere_07:
+          <<: *arch_sphere_template
+          radius: 0.1003
+          translation: [-0.0108, -0.2318, 0.0300]
+        arch_sphere_08:
+          <<: *arch_sphere_template
+          radius: 0.0999
+          translation: [0.0014, -0.3251, 0.0303]
+        arch_sphere_09:
+          <<: *arch_sphere_template
+          radius: 0.0716
+          translation: [0.1742, -0.1750, 0.0315]
+        arch_sphere_10:
+          <<: *arch_sphere_template
+          radius: 0.0961
+          translation: [-0.1706, -0.2170, 0.0333]
+        arch_sphere_11:
+          <<: *arch_sphere_template
+          radius: 0.0995
+          translation: [-0.2433, 0.3023, 0.0633]
+        arch_sphere_12:
+          <<: *arch_sphere_template
+          radius: 0.0985
+          translation: [0.2432, 0.3036, 0.0637]
+        arch_sphere_13:
+          <<: *arch_sphere_template
+          radius: 0.0895
+          translation: [0.0771, -0.2658, 0.0952]
+        arch_sphere_14:
+          <<: *arch_sphere_template
+          radius: 0.0717
+          translation: [0.0826, -0.2465, 0.1599]
+        arch_sphere_15:
+          <<: *arch_sphere_template
+          radius: 0.1053
+          translation: [-0.0509, -0.2979, 0.1840]
+        arch_sphere_16:
+          <<: *arch_sphere_template
+          radius: 0.0844
+          translation: [-0.2429, 0.4416, 0.1982]
+        arch_sphere_17:
+          <<: *arch_sphere_template
+          radius: 0.0845
+          translation: [0.2424, 0.4417, 0.1982]
+        arch_sphere_18:
+          <<: *arch_sphere_template
+          radius: 0.1104
+          translation: [0.0669, -0.2917, 0.2198]
+        arch_sphere_19:
+          <<: *arch_sphere_template
+          radius: 0.0969
+          translation: [-0.0383, -0.2260, 0.3339]
+        arch_sphere_20:
+          <<: *arch_sphere_template
+          radius: 0.0974
+          translation: [0.0666, -0.2729, 0.3575]
+        arch_sphere_21:
+          <<: *arch_sphere_template
+          radius: 0.0975
+          translation: [-0.0359, -0.3231, 0.3583]
+        arch_sphere_22:
+          <<: *arch_sphere_template
+          radius: 0.0786
+          translation: [-0.2372, 0.4703, 0.4052]
+        arch_sphere_23:
+          <<: *arch_sphere_template
+          radius: 0.1035
+          translation: [0.2307, 0.4817, 0.4131]
+        arch_sphere_24:
+          <<: *arch_sphere_template
+          radius: 0.0566
+          translation: [-0.1326, 0.4764, 0.4461]
+        arch_sphere_25:
+          <<: *arch_sphere_template
+          radius: 0.1133
+          translation: [0.0894, 0.4744, 0.4585]
+        arch_sphere_26:
+          <<: *arch_sphere_template
+          radius: 0.1007
+          translation: [-0.0350, 0.4691, 0.4602]
+        arch_sphere_27:
+          <<: *arch_sphere_template
+          radius: 0.0726
+          translation: [0.2217, 0.4501, 0.5179]
+        arch_sphere_28:
+          <<: *arch_sphere_template
+          radius: 0.0633
+          translation: [-0.2425, 0.4705, 0.5900]
+        arch_sphere_29:
+          <<: *arch_sphere_template
+          radius: 0.0356
+          translation: [0.2413, 0.4708, 0.6400]
+        arch_sphere_30:
+          <<: *arch_sphere_template
+          radius: 0.0721
+          translation: [-0.2372, 0.4702, 0.7977]
+        arch_sphere_31:
+          <<: *arch_sphere_template
+          radius: 0.0736
+          translation: [0.2356, 0.4706, 0.7989]
+        arch_sphere_32:
+          <<: *arch_sphere_template
+          radius: 0.0339
+          translation: [-0.0450, 0.4701, 0.8193]
+        arch_sphere_33:
+          <<: *arch_sphere_template
+          radius: 0.0339
+          translation: [0.0450, 0.4701, 0.8193]
+        arch_sphere_34:
+          <<: *arch_sphere_template
+          radius: 0.0339
+          translation: [-0.1350, 0.4701, 0.8193]
+        arch_sphere_35:
+          <<: *arch_sphere_template
+          radius: 0.0769
+          translation: [0.1455, 0.4740, 0.8623]
+
+        arm_mount_sphere:
+          parent_link: "ur10_arm_base_link_inertia"
+          type: "sphere"
+          radius: 0.108
+          translation: [0.0, 0.0085, 0.0190]
+
+        ur10_shoulder_sphere:
+          parent_link: "ur10_arm_shoulder_link"
+          type: "sphere"
+          radius: 0.125
+          translation: [0.0, -0.0053, -0.0005]
+
+        ur10_upper_arm_sphere_0:
+          <<: *upper_arm_sphere_template
+          radius: 0.125
+          translation: [0.0370, 0.0002, 0.1714]
+        ur10_upper_arm_sphere_1:
+          <<: *upper_arm_sphere_template
+          radius: 0.125
+          translation: [-0.0379, -0.0001, 0.1745]
+        ur10_upper_arm_sphere_2:
+          <<: *upper_arm_sphere_template
+          radius: 0.100
+          translation: [-0.1128, -0.0001, 0.1715]
+        ur10_upper_arm_sphere_3:
+          <<: *upper_arm_sphere_template
+          radius: 0.070
+          translation: [-0.1876, 0.0, 0.1759]
+        ur10_upper_arm_sphere_4:
+          <<: *upper_arm_sphere_template
+          radius: 0.070
+          translation: [-0.2625, 0.0, 0.1759]
+        ur10_upper_arm_sphere_5:
+          <<: *upper_arm_sphere_template
+          radius: 0.068
+          translation: [-0.3374, 0.0, 0.1759]
+        ur10_upper_arm_sphere_6:
+          <<: *upper_arm_sphere_template
+          radius: 0.070
+          translation: [-0.4123, 0.0, 0.1759]
+        ur10_upper_arm_sphere_7:
+          <<: *upper_arm_sphere_template
+          radius: 0.068
+          translation: [-0.4872, 0.0, 0.1759]
+        ur10_upper_arm_sphere_8:
+          <<: *upper_arm_sphere_template
+          radius: 0.098
+          translation: [-0.5621, -0.0005, 0.1804]
+        ur10_upper_arm_sphere_9:
+          <<: *upper_arm_sphere_template
+          radius: 0.095
+          translation: [-0.6369, 0.0007, 0.1779]
+
+        ur10_forearm_sphere_0:
+          <<: *forearm_sphere_template
+          radius: 0.100
+          translation: [0.0210, 0.0001, 0.0508]
+        ur10_forearm_sphere_1:
+          <<: *forearm_sphere_template
+          radius: 0.100
+          translation: [-0.0543, 0.0001, 0.0482]
+        ur10_forearm_sphere_2:
+          <<: *forearm_sphere_template
+          radius: 0.058
+          translation: [-0.1297, 0.0, 0.0482]
+        ur10_forearm_sphere_3:
+          <<: *forearm_sphere_template
+          radius: 0.060
+          translation: [-0.2050, 0.0, 0.0482]
+        ur10_forearm_sphere_4:
+          <<: *forearm_sphere_template
+          radius: 0.058
+          translation: [-0.2804, 0.0, 0.0482]
+        ur10_forearm_sphere_5:
+          <<: *forearm_sphere_template
+          radius: 0.062
+          translation: [-0.3557, 0.0, 0.0482]
+        ur10_forearm_sphere_6:
+          <<: *forearm_sphere_template
+          radius: 0.060
+          translation: [-0.4311, 0.0, 0.0482]
+        ur10_forearm_sphere_7:
+          <<: *forearm_sphere_template
+          radius: 0.082
+          translation: [-0.5064, 0.0001, 0.0505]
+        ur10_forearm_sphere_8:
+          <<: *forearm_sphere_template
+          radius: 0.083
+          translation: [-0.5818, 0.0002, 0.0511]
+
+        ur10_wrist_1_sphere:
+          parent_link: "ur10_arm_wrist_1_link"
+          type: "sphere"
+          radius: 0.082
+          translation: [-0.0002, -0.0026, -0.0040]
+        ur10_wrist_2_sphere:
+          parent_link: "ur10_arm_wrist_2_link"
+          type: "sphere"
+          radius: 0.082
+          translation: [0.0, 0.0022, -0.0038]
+        ur10_wrist_3_sphere:
+          parent_link: "ur10_arm_wrist_3_link"
+          type: "sphere"
+          radius: 0.052
+          translation: [0.0, -0.0010, -0.0154]
+
+        # Exact 0.29 m x 0.01 m gripper cylinder, covered by five small balls.
+        ur10_gripper_sphere_0:
+          <<: *gripper_sphere_template
+          translation: [0.0, 0.0, 0.029]
+        ur10_gripper_sphere_1:
+          <<: *gripper_sphere_template
+          translation: [0.0, 0.0, 0.087]
+        ur10_gripper_sphere_2:
+          <<: *gripper_sphere_template
+          translation: [0.0, 0.0, 0.145]
+        ur10_gripper_sphere_3:
+          <<: *gripper_sphere_template
+          translation: [0.0, 0.0, 0.203]
+        ur10_gripper_sphere_4:
+          <<: *gripper_sphere_template
+          translation: [0.0, 0.0, 0.261]
+
+      self_collision_pairs:
+        - ["base", ["forearm", "wrist", "tool"]]
+        - ["rack", ["forearm", "wrist", "tool"]]
+        - ["upper_arm", ["wrist", "tool"]]
+        - ["forearm", "tool"]
+
+      pinocchio_self_collision_pairs:
+        - ["base", ["forearm", "wrist", "tool"]]
+        - ["rack", ["forearm", "wrist", "tool"]]
+        - ["upper_arm", ["wrist", "tool"]]
+        - ["forearm", "tool"]
+
+      static_obstacle_pairs:
+        ground: ["forearm", "wrist", "tool"]
+
+      pinocchio_static_obstacle_pairs:
+        ground: ["forearm", "wrist", "tool"]
+
     urdf:
-      package: "upright_assets"
-      path: "thing/urdf/thing_ocs2.urdf"
+      package: "mm_assets"
+      path: "thing/urdf/thing_ctrl.urdf"
       includes:
         - "$(find mm_assets)/thing/xacro/thing_no_wheels.urdf.xacro"
-        - "$(find upright_assets)/thing/xacro/end_effectors/gripped_object.urdf.xacro"
-        - "$(find upright_assets)/thing/xacro/collision_links.urdf.xacro"
+        - "$(find mm_assets)/thing/xacro/end_effector_fingers.urdf.xacro"
+        - "$(find mm_assets)/thing/xacro/collision.urdf.xacro"
       args:
         use_collision: "true"
-        transform_params: "$(find upright_cmd)/config/robots/calibration/tray_transforms_real.yaml"
-    tool_link_name: "gripped_object"
-    base_type: fixed
-
-  # weights on state, input, and end effector pose
-  weights:
-    input:
-      scale: 0.001
-      diag: [1rep6]
-    state:
-      scale: 0.01
-      diag: [0rep6, 10rep6, 1rep6]
-    end_effector:
-      scale: 1
-      diag: [1, 1, 1, 0, 0, 0]
-
-  # state and input limits
-  limits:
-    constraint_type: hard
-    input:
-      lower: [-80, -80, -80, -80, -80, -80]
-      upper: [80, 80, 80, 80, 80, 80]
-    state:
-      lower: [-2pi, -2pi, -2pi, -2pi, -2pi, -2pi,
-              -2, -2, -3, -3, -3, -3,
-              -10, -10, -10, -10, -10, -10]
-      upper: [2pi, 2pi, 2pi, 2pi, 2pi, 2pi,
-              2, 2, 3, 3, 3, 3,
-              10, 10, 10, 10, 10, 10]
+        transform_params: "$(find mm_run)/config/robot/robot_transforms_real.yaml"

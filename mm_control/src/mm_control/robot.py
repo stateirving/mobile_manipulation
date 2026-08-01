@@ -180,6 +180,10 @@ class PinocchioInterface:
         Returns:
             GeometryObject or list: Geometry object(s) for the link(s).
         """
+        single_name = isinstance(link_names, str)
+        if single_name:
+            link_names = [link_names]
+
         objs = []
         for name in link_names:
             if name in self.custom_collision_objects:
@@ -193,10 +197,9 @@ class PinocchioInterface:
                 o = self.collision_model.geometryObjects[o_id]
             objs.append(o)
 
-        if len(objs) == 1:
+        if single_name:
             return objs[0]
-        else:
-            return objs
+        return objs
 
     def getSignedDistance(self, o1, tf1, o2, tf2):
         """Compute signed distance between two geometry objects.
@@ -338,8 +341,16 @@ class PinocchioInterface:
                 f"Configured collision object '{name}' references unknown parent_link '{parent_link}'"
             )
 
-        parent_joint = self.model.frames[frame_id].parentJoint
-        geom_obj = pin.GeometryObject(name + "_0", parent_joint, geometry, placement)
+        frame = self.model.frames[frame_id]
+        parent_joint = frame.parentJoint
+        # GeometryObject placements are expressed in the parent-joint frame,
+        # while configured offsets are expressed in the named link frame.
+        # Compose the fixed link placement so primitives on the chassis/arch
+        # agree with their symbolic FK and PyBullet markers.
+        joint_placement = frame.placement * placement
+        geom_obj = pin.GeometryObject(
+            name + "_0", parent_joint, geometry, joint_placement
+        )
         geom_obj.meshColor = np.ones((4))
         return geom_obj
 

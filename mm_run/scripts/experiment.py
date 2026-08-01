@@ -94,10 +94,10 @@ def main():
         and "limits" in ctrl_config.get("robot", {})
     ):
         sim_config["robot"]["limits"] = ctrl_config["robot"]["limits"]
-    if (
-        "collision_model" not in sim_config.get("robot", {})
-        and "collision_model" in ctrl_config.get("robot", {})
-    ):
+    # Collision primitives belong to the robot interface.  Keep simulator
+    # visualization synchronized even when an included simulation config
+    # already supplied an older collision model.
+    if "collision_model" in ctrl_config.get("robot", {}):
         sim_config["robot"]["collision_model"] = ctrl_config["robot"]["collision_model"]
 
     # Simulator
