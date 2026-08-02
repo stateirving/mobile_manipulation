@@ -1,98 +1,30 @@
-# Online nvblox ESDF + OMPL base planner + existing whole-body MPC.
+# Online nvblox ESDF + OMPL base/EE planning + whole-body MPC.
 #
-# OMPL plans a global SE(2) base path from the online ESDF map. The MPC still
-# tracks the resulting references with the full Stretch model and keeps the
-# existing ESDF collision cost active.
+# Reuse the offline OMPL planning/controller setup, then replace the ESDF map
+# source with the online nvblox mapper and enable simulated depth integration.
 
 include:
   - package: "mm_run"
-    path: "config/stretch_esdf_online_nvblox.yaml"
+    path: "config/stretch_esdf_offline_ompl_wbmpc.yaml"
 
 planner:
   task_defaults:
     base:
-      planner_type: OMPLBasePlanner
-      base_mask: [true, true, true]
-      bounds_xy: [[-4.0, 4.0], [-4.0, 4.0]]
-      bounds_margin: 0.75
       tracking_pos_err_tol: 0.15
-      tracking_ori_err_tol: 0.25
-      end_stop: false
-      ompl:
-        planner: "RRTstar"
-        solve_time: 0.5
-        solve_attempts: 3
-        simplify: true
-        simplify_time: 0.05
-        range: 0.1
-        goal_tolerance: 0.08
-        state_validity_resolution: 0.01
-      path:
-        dt: 0.1
-        linear_speed: 0.25
-        angular_speed: 0.8
-        interpolation_resolution: 0.05
-        yaw_mode: "tangent"
+      hold_period: 0.0
       esdf:
-        enabled: true
-        base_radius: 0.2
-        d_safe: 0.2
-        query_z: [0.15, 0.35]
-        # Treat unexplored ESDF cells as free for the initial optimistic RRT.
+        # The first plan is optimistic until the initial online scan has
+        # observed enough of the workspace.
         unknown_is_valid: true
         allow_straight_line_fallback: true
-      replan:
-        enabled: true
-        validate_every_step: false
-        validate_remaining_path: false
-        min_interval: 1.0
-        check_horizon: 2.0
-        check_dt: 0.2
-        min_clearance: 0.0
-        deviation_threshold: 0.4
-        force_periodic: false
-        keep_previous_on_failure: true
 
     ee:
-      planner_type: OMPLEEPlanner
-      ee_mask: [true, true, true, false, false, false]
       bounds_xyz: [[-4.0, 4.0], [-4.0, 4.0], [0.25, 1.3]]
-      bounds_margin: 0.25
-      tracking_pos_err_tol: 0.05
-      tracking_ori_err_tol: 0.25
-      hold_period: 1.0
-      end_stop: false
-      ompl:
-        planner: "RRTConnect"
-        solve_time: 0.5
-        solve_attempts: 3
-        simplify: true
-        simplify_time: 0.05
-        range: 0.12
-        goal_tolerance: 0.04
-        state_validity_resolution: 0.01
-      path:
-        dt: 0.1
-        linear_speed: 0.12
-        angular_speed: 0.8
-        interpolation_resolution: 0.04
       esdf:
-        enabled: true
-        tool_radius: 0.05
-        d_safe: 0.05
-        unknown_is_valid: false
         allow_straight_line_fallback: true
       replan:
-        enabled: true
-        validate_every_step: false
-        validate_remaining_path: false
         min_interval: 0.5
-        check_horizon: 2.0
-        check_dt: 0.2
-        min_clearance: 0.0
-        deviation_threshold: 0.25
         force_periodic: false
-        keep_previous_on_failure: true
 
   tasks:
     - defaults: base
@@ -116,7 +48,32 @@ planner:
       ee_pose: [3.0, 0.5, 0.4, 0.0, 0.0, -0.0708]
 
 controller:
+  esdf_collision:
+    source: "online_nvblox"
+    d_safe: 0.05
+    soft_cost:
+      p: 1.0
+      mu: 100.0
+      smoothing: 5.0e-03
+    online_nvblox:
+      voxel_size: 0.01
+      integrator_type: "tsdf"
+      query_radius: 0.0
+      auto_update_esdf: True
+      update_esdf_on_depth: False
+      unknown_distance_threshold: 50.0
+      camera:
+        fx: 147.802
+        fy: 147.802
+        cx: 255.5
+        cy: 255.5
+        width: 512
+        height: 512
+
   cost_params:
+    EEPose:
+      Qk: [1.0, 1.0, 1.0, 0.0, 0.0, 0.0]
+      P: [5.0, 5.0, 5.0, 0.0, 0.0, 0.0]
     BasePose:
       Qk: [1.5, 1.5, 3.0]
       P: [2.0, 2.0, 2.0]
@@ -135,14 +92,64 @@ simulation:
   duration: 60.0
 
 online_nvblox_sim:
+  enabled: True
+  renderer: "tiny"
+  width: 512
+  height: 512
+  fov_y_deg: 120.0
+  near: 0.25
+  far: 2.88
+  ground_filter_min_z: 0.01
+  timing_log_interval_steps: 20
+  exclude_robot: True
+  exclude_collision_sphere_markers: True
+  decay:
+    enabled: False
+    interval_steps: 3
+  diagnostics:
+    enabled: True
+    base_sphere_name: "base_body_collision"
+    unknown_distance: 100.0
+    unknown_distance_tolerance: 1.0e-03
+    target_link_names:
+      - "desk_right_leg_fr"
+      - "desk_right_leg_fl"
+      - "desk_right_leg_br"
+      - "desk_right_leg_bl"
   preview:
     enabled: false
+    mode: "rgb_depth"
+    window_name: "online nvblox simulated camera"
+    show_initial_scan: False
+    show_realtime_scan: True
+    wait_ms: 1
+    scale: 1.5
   initial_scan:
     enabled: true
+    num_views: 12
+    yaw_offset_deg: 2.5
+    camera_heights: [1.0]
     update_esdf: true
+    origins:
+      - [0.0, 0.0, 0.0]
+      - [0.5, -1.5, -0.7854]
+      - [1.0, -2.0, -0.7854]
+      - [1.5, -2.5, -0.7854]
   realtime_scan:
     enabled: true
+    render_interval_steps: 3
     update_esdf: false
+    cameras:
+      - name: "head"
+        pose_source: "camera_link"
+        camera_link_name: "camera_depth_frame"
+        camera_frame_convention: "ros_link"
+        pose_correction_rpy: [0.0, 0.0, -1.5708]
+      - name: "base"
+        pose_source: "base_spin"
+        num_views: 1
+        camera_height: 0.45
+        yaw_offset_deg: 0.0
 
 logging:
   log_dir: "stretch_esdf_online_nvblox_ompl_wbmpc"

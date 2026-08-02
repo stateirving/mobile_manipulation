@@ -152,21 +152,9 @@ ros2 pkg prefix mm_run
 ros2 pkg prefix mm_control
 ```
 
-Compile the ESDF MPC acados solver:
-
-```bash
-python3 mm_control/scripts/generate_acados_code.py --config $(ros2 pkg prefix mm_run)/share/mm_run/config/stretch_esdf_offline.yaml
-```
-
-Run the PyBullet validation:
-
-```bash
-python3 mm_run/scripts/experiment.py --config $(ros2 pkg prefix mm_run)/share/mm_run/config/stretch_esdf_offline.yaml --GUI
-```
-
 ### OMPL Base/EE Planner Offline ESDF WB-MPC
-This config inherits `stretch_esdf_offline.yaml`, uses OMPL for the base path
-and Cartesian EE path, and keeps the existing whole-body MPC controller.
+This is the canonical offline ESDF + OMPL base/EE + whole-body MPC config. It
+also owns the shared offline ESDF, scene, solver, robot, and simulation settings.
 
 Compile the offline OMPL WB-MPC acados solver:
 
@@ -180,22 +168,9 @@ Run the offline OMPL WB-MPC PyBullet validation:
 python3 mm_run/scripts/experiment.py --config $(ros2 pkg prefix mm_run)/share/mm_run/config/stretch_esdf_offline_ompl_wbmpc.yaml --GUI
 ```
 
-### Online nvblox ESDF MPC Validation
-Compile the online ESDF MPC acados solver:
-
-```bash
-python3 mm_control/scripts/generate_acados_code.py --config $(ros2 pkg prefix mm_run)/share/mm_run/config/stretch_esdf_online_nvblox.yaml
-```
-
-Run the online nvblox PyBullet validation:
-
-```bash
-python3 mm_run/scripts/experiment_online_nvblox.py --config $(ros2 pkg prefix mm_run)/share/mm_run/config/stretch_esdf_online_nvblox.yaml --GUI
-```
-
-### OMPL Base Planner Online nvblox WB-MPC
-This config inherits `stretch_esdf_online_nvblox.yaml`, uses OMPL for the base
-path, and keeps the existing whole-body MPC controller.
+### OMPL Base/EE Planner Online nvblox WB-MPC
+This config inherits the offline OMPL WB-MPC setup, replaces the static ESDF
+with an online nvblox map, and uses OMPL for the base and Cartesian EE paths.
 
 Compile the OMPL WB-MPC acados solver:
 

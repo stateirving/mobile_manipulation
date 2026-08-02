@@ -150,6 +150,7 @@ controller:
           - "wrist_roll_collision"
         tool:
           - "gripper_body_collision"
+          - "gripper_bridge_collision"
           - "gripper_tip_collision"
 
       objects:
@@ -334,6 +335,14 @@ controller:
           type: "sphere"
           radius: 0.08
           translation: [0.0, 0.0, 0.0]
+        # Bridge the 0.23 m span from the gripper body to the grasp center.
+        # This sphere overlaps both endpoint spheres, avoiding an uncovered
+        # section along the wrist-to-EE axis.
+        gripper_bridge_collision:
+          parent_link: "link_gripper_s3_body"
+          type: "sphere"
+          radius: 0.06
+          translation: [0.0, 0.0, 0.135]
         gripper_tip_collision:
           parent_link: "link_grasp_center"
           type: "sphere"

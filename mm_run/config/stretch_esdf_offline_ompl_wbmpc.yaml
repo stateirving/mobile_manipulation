@@ -1,13 +1,16 @@
-# Offline ESDF + OMPL base/EE planners + existing whole-body MPC.
-#
-# This is the offline counterpart of stretch_esdf_online_nvblox_ompl_wbmpc.yaml:
-# OMPL plans base and Cartesian EE reference paths against the exported ESDF map
-# from stretch_esdf_offline.yaml, while MPC tracks them with the full Stretch
-# model and ESDF collision cost.
+# Canonical offline ESDF + OMPL base/EE planner + whole-body MPC setup.
+# It owns the shared offline ESDF, scene, solver, robot, and simulation settings
+# reused by the online nvblox OMPL WB-MPC profile.
 
 include:
   - package: "mm_run"
-    path: "config/stretch_esdf_offline.yaml"
+    path: "config/sim/simulation.yaml"
+  - package: "mm_run"
+    path: "config/controller/MPC.yaml"
+  - package: "mm_run"
+    path: "config/scene/empty.yaml"
+  - package: "mm_run"
+    path: "config/robot/stretch.yaml"
 
 planner:
   task_defaults:
@@ -23,7 +26,7 @@ planner:
       ompl:
         planner: "RRTstar"
         solve_time: 0.5
-        solve_attempts: 3
+        solve_attempts: 5
         simplify: true
         simplify_time: 0.05
         range: 0.1
@@ -38,7 +41,7 @@ planner:
       esdf:
         enabled: true
         base_radius: 0.2
-        d_safe: 0.20
+        d_safe: 0.2
         query_z: [0.15, 0.35]
         unknown_is_valid: false
         allow_straight_line_fallback: false
@@ -82,50 +85,160 @@ planner:
         tool_radius: 0.05
         d_safe: 0.05
         unknown_is_valid: false
-        allow_straight_line_fallback: true
+        allow_straight_line_fallback: false
       replan:
         enabled: true
         validate_every_step: false
         validate_remaining_path: false
-        min_interval: 1.0
+        min_interval: 2.0
         check_horizon: 2.0
         check_dt: 0.2
         min_clearance: 0.0
         deviation_threshold: 0.25
-        force_periodic: false
+        force_periodic: true
         keep_previous_on_failure: true
 
   tasks:
-    - defaults: base
-      name: "OMPL Base To Work Area"
-      base_pose: [2.0, -2.0, 0.0]
+    # - defaults: base
+    #   name: "OMPL Base To Work Area"
+    #   base_pose: [2.0, -2.0, 0.0]
+
+    # - defaults: base
+    #   name: "OMPL Base Goal 2"
+    #   base_pose: [2.0, 0.0, 0.0]
+
+    # - defaults: ee
+    #   name: "EE Approach"
+    #   ee_pose: [3.0, -0.5, 0.85, 0.0, 0.0, -0.0708]
+
+    # - defaults: ee
+    #   name: "EE Reach Low"
+    #   ee_pose: [3.0, -0.5, 0.4, 0.0, 0.0, -0.0708]
+
+    # - defaults: ee
+    #   name: "EE Reach Side"
+    #   ee_pose: [3.0, 0.5, 0.4, 0.0, 0.0, -0.0708]
 
     - defaults: base
-      name: "OMPL Base Goal 2"
-      base_pose: [2.0, 0.0, 0.0]
+      name: "test base"
+      base_pose: [-2.3, 2.0, 0.0]
 
-    - defaults: ee
-      name: "EE Approach"
-      ee_pose: [3.0, -0.5, 0.85, 0.0, 0.0, -0.0708]
-
-    - defaults: ee
-      name: "EE Reach Low"
-      ee_pose: [3.0, -0.5, 0.4, 0.0, 0.0, -0.0708]
-
-    - defaults: ee
-      name: "EE Reach Side"
-      ee_pose: [3.0, 0.5, 0.4, 0.0, 0.0, -0.0708]
+    - defaults: base
+      name: "back to origin"
+      base_pose: [0.0, 0.0, 0.0]
 
 controller:
+  cmd_vel_type: "integration"
+  self_collision_avoidance_enabled: False
+  static_obstacles_collision_avoidance_enabled: False
+  self_collision_emergency_stop: False
+  collision_emergency_stop_margin:
+    self: 0.0
+    static_obstacles: 0.0
+
+  scene:
+    enabled: True
+    collision_link_names:
+      static_obstacles: []
+    urdf:
+      package: "mm_assets"
+      path: "scenes/urdf/esdf_test_room.urdf"
+      includes:
+        - "$(find mm_assets)/scenes/xacro/esdf_test_room.urdf.xacro"
+
   esdf_collision:
+    enabled: True
     source: "offline"
+    map_path:
+      package: "mm_run"
+      path: "results/nvblox_esdf/esdf_test_room_full_2cm_dense/2026-06-15_12-32-10/esdf_grid.npz"
+    spheres:
+      - "base_body_collision"
+      - "lift_mast_collision_00"
+      - "lift_mast_collision_01"
+      - "lift_mast_collision_02"
+      - "lift_mast_collision_03"
+      - "lift_mast_collision_04"
+      - "lift_mast_collision_05"
+      - "lift_mast_collision_06"
+      - "lift_mast_collision_07"
+      - "lift_mast_collision_08"
+      - "lift_mast_collision_09"
+      - "lift_mast_collision_10"
+      - "lift_mast_collision_11"
+      - "lift_mast_collision_12"
+      - "lift_mast_collision_13"
+      - "lift_mast_collision_14"
+      - "lift_mast_collision_15"
+      - "lift_mast_collision_16"
+      - "lift_mast_collision_17"
+      - "lift_mast_collision_18"
+      - "lift_mast_collision_19"
+      - "lift_mast_collision_20"
+      - "lift_mast_collision_21"
+      - "lift_mast_collision_22"
+      - "lift_mast_collision_23"
+      - "lift_mast_collision_24"
+      - "lift_mast_collision_25"
+      - "arm_l4_collision"
+      # - "arm_l3_collision"
+      - "arm_l2_collision"
+      # - "arm_l1_collision"
+      - "arm_l0_collision"
+      - "wrist_yaw_collision"
+      # - "wrist_pitch_collision"
+      # - "wrist_roll_collision"
+      - "gripper_body_collision"
+      - "gripper_bridge_collision"
+      - "gripper_tip_collision"
+    d_safe: 0.07
+    mode: "squared_hinge_cost"
+    soft_cost:
+      p: 1.0
+      mu: 1000.0
+      smoothing: 5.0e-03
+    require_all_corners_valid: True
+    invalid_distance: -1.0
+    name: "esdf"
+
+  acados:
+    name: "StretchESDFBase"
+    cython:
+      enabled: True
+      recompile: False
+    ocp_solver_options:
+      nlp_solver_max_iter: 500
+      qp_solver_iter_max: 100
+    slack_enabled:
+      x: False
+      x_e: False
+      u: False
+      h_0: False
+      h: False
+      h_e: False
+
   cost_params:
+    EEPose:
+      Qk: [1.0, 1.0, 1.0, 0.0, 0.0, 0.0]
+      P: [0.0, 0.0, 0.0, 0.0, 0.0, 0.0]
+    EEVel:
+      Qk: [0.0, 0.0, 0.0, 0.0, 0.0, 0.0]
+      P: [0.0, 0.0, 0.0, 0.0, 0.0, 0.0]
     BasePose:
       Qk: [10.0, 10.0, 15.0]
       P: [10.0, 10.0, 15.0]
     BaseVel:
       Qk: [0.01, 0.01, 0.25]
       P: [0.01, 0.01, 0.10]
+      Qvb: [0.01, 0.01, 0.01]
+      Qub: [0.01, 0.01, 0.01]
+    Effort:
+      Qqa: [0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0]
+      Qqb: [0.0, 0.0, 0.0]
+      Qva: [0.01, 0.01, 0.01, 0.01, 0.01, 0.01, 0.02, 0.02]
+      Qvb: [0.05, 0.05, 0.001]
+      Qua: [0.01, 0.01, 0.01, 0.01, 0.01, 0.01, 0.02, 0.02]
+      Qub: [0.05, 0.05, 0.001]
     ArmExtension:
       enabled: True
       joint_names: ["joint_arm_l3", "joint_arm_l2", "joint_arm_l1", "joint_arm_l0"]
@@ -133,9 +246,29 @@ controller:
       base_task_upper: [0.00, 0.00, 0.00, 0.00]
       weight: [10.0, 10.0, 10.0, 10.0]
       smoothing: 5.0e-03
+    Regularization:
+      eps: 1.0e-06
+    slack:
+      z: 1000
+      Z: 1000000
 
 simulation:
   duration: 80.0
+  gui: False
+  collision_sphere_markers:
+    enabled: True
+    alpha: 0.25
+    color: [0.0, 0.7, 1.0]
+    object_colors: {}
+  static_obstacles:
+    enabled: True
+    collision_enabled: False
+    urdf:
+      package: "mm_assets"
+      path: "scenes/urdf/esdf_test_room.urdf"
+      includes:
+        - "$(find mm_assets)/scenes/xacro/esdf_test_room.urdf.xacro"
 
 logging:
   log_dir: "stretch_esdf_offline_ompl_wbmpc"
+  log_level: 20
