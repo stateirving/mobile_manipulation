@@ -203,3 +203,98 @@ Run the UR10 offline OMPL WB-MPC PyBullet validation:
 ```bash
 python3 mm_run/scripts/experiment.py --config $(ros2 pkg prefix mm_run)/share/mm_run/config/ur10_esdf_offline_ompl_wbmpc.yaml --GUI
 ```
+
+### Stretch Keyboard Teleoperation ESDF Capture and Replay
+
+The commands below use the current source-tree configs and assume they are run
+from the repository root. `nvblox-torch` requires a CUDA GPU for capture and
+export; viewing an exported NPZ does not require CUDA.
+
+Capture an ESDF by teleoperating the simulated Stretch with its onboard depth
+camera:
+
+```bash
+pixi run python mm_run/scripts/teleop_export_esdf.py \
+  --config mm_run/config/stretch_esdf_teleop_export.yaml
+```
+
+Keyboard controls in the PyBullet window:
+
+- `I` / `K`: move forward / backward.
+- `J` / `L`: turn left / right.
+- `Space`: stop.
+- `X`: stop mapping, update the final ESDF, and export it.
+
+A second, empty PyBullet window displays a live low-resolution reconstruction.
+It does not load or overlay the ground-truth URDF scene:
+
+- Height-colored points: valid samples close to the reconstructed ESDF zero
+  surface.
+- Bright magenta points: the frontier between valid and invalid/unknown space.
+- Yellow robot query points: valid and at least `0.40 m` from obstacles.
+- Red robot query points: valid but below the required clearance.
+- Magenta robot query points: invalid/unknown.
+
+The live reconstruction queries a 10 cm grid every 30 simulation steps. The
+viewer runs in a separate process, and only downsampled NumPy point clouds are
+sent to it, so it never participates in camera rendering. Close only the viewer
+with `Q`; keep focus on the main simulation window for teleoperation. The final
+NPZ is still exported at 2 cm resolution.
+
+The default output is a timestamped directory:
+
+```text
+mm_run/results/nvblox_esdf/stretch_teleop/<TIMESTAMP>/
+├── esdf_grid.npz
+├── map.nvblox
+└── metadata.json
+```
+
+Before pressing `X`, observe the intended navigation start from several
+viewpoints. OMPL treats unknown space as invalid and will reject a start pose
+whose base collision query points were not observed.
+
+Reconstruct and inspect the approximate ESDF zero surface in PyBullet:
+
+```bash
+pixi run python mm_run/scripts/visualize_esdf_npz.py \
+  /ABSOLUTE/PATH/TO/esdf_grid.npz \
+  --color-mode height
+```
+
+Use signed-distance coloring when checking the two sides of the surface:
+
+```bash
+pixi run python mm_run/scripts/visualize_esdf_npz.py \
+  /ABSOLUTE/PATH/TO/esdf_grid.npz \
+  --color-mode distance
+```
+
+In `height` mode, low points are blue and high points are red. In `distance`
+mode, negative/zero/positive distances are red/white/blue. Press `Q` in the
+PyBullet window to close the viewer.
+
+To replay the existing offline OMPL + WB-MPC pipeline with the captured map,
+set `controller.esdf_collision.map_path` in
+`mm_run/config/stretch_esdf_offline_ompl_wbmpc.yaml` to an absolute path:
+
+```yaml
+controller:
+  esdf_collision:
+    source: "offline"
+    map_path: "/ABSOLUTE/PATH/TO/esdf_grid.npz"
+```
+
+Do not use a `{package: "mm_run", path: ...}` mapping for a runtime-generated
+file: package paths resolve under `install/mm_run/share/mm_run`, while capture
+outputs are written under the source tree by default.
+
+Run the offline replay using the edited source config:
+
+```bash
+pixi run python mm_run/scripts/experiment.py \
+  --config mm_run/config/stretch_esdf_offline_ompl_wbmpc.yaml \
+  --GUI
+```
+
+Changing only the NPZ path does not require regenerating the acados solver.

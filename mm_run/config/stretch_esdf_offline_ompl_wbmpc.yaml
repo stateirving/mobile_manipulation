@@ -99,33 +99,33 @@ planner:
         keep_previous_on_failure: true
 
   tasks:
-    # - defaults: base
-    #   name: "OMPL Base To Work Area"
-    #   base_pose: [2.0, -2.0, 0.0]
-
-    # - defaults: base
-    #   name: "OMPL Base Goal 2"
-    #   base_pose: [2.0, 0.0, 0.0]
-
-    # - defaults: ee
-    #   name: "EE Approach"
-    #   ee_pose: [3.0, -0.5, 0.85, 0.0, 0.0, -0.0708]
-
-    # - defaults: ee
-    #   name: "EE Reach Low"
-    #   ee_pose: [3.0, -0.5, 0.4, 0.0, 0.0, -0.0708]
-
-    # - defaults: ee
-    #   name: "EE Reach Side"
-    #   ee_pose: [3.0, 0.5, 0.4, 0.0, 0.0, -0.0708]
+    - defaults: base
+      name: "OMPL Base To Work Area"
+      base_pose: [2.0, -2.0, 0.0]
 
     - defaults: base
-      name: "test base"
-      base_pose: [-2.3, 2.0, 0.0]
+      name: "OMPL Base Goal 2"
+      base_pose: [2.0, 0.0, 0.0]
 
-    - defaults: base
-      name: "back to origin"
-      base_pose: [0.0, 0.0, 0.0]
+    - defaults: ee
+      name: "EE Approach"
+      ee_pose: [3.0, -0.5, 0.85, 0.0, 0.0, -0.0708]
+
+    - defaults: ee
+      name: "EE Reach Low"
+      ee_pose: [3.0, -0.5, 0.4, 0.0, 0.0, -0.0708]
+
+    - defaults: ee
+      name: "EE Reach Side"
+      ee_pose: [3.0, 0.5, 0.4, 0.0, 0.0, -0.0708]
+
+    # - defaults: base
+    #   name: "test base"
+    #   base_pose: [-2.3, 2.0, 0.0]
+
+    # - defaults: base
+    #   name: "back to origin"
+    #   base_pose: [0.0, 0.0, 0.0]
 
 controller:
   cmd_vel_type: "integration"
@@ -152,6 +152,7 @@ controller:
     map_path:
       package: "mm_run"
       path: "results/nvblox_esdf/esdf_test_room_full_2cm_dense/2026-06-15_12-32-10/esdf_grid.npz"
+      # path: "/home/miao/repo/mobile_manipulation/mm_run/results/nvblox_esdf/stretch_teleop/2026-08-03_15-37-05/esdf_grid.npz"
     spheres:
       - "base_body_collision"
       - "lift_mast_collision_00"

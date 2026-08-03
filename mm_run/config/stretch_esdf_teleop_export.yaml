@@ -1,0 +1,51 @@
+# Keyboard-teleoperated simulated ESDF capture and offline NPZ export.
+#
+# Run with mm_run/scripts/teleop_export_esdf.py.  The generated esdf_grid.npz
+# is consumed unchanged by stretch_esdf_offline_ompl_wbmpc.yaml.
+
+include:
+  - package: "mm_run"
+    path: "config/stretch_esdf_online_nvblox_ompl_wbmpc.yaml"
+
+simulation:
+  gui: True
+
+online_nvblox_sim:
+  diagnostics:
+    enabled: False
+  preview:
+    enabled: False
+  initial_scan:
+    enabled: False
+  realtime_scan:
+    enabled: True
+    render_interval_steps: 3
+    update_esdf: False
+    cameras:
+      - name: "head"
+        pose_source: "camera_link"
+        camera_link_name: "camera_depth_frame"
+        camera_frame_convention: "ros_link"
+        pose_correction_rpy: [0.0, 0.0, -1.5708]
+
+teleop_esdf_export:
+  output: "mm_run/results/nvblox_esdf/stretch_teleop"
+  bounds: [-4.2, -4.2, 0.0, 4.2, 4.2, 2.0]
+  grid_resolution: 0.02
+  query_chunk_size: 131072
+  linear_speed: 0.25
+  angular_speed: 0.6
+  status_interval: 2.0
+  live_reconstruction:
+    enabled: True
+    # Low-resolution live view only; final NPZ still uses 0.02 m above.
+    resolution: 0.10
+    update_interval_steps: 30
+    surface_band: 0.15
+    max_surface_points: 80000
+    # Only the valid/invalid boundary is shown, so unknown volume does not
+    # obscure the reconstructed surface.
+    max_frontier_points: 30000
+    robot_query_z: [0.15, 0.35]
+    robot_required_distance: 0.40
+    viewer_batch_size: 50000
