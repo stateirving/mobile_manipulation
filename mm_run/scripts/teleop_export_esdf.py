@@ -44,17 +44,49 @@ class _NoopDiagnostics:
         return None
 
 
-def _invalid_frontier(valid):
-    """Return invalid voxels adjacent to at least one 6-connected valid voxel."""
-    valid = np.asarray(valid, dtype=bool)
-    adjacent_valid = np.zeros_like(valid)
-    adjacent_valid[1:, :, :] |= valid[:-1, :, :]
-    adjacent_valid[:-1, :, :] |= valid[1:, :, :]
-    adjacent_valid[:, 1:, :] |= valid[:, :-1, :]
-    adjacent_valid[:, :-1, :] |= valid[:, 1:, :]
-    adjacent_valid[:, :, 1:] |= valid[:, :, :-1]
-    adjacent_valid[:, :, :-1] |= valid[:, :, 1:]
-    return (~valid) & adjacent_valid
+class _ObservedSpaceMap:
+    """Occupancy mapper used only to retain observed free-space evidence."""
+
+    def __init__(self, esdf_config, config):
+        online_config = dict(esdf_config.get("online_nvblox", {}))
+        online_config.update(
+            {
+                "integrator_type": "occupancy",
+                "voxel_size": float(
+                    config.get("voxel_size", online_config.get("voxel_size", 0.02))
+                ),
+                "query_radius": 0.0,
+                "auto_update_esdf": False,
+                "update_esdf_on_depth": False,
+                "initial_map_path": None,
+            }
+        )
+        self._map = OnlineNvbloxESDFMap.from_config({"online_nvblox": online_config})
+        self.sensor = self._map.sensor
+        self.voxel_size = self._map.voxel_size
+
+    def add_depth_frame(self, *args, **kwargs):
+        return self._map.add_depth_frame(*args, **kwargs)
+
+    def query_occupancy(self, points):
+        """Return occupancy log-odds: negative free, positive occupied, zero unknown."""
+        points = np.asarray(points, dtype=np.float32)
+        if points.ndim != 2 or points.shape[1] != 3:
+            raise ValueError("points must have shape (N, 3)")
+        if not self._map._has_depth:
+            return np.zeros(len(points), dtype=np.float32)
+
+        with self._map._lock:
+            query = self._map._torch.as_tensor(
+                points, device=self._map.device, dtype=self._map._torch.float32
+            )
+            output = self._map.mapper.query_layer(
+                self._map._QueryType.OCCUPANCY, query, mapper_id=-1
+            )
+        return output.detach().cpu().numpy()[:, 0].astype(np.float32, copy=False)
+
+    def save_map(self, path):
+        self._map.save_map(path)
 
 
 def _subsample_points(points, max_points):
@@ -195,13 +227,6 @@ class _LiveESDFReconstruction:
             live_config.get("surface_band", 1.5 * self.resolution)
         )
         self.max_surface_points = int(live_config.get("max_surface_points", 80000))
-        self.max_frontier_points = int(live_config.get("max_frontier_points", 30000))
-        self.robot_query_z = np.asarray(
-            live_config.get("robot_query_z", [0.15, 0.35]), dtype=np.float32
-        )
-        self.robot_required_distance = float(
-            live_config.get("robot_required_distance", 0.40)
-        )
         self.bounds = np.asarray(bounds, dtype=np.float32)
         self._publisher = None
 
@@ -213,12 +238,11 @@ class _LiveESDFReconstruction:
             )
         if self.surface_band <= 0.0:
             raise ValueError("live_reconstruction.surface_band must be positive")
-        if min(self.max_surface_points, self.max_frontier_points) <= 0:
-            raise ValueError("live_reconstruction point limits must be positive")
+        if self.max_surface_points <= 0:
+            raise ValueError("live_reconstruction.max_surface_points must be positive")
 
-        self.xs, self.ys, self.zs = make_grid_axes(bounds, self.resolution)
-        self.shape = (len(self.xs), len(self.ys), len(self.zs))
-        grid = np.meshgrid(self.xs, self.ys, self.zs, indexing="ij")
+        xs, ys, zs = make_grid_axes(bounds, self.resolution)
+        grid = np.meshgrid(xs, ys, zs, indexing="ij")
         self.query_points = np.column_stack([axis.reshape(-1) for axis in grid]).astype(
             np.float32
         )
@@ -230,13 +254,12 @@ class _LiveESDFReconstruction:
             return
         self._publisher = _ViewerPublisher(self._batch_size, self._viewer_mode)
 
-    def update(self, esdf_map, base_pose, step_idx):
+    def update(self, esdf_map, step_idx):
         if not self.enabled or step_idx % self.update_interval_steps != 0:
             return None
         distances, _, valid = esdf_map.query(self.query_points)
         distances = np.asarray(distances, dtype=np.float32)
         valid = np.asarray(valid, dtype=bool)
-        valid_grid = valid.reshape(self.shape)
 
         surface_mask = (
             valid & np.isfinite(distances) & (np.abs(distances) <= self.surface_band)
@@ -244,43 +267,16 @@ class _LiveESDFReconstruction:
         surface = _subsample_points(
             self.query_points[surface_mask], self.max_surface_points
         )
-        frontier_mask = _invalid_frontier(valid_grid).reshape(-1)
-        frontier = _subsample_points(
-            self.query_points[frontier_mask], self.max_frontier_points
-        )
-
-        base_pose = np.asarray(base_pose, dtype=np.float32)
-        robot_points = np.column_stack(
-            [
-                np.full(len(self.robot_query_z), base_pose[0], dtype=np.float32),
-                np.full(len(self.robot_query_z), base_pose[1], dtype=np.float32),
-                self.robot_query_z,
-            ]
-        )
-        robot_distances, _, robot_valid = esdf_map.query(robot_points)
-        robot_distances = np.asarray(robot_distances, dtype=np.float32)
-        robot_valid = np.asarray(robot_valid, dtype=bool)
-        robot_status = np.zeros(len(robot_points), dtype=np.int8)
-        robot_status[robot_valid] = 1
-        robot_status[
-            robot_valid & (robot_distances >= self.robot_required_distance)
-        ] = 2
 
         update = {
             "bounds": self.bounds,
             "surface": surface,
-            "frontier": frontier,
-            "robot_points": robot_points,
-            "robot_status": robot_status,
-            "base_pose": base_pose,
             "known_ratio": float(np.count_nonzero(valid) / valid.size),
         }
         self._publisher.publish(update)
         return {
             "surface": len(surface),
-            "frontier": len(frontier),
             "known_ratio": update["known_ratio"],
-            "robot_valid": bool(np.all(robot_status == 2)),
         }
 
     def close(self):
@@ -310,7 +306,7 @@ def _teleop_command(key_events, command_dim, linear_speed, angular_speed):
     return command, finish
 
 
-def _query_esdf_grid(esdf_map, bounds, resolution, chunk_size):
+def _query_esdf_grid(esdf_map, bounds, resolution, chunk_size, observed_space_map=None):
     """Sample an online ESDF through its public query API in bounded chunks."""
     xs, ys, zs = make_grid_axes(bounds, resolution)
     shape = (len(xs), len(ys), len(zs))
@@ -318,9 +314,13 @@ def _query_esdf_grid(esdf_map, bounds, resolution, chunk_size):
     distances = np.empty(shape, dtype=np.float32)
     gradients = np.empty(shape + (3,), dtype=np.float32)
     valid = np.empty(shape, dtype=bool)
+    occupancy = (
+        None if observed_space_map is None else np.empty(shape, dtype=np.float32)
+    )
     distances_flat = distances.reshape(-1)
     gradients_flat = gradients.reshape((-1, 3))
     valid_flat = valid.reshape(-1)
+    occupancy_flat = None if occupancy is None else occupancy.reshape(-1)
 
     num_chunks = int(math.ceil(total_points / chunk_size))
     print(
@@ -343,14 +343,243 @@ def _query_esdf_grid(esdf_map, bounds, resolution, chunk_size):
         distances_flat[start:stop] = np.asarray(chunk_distances, dtype=np.float32)
         gradients_flat[start:stop] = np.asarray(chunk_gradients, dtype=np.float32)
         valid_flat[start:stop] = np.asarray(chunk_valid, dtype=bool)
+        if observed_space_map is not None:
+            occupancy_flat[start:stop] = observed_space_map.query_occupancy(points)
 
         if chunk_idx == 1 or chunk_idx == num_chunks or chunk_idx % 10 == 0:
             print(f"  ESDF query chunk {chunk_idx}/{num_chunks}", flush=True)
 
-    return xs, ys, zs, distances, gradients, valid
+    return xs, ys, zs, distances, gradients, valid, occupancy
 
 
-def _export_npz(esdf_map, out_dir, bounds, resolution, chunk_size):
+def _fuse_observed_free_space(
+    distances, gradients, valid, occupancy, resolution, config
+):
+    """Fill obstacle-only ESDF gaps that occupancy rays proved to be free."""
+    if occupancy is None:
+        return (
+            distances,
+            gradients,
+            valid,
+            {
+                "observed_free_points": 0,
+                "filled_free_points": 0,
+                "obstacle_site_points": 0,
+            },
+        )
+
+    free_threshold = float(config.get("free_log_odds_threshold", 0.0))
+    occupied_threshold = float(config.get("obstacle_site_distance", 0.0))
+    max_distance = _positive_float(
+        config.get("max_fill_distance", 2.0), "max_fill_distance"
+    )
+    observed_free = np.isfinite(occupancy) & (occupancy < free_threshold)
+    fill_mask = observed_free & ~valid
+    obstacle_sites = valid & np.isfinite(distances) & (distances <= occupied_threshold)
+
+    fill_count = int(np.count_nonzero(fill_mask))
+    obstacle_count = int(np.count_nonzero(obstacle_sites))
+    if fill_count and obstacle_count == 0:
+        raise RuntimeError(
+            "Observed free space exists, but the obstacle TSDF has no ESDF sites"
+        )
+
+    if fill_count:
+        from scipy.ndimage import distance_transform_edt
+
+        print(
+            f"Propagating non-ground obstacle distances into {fill_count} "
+            "observed-free voxels...",
+            flush=True,
+        )
+        propagated = distance_transform_edt(
+            ~obstacle_sites,
+            sampling=(float(resolution),) * 3,
+        ).astype(np.float32)
+        np.minimum(propagated, max_distance, out=propagated)
+        distances[fill_mask] = propagated[fill_mask]
+        for axis in range(3):
+            component = np.gradient(propagated, float(resolution), axis=axis).astype(
+                np.float32, copy=False
+            )
+            gradients[..., axis][fill_mask] = component[fill_mask]
+            del component
+        del propagated
+
+    valid |= observed_free
+    return (
+        distances,
+        gradients,
+        valid,
+        {
+            "observed_free_points": int(np.count_nonzero(observed_free)),
+            "filled_free_points": fill_count,
+            "obstacle_site_points": obstacle_count,
+        },
+    )
+
+
+def _planner_quality_report(esdf_map, config, lattice_resolution=0.05):
+    """Evaluate the exported map with the base planner's actual predicate."""
+    from scipy.ndimage import label
+
+    planner_config = config.get("planner", {})
+    base_config = planner_config.get("task_defaults", {}).get("base")
+    if not base_config:
+        return {}
+
+    esdf_config = base_config.get("esdf", {})
+    query_z = np.asarray(
+        esdf_config.get("query_z", [0.15, 0.35]), dtype=np.float64
+    ).reshape(-1)
+    required_distance = float(esdf_config.get("base_radius", 0.35)) + float(
+        esdf_config.get("d_safe", 0.05)
+    )
+    bounds_xy = np.asarray(
+        base_config.get("bounds_xy", [[-4.0, 4.0], [-4.0, 4.0]]),
+        dtype=np.float64,
+    )
+    xs = np.arange(
+        bounds_xy[0, 0],
+        bounds_xy[0, 1] + 0.5 * lattice_resolution,
+        lattice_resolution,
+    )
+    ys = np.arange(
+        bounds_xy[1, 0],
+        bounds_xy[1, 1] + 0.5 * lattice_resolution,
+        lattice_resolution,
+    )
+    xx, yy = np.meshgrid(xs, ys, indexing="ij")
+    xy = np.column_stack((xx.reshape(-1), yy.reshape(-1)))
+    query_points = np.vstack(
+        [np.column_stack((xy, np.full(len(xy), z, dtype=np.float64))) for z in query_z]
+    )
+    distances, _, valid = esdf_map.query(query_points)
+    distances = np.asarray(distances).reshape((len(query_z), -1))
+    valid = np.asarray(valid).reshape((len(query_z), -1))
+    known_states = np.all(valid, axis=0)
+    planner_valid = known_states & np.all(distances >= required_distance, axis=0)
+    planner_valid_grid = planner_valid.reshape((len(xs), len(ys)))
+    components, component_count = label(
+        planner_valid_grid, structure=np.ones((3, 3), dtype=np.uint8)
+    )
+
+    robot_config = config.get("controller", {}).get("robot", {})
+    start = np.asarray(robot_config.get("x0", [0.0, 0.0, 0.0]), dtype=float)[:3]
+    poses = [("start", start[:2])]
+    for task in planner_config.get("tasks", []):
+        if task.get("defaults") == "base" and "base_pose" in task:
+            poses.append((str(task.get("name", "base_goal")), task["base_pose"][:2]))
+
+    def component_at(xy_pose):
+        ix = int(np.argmin(np.abs(xs - float(xy_pose[0]))))
+        iy = int(np.argmin(np.abs(ys - float(xy_pose[1]))))
+        if (
+            abs(float(xs[ix]) - float(xy_pose[0])) > 0.5 * lattice_resolution
+            or abs(float(ys[iy]) - float(xy_pose[1])) > 0.5 * lattice_resolution
+        ):
+            return 0
+        return int(components[ix, iy])
+
+    start_component = component_at(start[:2])
+    start_component_xy = np.empty((0, 2), dtype=np.float64)
+    if start_component:
+        indices = np.argwhere(components == start_component)
+        start_component_xy = np.column_stack((xs[indices[:, 0]], ys[indices[:, 1]]))
+
+    pose_results = []
+    for name, xy_pose in poses:
+        points = np.column_stack(
+            (
+                np.full(len(query_z), float(xy_pose[0])),
+                np.full(len(query_z), float(xy_pose[1])),
+                query_z,
+            )
+        )
+        pose_distances, _, pose_valid = esdf_map.query(points)
+        pose_distances = np.asarray(pose_distances, dtype=float)
+        pose_valid = np.asarray(pose_valid, dtype=bool)
+        state_valid = bool(
+            np.all(pose_valid) & np.all(pose_distances >= required_distance)
+        )
+        clearance = (
+            float(np.min(pose_distances) - required_distance)
+            if np.all(pose_valid)
+            else None
+        )
+        component = component_at(xy_pose)
+        reachable = bool(start_component and component == start_component)
+        nearest_reachable_distance = None
+        if start_component_xy.size and not reachable:
+            nearest_reachable_distance = float(
+                np.min(
+                    np.linalg.norm(
+                        start_component_xy - np.asarray(xy_pose[:2], dtype=np.float64),
+                        axis=1,
+                    )
+                )
+            )
+        pose_results.append(
+            {
+                "name": name,
+                "xy": [float(xy_pose[0]), float(xy_pose[1])],
+                "valid_samples": pose_valid.tolist(),
+                "distances": [
+                    float(value) if np.isfinite(value) else None
+                    for value in pose_distances
+                ],
+                "clearance": clearance,
+                "planner_valid": state_valid,
+                "free_space_component": component,
+                "reachable_from_start": reachable,
+                "nearest_start_component_distance": nearest_reachable_distance,
+            }
+        )
+
+    report = {
+        "query_z": query_z.tolist(),
+        "required_distance": required_distance,
+        "lattice_resolution": float(lattice_resolution),
+        "both_known_ratio": float(np.mean(known_states)),
+        "planner_valid_ratio": float(np.mean(planner_valid)),
+        "free_space_component_count": int(component_count),
+        "start_component": start_component,
+        "poses": pose_results,
+    }
+    print(
+        "Planner map quality: "
+        f"known={100.0 * report['both_known_ratio']:.2f}% "
+        f"valid={100.0 * report['planner_valid_ratio']:.2f}% "
+        f"required_distance={required_distance:.3f} m",
+        flush=True,
+    )
+    for pose in pose_results:
+        level = (
+            "OK"
+            if pose["planner_valid"] and pose["reachable_from_start"]
+            else "WARNING"
+        )
+        print(
+            f"  {level}: {pose['name']} xy={pose['xy']} "
+            f"valid={pose['valid_samples']} distances={pose['distances']} "
+            f"clearance={pose['clearance']} "
+            f"reachable={pose['reachable_from_start']} "
+            f"nearest_start_component={pose['nearest_start_component_distance']}",
+            flush=True,
+        )
+    return report
+
+
+def _export_npz(
+    esdf_map,
+    observed_space_map,
+    out_dir,
+    bounds,
+    resolution,
+    chunk_size,
+    ground_aware_config,
+    full_config,
+):
     """Finalize, sample, atomically save, and reload-validate an ESDF grid."""
     print("Updating final nvblox ESDF...", flush=True)
     if not esdf_map.update_esdf():
@@ -359,10 +588,28 @@ def _export_npz(esdf_map, out_dir, bounds, resolution, chunk_size):
     native_path = out_dir / "map.nvblox"
     print(f"Saving native nvblox checkpoint: {native_path}", flush=True)
     esdf_map.save_map(native_path)
+    observed_path = None
+    if observed_space_map is not None:
+        observed_path = out_dir / "observed_space.nvblox"
+        print(f"Saving observed-space checkpoint: {observed_path}", flush=True)
+        observed_space_map.save_map(observed_path)
 
-    xs, ys, zs, distances, gradients, valid = _query_esdf_grid(
-        esdf_map, bounds, resolution, chunk_size
+    xs, ys, zs, distances, gradients, valid, occupancy = _query_esdf_grid(
+        esdf_map,
+        bounds,
+        resolution,
+        chunk_size,
+        observed_space_map=observed_space_map,
     )
+    distances, gradients, valid, fusion_stats = _fuse_observed_free_space(
+        distances,
+        gradients,
+        valid,
+        occupancy,
+        resolution,
+        ground_aware_config,
+    )
+    del occupancy
     valid_count = int(np.count_nonzero(valid))
     if valid_count == 0:
         raise RuntimeError("The sampled ESDF contains no valid grid points")
@@ -383,13 +630,22 @@ def _export_npz(esdf_map, out_dir, bounds, resolution, chunk_size):
         )
         # Exercise the exact loader used by the offline controller before the
         # artifact is made visible under its final name.
-        ESDFMap(temporary_path)
+        validated_map = ESDFMap(temporary_path)
+        quality_report = _planner_quality_report(validated_map, full_config)
         os.replace(temporary_path, final_path)
     finally:
         if temporary_path.exists():
             temporary_path.unlink()
 
-    return final_path, native_path, valid_count, int(valid.size)
+    return (
+        final_path,
+        native_path,
+        observed_path,
+        valid_count,
+        int(valid.size),
+        fusion_stats,
+        quality_report,
+    )
 
 
 def _accumulate_stats(totals, current):
@@ -445,6 +701,7 @@ def main():
     sim_config = config["simulation"]
     online_config = config["online_nvblox_sim"]
     export_config = config.get("teleop_esdf_export", {})
+    ground_aware_config = export_config.get("ground_aware_free_space", {})
 
     # Keyboard events are read from the PyBullet GUI, so this mode always owns
     # a GUI connection regardless of the included simulation profile.
@@ -511,6 +768,7 @@ def main():
 
     sim = None
     esdf_map = None
+    observed_space_map = None
     live_reconstruction = None
     totals = {}
     t = 0.0
@@ -522,7 +780,11 @@ def main():
             config=sim_config, timestamp=timestamp, cli_args=args
         )
         esdf_map = OnlineNvbloxESDFMap.from_config(esdf_config)
-        map_owner = SimpleNamespace(esdf_map=esdf_map)
+        if bool(ground_aware_config.get("enabled", True)):
+            observed_space_map = _ObservedSpaceMap(esdf_config, ground_aware_config)
+        map_owner = SimpleNamespace(
+            esdf_map=esdf_map, observed_space_map=observed_space_map
+        )
         diagnostics = _NoopDiagnostics()
         live_reconstruction = _LiveESDFReconstruction(export_config, bounds)
         if live_reconstruction.enabled:
@@ -540,14 +802,21 @@ def main():
         print("  hold J/L : turn left/right", flush=True)
         print("  SPACE    : stop", flush=True)
         print("  X        : stop, finalize, and export ESDF\n", flush=True)
+        if observed_space_map is not None:
+            print(
+                "Ground-aware mapping: obstacle TSDF + observed-space occupancy",
+                flush=True,
+            )
+            print(
+                "  ground endpoints are excluded; their free-space rays are retained\n",
+                flush=True,
+            )
         if live_reconstruction.enabled:
             print(
                 "A separate empty PyBullet window shows only the reconstructed ESDF:",
                 flush=True,
             )
-            print("  height color : reconstructed zero surface", flush=True)
-            print("  MAGENTA      : invalid-space frontier", flush=True)
-            print("  YELLOW/RED   : current robot ESDF checks\n", flush=True)
+            print("  height color : reconstructed zero surface\n", flush=True)
 
         last_status_time = time.perf_counter()
         while pyb.isConnected():
@@ -574,14 +843,12 @@ def main():
             _accumulate_stats(totals, frame_stats)
             if live_reconstruction.enabled:
                 try:
-                    live_stats = live_reconstruction.update(esdf_map, q[:3], step_idx)
+                    live_stats = live_reconstruction.update(esdf_map, step_idx)
                     if live_stats is not None:
                         print(
                             "live reconstruction "
                             f"surface={live_stats['surface']} "
-                            f"frontier={live_stats['frontier']} "
-                            f"known={100.0 * live_stats['known_ratio']:.1f}% "
-                            f"robot_valid={live_stats['robot_valid']}",
+                            f"known={100.0 * live_stats['known_ratio']:.1f}%",
                             flush=True,
                         )
                 except Exception as exc:
@@ -626,8 +893,23 @@ def main():
         raise RuntimeError("Online ESDF map was not initialized")
 
     try:
-        npz_path, native_path, valid_count, total_count = _export_npz(
-            esdf_map, out_dir, bounds, resolution, chunk_size
+        (
+            npz_path,
+            native_path,
+            observed_path,
+            valid_count,
+            total_count,
+            fusion_stats,
+            quality_report,
+        ) = _export_npz(
+            esdf_map,
+            observed_space_map,
+            out_dir,
+            bounds,
+            resolution,
+            chunk_size,
+            ground_aware_config,
+            config,
         )
         metadata = {
             "format_version": 1,
@@ -635,6 +917,9 @@ def main():
             "config": str(args.config),
             "npz_path": str(npz_path.resolve()),
             "native_map_path": str(native_path.resolve()),
+            "observed_space_map_path": (
+                None if observed_path is None else str(observed_path.resolve())
+            ),
             "bounds": [float(value) for value in bounds],
             "grid_resolution": resolution,
             "voxel_size": float(esdf_map.voxel_size),
@@ -643,6 +928,20 @@ def main():
             "valid_grid_points": valid_count,
             "total_grid_points": total_count,
             "valid_ratio": float(valid_count / total_count),
+            "ground_aware_free_space": {
+                "enabled": observed_space_map is not None,
+                "ground_filter_min_z": online_config.get("ground_filter_min_z"),
+                "ground_filter_use_segmentation": bool(
+                    online_config.get("ground_filter_use_segmentation", True)
+                ),
+                "voxel_size": (
+                    None
+                    if observed_space_map is None
+                    else float(observed_space_map.voxel_size)
+                ),
+                **fusion_stats,
+            },
+            "planner_quality": quality_report,
             "simulation_time": float(t),
             "final_robot_configuration": last_robot_configuration.tolist(),
             "ended_by_keyboard_interrupt": interrupted,
@@ -652,6 +951,11 @@ def main():
 
         print(f"\nOffline-compatible ESDF saved to: {npz_path.resolve()}", flush=True)
         print(f"Native nvblox checkpoint saved to: {native_path.resolve()}", flush=True)
+        if observed_path is not None:
+            print(
+                f"Observed-space checkpoint saved to: {observed_path.resolve()}",
+                flush=True,
+            )
         print(
             f"Valid grid points: {valid_count}/{total_count} "
             f"({100.0 * valid_count / total_count:.2f}%)",

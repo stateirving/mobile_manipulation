@@ -230,10 +230,6 @@ It does not load or overlay the ground-truth URDF scene:
 
 - Height-colored points: valid samples close to the reconstructed ESDF zero
   surface.
-- Bright magenta points: the frontier between valid and invalid/unknown space.
-- Yellow robot query points: valid and at least `0.40 m` from obstacles.
-- Red robot query points: valid but below the required clearance.
-- Magenta robot query points: invalid/unknown.
 
 The live reconstruction queries a 10 cm grid every 30 simulation steps. The
 viewer runs in a separate process, and only downsampled NumPy point clouds are
@@ -241,12 +237,28 @@ sent to it, so it never participates in camera rendering. Close only the viewer
 with `Q`; keep focus on the main simulation window for teleoperation. The final
 NPZ is still exported at 2 cm resolution.
 
+Ground handling uses two nvblox maps. In PyBullet, segmentation IDs remove only
+the `plane.urdf` endpoints from the obstacle TSDF, so low obstacle geometry is
+preserved; the world-Z threshold is a fallback when segmentation is unavailable.
+A secondary occupancy map integrates the unfiltered depth and retains
+negative-log-odds free-space evidence along camera rays. During export,
+non-ground obstacle distances are propagated only into those observed-free
+voxels. This keeps the ground out of the navigation ESDF without turning the
+space above the observed floor into unknown. Unobserved voxels remain invalid.
+
+After export, the script evaluates the map with the offline base planner's
+actual `query_z`, `base_radius`, and `d_safe` settings. It reports the known and
+planner-valid lattice ratios, labels connected free-space components, and
+prints an explicit warning when a start/goal is invalid or a valid goal is not
+reachable from the start through observed free space.
+
 The default output is a timestamped directory:
 
 ```text
 mm_run/results/nvblox_esdf/stretch_teleop/<TIMESTAMP>/
 ├── esdf_grid.npz
 ├── map.nvblox
+├── observed_space.nvblox
 └── metadata.json
 ```
 

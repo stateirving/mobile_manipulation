@@ -1,7 +1,6 @@
 """Empty-scene PyBullet viewer for live low-resolution ESDF reconstructions."""
 
 import argparse
-import math
 import time
 from multiprocessing.connection import Client
 
@@ -98,59 +97,22 @@ def _render_update(client_id, update, dynamic_item_ids, batch_size):
 
     bounds = np.asarray(update["bounds"], dtype=float)
     surface = np.asarray(update["surface"], dtype=np.float32).reshape((-1, 3))
-    frontier = np.asarray(update["frontier"], dtype=np.float32).reshape((-1, 3))
-    robot_points = np.asarray(update["robot_points"], dtype=np.float32).reshape((-1, 3))
-    robot_status = np.asarray(update["robot_status"], dtype=np.int8)
-    base_pose = np.asarray(update["base_pose"], dtype=float)
 
     if len(surface):
         colors = _height_colors(surface, bounds[2], bounds[5])
         dynamic_item_ids.extend(
             _add_points(client_id, surface, colors, 3.0, batch_size)
         )
-    if len(frontier):
-        colors = np.tile([1.0, 0.0, 0.8], (len(frontier), 1))
-        dynamic_item_ids.extend(
-            _add_points(client_id, frontier, colors, 4.0, batch_size)
-        )
-    if len(robot_points):
-        status_colors = np.asarray(
-            [
-                [1.0, 0.0, 0.8],  # invalid/unknown
-                [1.0, 0.0, 0.0],  # valid but unsafe clearance
-                [1.0, 1.0, 0.0],  # valid and safe
-            ],
-            dtype=np.float32,
-        )
-        colors = status_colors[np.clip(robot_status, 0, 2)]
-        dynamic_item_ids.extend(
-            _add_points(client_id, robot_points, colors, 10.0, batch_size)
-        )
 
-    arrow_start = [float(base_pose[0]), float(base_pose[1]), 0.05]
-    arrow_end = [
-        arrow_start[0] + 0.35 * math.cos(float(base_pose[2])),
-        arrow_start[1] + 0.35 * math.sin(float(base_pose[2])),
-        arrow_start[2],
-    ]
-    dynamic_item_ids.append(
-        _add_line(client_id, arrow_start, arrow_end, [1.0, 1.0, 0.0], 5.0)
-    )
-
-    all_safe = bool(len(robot_status) and np.all(robot_status == 2))
-    status_text = "SAFE" if all_safe else "INVALID / UNSAFE"
-    status_color = [0.2, 1.0, 0.2] if all_safe else [1.0, 0.1, 0.8]
     text_position = [float(bounds[0]), float(bounds[1]), float(bounds[5])]
     dynamic_item_ids.append(
         pyb.addUserDebugText(
             (
                 f"LIVE ESDF ONLY | surface={len(surface)} | "
-                f"invalid frontier={len(frontier)} | "
-                f"known={100.0 * float(update['known_ratio']):.1f}% | "
-                f"robot={status_text}"
+                f"known={100.0 * float(update['known_ratio']):.1f}%"
             ),
             text_position,
-            textColorRGB=status_color,
+            textColorRGB=[1.0, 1.0, 1.0],
             textSize=1.2,
             lifeTime=0.0,
             physicsClientId=client_id,

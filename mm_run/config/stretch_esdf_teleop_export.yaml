@@ -11,6 +11,12 @@ simulation:
   gui: True
 
 online_nvblox_sim:
+  # Ground endpoints are excluded from the obstacle TSDF. The unfiltered
+  # measurements are integrated separately into the observed-space map below.
+  ground_filter_min_z: 0.01
+  # In PyBullet, filter only pixels belonging to plane.urdf; the height
+  # threshold remains a fallback for renderers without segmentation IDs.
+  ground_filter_use_segmentation: True
   diagnostics:
     enabled: False
   preview:
@@ -36,6 +42,14 @@ teleop_esdf_export:
   linear_speed: 0.25
   angular_speed: 0.6
   status_interval: 2.0
+  ground_aware_free_space:
+    enabled: True
+    # Occupancy ray integration supplies observed-free evidence. Obstacle
+    # distances still come exclusively from the ground-filtered TSDF.
+    voxel_size: 0.02
+    free_log_odds_threshold: 0.0
+    obstacle_site_distance: 0.0
+    max_fill_distance: 2.0
   live_reconstruction:
     enabled: True
     # Low-resolution live view only; final NPZ still uses 0.02 m above.
@@ -43,9 +57,4 @@ teleop_esdf_export:
     update_interval_steps: 30
     surface_band: 0.15
     max_surface_points: 80000
-    # Only the valid/invalid boundary is shown, so unknown volume does not
-    # obscure the reconstructed surface.
-    max_frontier_points: 30000
-    robot_query_z: [0.15, 0.35]
-    robot_required_distance: 0.40
     viewer_batch_size: 50000

@@ -537,7 +537,15 @@ def _depth_world_z(depth, t_w_c, camera):
     )
 
 
-def _filter_depth_by_world_z(depth, mask, t_w_c, camera, min_z, world_z=None):
+def _filter_depth_by_world_z(
+    depth,
+    mask,
+    t_w_c,
+    camera,
+    min_z,
+    world_z=None,
+    ground_pixel_mask=None,
+):
     if min_z is None:
         return depth, mask, 0
 
@@ -549,9 +557,12 @@ def _filter_depth_by_world_z(depth, mask, t_w_c, camera, min_z, world_z=None):
     if not np.any(valid):
         return depth, mask, 0
 
-    if world_z is None:
-        world_z = _depth_world_z(depth, t_w_c, camera)
-    keep = valid & (world_z > min_z)
+    if ground_pixel_mask is None:
+        if world_z is None:
+            world_z = _depth_world_z(depth, t_w_c, camera)
+        keep = valid & (world_z > min_z)
+    else:
+        keep = valid & ~np.asarray(ground_pixel_mask, dtype=bool)
     filtered = int(np.count_nonzero(valid) - np.count_nonzero(keep))
     if filtered <= 0:
         return depth, mask, 0
@@ -570,6 +581,22 @@ def _online_esdf_map(controller):
             "'online_nvblox'."
         )
     return esdf_map
+
+
+def _ground_body_ids():
+    """Find explicitly named PyBullet ground bodies for segmentation filtering."""
+    body_ids = []
+    for body_index in range(pyb.getNumBodies()):
+        body_uid = pyb.getBodyUniqueId(body_index)
+        names = pyb.getBodyInfo(body_uid)
+        decoded = {
+            value.decode("utf-8", errors="ignore").lower()
+            for value in names
+            if isinstance(value, bytes)
+        }
+        if decoded.intersection({"plane", "ground", "ground_plane"}):
+            body_ids.append(body_uid)
+    return body_ids
 
 
 def _run_online_decay(controller, config, step_idx):
@@ -609,13 +636,27 @@ def _integrate_camera_poses(
     exclude_body_ids = _exclude_body_ids(sim, config)
     camera = _camera_from_render_config(config)
     sensor = None if getattr(esdf_map, "sensor", None) is not None else camera
+    observed_space_map = getattr(controller, "observed_space_map", None)
+    observed_space_sensor = (
+        None
+        if observed_space_map is None
+        or getattr(observed_space_map, "sensor", None) is not None
+        else camera
+    )
     ground_filter_min_z = config.get("ground_filter_min_z")
+    ground_body_ids = (
+        _ground_body_ids()
+        if ground_filter_min_z is not None
+        and bool(config.get("ground_filter_use_segmentation", True))
+        else []
+    )
+    need_segmentation = diagnostics.enabled or bool(ground_body_ids)
 
     stats = _zero_integration_stats()
     diagnostic_stats = diagnostics.zero_stats()
     for name, t_w_c in camera_poses:
         render_start = time.perf_counter()
-        if diagnostics.enabled:
+        if need_segmentation:
             rgb, depth, mask, segmentation = render_camera_pose(
                 width,
                 height,
@@ -642,9 +683,31 @@ def _integrate_camera_poses(
         visible_mask = mask
         world_z = _depth_world_z(depth, t_w_c, camera)
         stats["render_time"] += time.perf_counter() - render_start
+        # A secondary occupancy mapper may consume the unfiltered measurement
+        # to retain camera-ray free-space evidence.  The primary TSDF below
+        # still receives the ground-filtered frame, so the ground is not an
+        # obstacle surface in its ESDF.
+        if observed_space_map is not None:
+            observed_space_map.add_depth_frame(
+                depth,
+                t_w_c,
+                sensor=observed_space_sensor,
+                mask_frame=mask,
+                update_esdf=False,
+            )
         filter_start = time.perf_counter()
+        ground_pixel_mask = None
+        if ground_body_ids and segmentation is not None:
+            body_uid = segmentation & ((1 << 24) - 1)
+            ground_pixel_mask = np.isin(body_uid, ground_body_ids)
         depth, mask, filtered = _filter_depth_by_world_z(
-            depth, mask, t_w_c, camera, ground_filter_min_z, world_z
+            depth,
+            mask,
+            t_w_c,
+            camera,
+            ground_filter_min_z,
+            world_z,
+            ground_pixel_mask=ground_pixel_mask,
         )
         diagnostics.add_render_stats(
             diagnostic_stats, segmentation, visible_mask, mask, world_z
