@@ -1,6 +1,6 @@
 # Stretch 实机接入：ESDF 采集 + Offline OMPL + WB-MPC 计划
 
-更新日期：2026-08-04
+更新日期：2026-08-05
 
 ## 1. 目标与边界
 
@@ -17,19 +17,53 @@
 
 ### 2.1 实机 bringup
 
-依据本仓库的 `real deploy.txt` 和本机只读副本 `/home/miao/repo/bringup_active_mapmaintenance`：
+依据本仓库的 `REAL_DEPLOY.md` 和本机只读副本 `/home/miao/repo/bringup_active_mapmaintenance`：
 
 - Stretch 本机通过 `online_bringup_active_mapmaintenance` 启动 ROS 2 Humble、`rmw_zenoh_cpp` 和 Stretch 驱动。
 - 工作站和机器人各运行 Zenoh router，工作站上的本仓库作为同一 ROS graph 中的远程节点运行。
 - Stretch 驱动当前以 `navigation` 模式启动，已确认的重映射为：
   - 状态：`/stretch/joint_states`，类型 `sensor_msgs/msg/JointState`。
   - 底盘命令：`/stretch/cmd_vel`，类型 `geometry_msgs/msg/Twist`。
-- `broadcast_odom_tf` 当前为 `False`，所以必须在实机 graph 中确认究竟由哪个节点发布 `odom -> base_link`；若没有该变换，SLAM TF 链并不完整。
+- 2026-08-05 的首次实机 graph 快照同时出现 `/joint_states` 和
+  `/stretch/joint_states`。后续只读核查确认：`/stretch/joint_states` 由
+  `stretch_driver` 直接以 reliable/volatile/keep-last-1 发布；`/joint_state_publisher`
+  订阅它后在 `/joint_states` 上发布用于 `robot_state_publisher` 的聚合消息。
+  实机状态适配器应使用前者，不应把后者当作原始驱动反馈。
 - `slam_toolbox` 当前运行同步建图节点，栅格地图 topic 从 `/map` 重映射到了 `/lidar_map`。这不会自动改变 TF 中的 `map` frame 名称。
-- Spectacular AI/Orbbec SLAM 的 launch 当前被注释；虽然感知代码默认订阅
+- Spectacular AI/Orbbec 不随 Stretch bringup 启动，由独立的
+  `ros2-orbbec-slam-zenoh` 环境运行。感知代码默认订阅
   `/spectacular_ai/camera_info`、`/spectacular_ai/color_image` 和
-  `/spectacular_ai/depth_image`，但不能据此假设实机启动后一定存在这些 topic。
-- `/home_the_robot` 已经用于实际部署流程；控制节点仍需通过 graph 快照确认其服务类型、可用条件和 homing 完成状态。
+  `/spectacular_ai/depth_image`，最终实机配置仍以运行时 graph 快照为准。
+- 机器人端已确认存在
+  `~/repos/bringup_active_mapmaintenance/online_bringup_active_mapmaintenance/ros2_orbbec_slam`，
+  外层 `ros2-orbbec-slam-zenoh` pixi 环境组合 Orbbec/Spectacular AI 与
+  `rmw_zenoh_cpp==0.1.2`，SDK 来自同级 `third_party/spectacularAI` 和
+  `third_party/OrbbecSDK`。
+- 外层 bringup 仓库的 gitlink 与机器人端 `ros2_orbbec_slam` 实际 commit 已确认一致：
+  `31515dd3252b18232a59cb685f005d6d0829356a`。工作站副本没有初始化该
+  submodule；阶段 0 已另行只读检出相同 commit 核查其 launch/发布源码。
+- `sai_orbbec` 已在机器人端完成构建并可正常启动；实机 ESDF 使用
+  `base_link <-> camera_color_optical_frame` 标定外参。
+- `/spectacular_ai/depth_image` 不是 Orbbec 的 30 Hz raw stream。commit
+  `31515dd...` 的 `sai_publisher` 只遍历 Spectacular AI
+  `MapperOutput.updatedKeyFrames`，并在更新关键帧存在时发布对齐后的
+  `16UC1` depth、RGB 和 `CameraInfo`；机器人静止时该 topic 可能长时间没有新消息。
+  depth 通过 `getAlignedDepthFrame(rgbFrame)` 对齐到 RGB；三类消息共用回调时刻的
+  ROS `now()`，不是传感器原始采集时间。当前源码未设置
+  `CameraInfo.header.frame_id`，适配器需按已冻结的 RGB optical frame 补齐并校验。
+- `/home_the_robot` 已确认为 `std_srvs/srv/Trigger`，并有 `/is_homed`
+  (`std_msgs/msg/Bool`) 可供状态检查；但本次快照未记录其值和 homing
+  完成条件。
+- 机械臂侧已确认暴露
+  `/stretch_controller/follow_joint_trajectory`
+  (`control_msgs/action/FollowJointTrajectory`)；同时存在 streaming-position 激活/停用服务、
+  `/joint_pose_cmd` (`Float64MultiArray`) 以及 navigation/position/trajectory 模式切换服务。
+  这仅证明接口存在，尚不证明它们可与底盘 Twist 并发、接受哪些 joint name
+  或满足 WB-MPC 频率。
+- 核查时 `/stretch/cmd_vel` 的 publisher count 为 0，`stretch_driver` 是唯一
+  subscriber；trajectory action server 属于 `/stretch_driver`，当时 client count 为 0。
+- 核查时驱动状态为 `navigation`、homed=true、runstopped=false、
+  streaming-position=false。这些是单次运行时状态，不能硬编码为默认假设。
 
 ### 2.2 本仓库现状
 
@@ -46,9 +80,146 @@
 
 ### 2.3 当前不能直接连实机的三个阻塞项
 
-1. **状态契约不一致**：模型使用四段伸缩关节，实机驱动可能只反馈聚合的 `joint_arm`，需要以实际 `/stretch/joint_states` 为准建立双向映射。
-2. **命令契约不一致**：WB-MPC 输出 11 维速度，而 bringup 已确认的直接控制入口只有底盘 `/stretch/cmd_vel`；机械臂的速度/轨迹入口及其与 `navigation` 模式能否并发尚未确认。
+1. **状态契约尚未完全验证**：已确认实机驱动直接反馈
+   `joint_arm_l3/l2/l1/l0` 四段关节及其速度，同时反馈聚合的
+   `wrist_extension`。因此不需要猜测四段拆分，但仍需按名映射、校验
+   `wrist_extension == sum(joint_arm_l*)`，并验证模型/URDF 零位与方向。
+2. **命令契约不一致**：WB-MPC 输出 11 维速度；底盘
+   `/stretch/cmd_vel` 和机械臂 `FollowJointTrajectory`/streaming-position 接口虽然已在
+   graph 中确认，但机械臂的 joint 契约、更新率以及与 `navigation` 模式能否并发尚未确认。
 3. **坐标系尚未闭合**：ESDF、OMPL 和 MPC 必须使用同一个固定坐标系；SLAM 和 Vicon 的原点、时间戳、漂移/跳变语义不同，不能直接替换 topic 名。
+
+### 2.4 阶段 0 首次实机快照（2026-08-05）
+
+快照来自工作站
+`bringup_active_mapmaintenance/perceive_semantix` 的 `zenoh` pixi 环境。本次未记录实际采集时刻；
+`2026-08-05` 是证据纳入本计划的日期。
+
+已确认：
+
+- 主要节点包括 `/stretch_driver`、`/robot_state_publisher`、`/slam_toolbox`、
+  `/sllidar_node`、`/joint_state_publisher` 和 `/laser_filter`。
+- ROS graph 警告存在同名节点；列表中 `/laser_filter` 出现两次，需确认是否为重复启动。
+- 存在 `/odom` (`nav_msgs/msg/Odometry`)、`/pose`
+  (`geometry_msgs/msg/PoseWithCovarianceStamped`)、`/tf`、`/tf_static` 和
+  `/lidar_map` (`nav_msgs/msg/OccupancyGrid`)。
+- 存在 `/stretch/joint_states` 和 `/joint_states`，两者类型均为
+  `sensor_msgs/msg/JointState`；存在 `/joint_limits` (`JointState`)。
+- 存在 `/stretch/cmd_vel` (`geometry_msgs/msg/Twist`)。
+- 机械臂 trajectory action、streaming-position 服务、模式切换服务、homing/stow/stop
+  服务以及 runstop/self-collision-avoidance 服务均在 graph 中。
+- 存在 `/mode`、`/is_homed`、`/is_runstopped` 和
+  `/is_streaming_position` 状态 topic。
+- `/stretch/joint_states` 一帧包含四段 arm、lift、wrist 三轴、头部、夹爪以及
+  `wrist_extension`，position/velocity/effort 数组均完整；四段 arm 位置之和与
+  `wrist_extension` 一致。
+- `/joint_states` 由 `joint_state_publisher` 二次发布，添加了左/右轮关节，
+  但不含 `wrist_extension`。
+- `/odom` 由 `stretch_driver` 发布，`header.frame_id=odom`、
+  `child_frame_id=base_link`；静止时 twist.linear.y=0。
+- 约 10 秒的工作站侧测量中，`/stretch/joint_states` 和 `/odom` 均稳定在
+  约 30 Hz，`/scan_filtered` 约 8.16 Hz。
+- 原始 `/tf` 和 `/tf_static` 能跨 Zenoh 收到；机器人本体树从
+  `base_link` 延伸到 arm/wrist/gripper，包含 `link_grasp_center`、
+  `camera_color_optical_frame` 和 `gripper_camera_depth_optical_frame` 等静态 frame。
+- `/spectacular_ai/sai_publisher` 已在 graph 中，发布 camera info、color/depth image、
+  global/local point cloud、map point cloud、pose 和 TF 接口。这些 publisher 的 QoS 均为
+  reliable/volatile/keep-last-1。
+- `sai_publisher` 参数为 `base_frame=base_link`、
+  `camera_frame=camera_color_optical_frame`、`global_frame=map`、
+  `use_tf_frames=true`、`publish_tf_instead_of_pose=true`。因此定位输出首选 TF，
+  不依赖 `/spectacular_ai/pose` topic。
+- `camera_color_optical_frame <-> base_link` 已可持续查询；当次快照中
+  `map` frame 尚未出现，因此 `map -> base_link` 和 `map -> camera` 不可用。
+- 相机重新枚举并重启 pipeline 后，工作站已收到 frame
+  `camera_color_optical_frame` 的 depth 消息；源码确认 encoding 为 `16UC1`。
+  45 秒静止测量不足两帧，符合其“更新关键帧”而非 raw stream 的发布语义。
+- `map -> base_link` 也只在含 RGB 的更新关键帧回调中作为动态 `/tf` 发布；
+  新启动的 volatile TF 订阅者需等待下一关键帧，不能把 endpoint 存在等同于
+  任意时刻均可查询 `map` frame。
+
+### 2.5 阶段 0 运动 rosbag 快照（2026-08-05）
+
+- 工作站外部数据目录
+  `/home/miao/data/real_stretch_esdf_bags/2026-08-05_stage0_motion_01`
+  已录制 53.379 s、380.6 MiB、5373 条消息；大型 bag 不进入 Git。
+- 关键消息计数：depth 33、CameraInfo 121、RGB 118、SAI map 121、动态 TF
+  1506、静态 TF 1、`/stretch/joint_states` 1158、`/odom` 1157。
+- 33 帧 depth 均为 `1280x720`、`16UC1`、little-endian、step 2560、frame
+  `camera_color_optical_frame`；每一帧都存在时间戳完全相等的 CameraInfo、RGB 和
+  `map -> base_link` TF。
+- 实机 CameraInfo 固定为 `1280x720`，`K=[750.025, 0, 636.264, 0,
+  749.733, 369.197, 0, 0, 1]`；`D=[]`、`distortion_model` 和
+  `header.frame_id` 为空。它不同于仓库中基于 Femto Mega USD 的旧配置，实机适配器
+  必须采用 bag 中的 K 并显式补齐已冻结的 optical frame。
+- depth 非零 raw 值范围 510..5945，中位数 1466，零值占 40.89%；数值强烈符合
+  毫米语义，但 `depth_scale=0.001 m/unit` 仍需通过已知距离或 SDK scale API 最终冻结。
+- depth 的运动时平均 cadence 为 0.766 Hz，间隔中位数 0.825 s、最大 5.229 s；
+  recorder 接收时间比消息 header 晚 125..192 ms（中位数 151 ms）。
+- 本次 TF 中只有 SAI `map -> base_link`（125 条），没有 `map -> odom` 或
+  `odom -> base_link`，也没有同一 child 的多 parent；因此该 bag 内没有 TF authority
+  冲突，但这不是计划中常规 `map -> odom -> base_link` 链，定位适配器必须显式支持。
+- 本次主要是底盘运动：里程计路径约 0.525 m、累计 yaw 约 -544°；head pan/tilt
+  变化均小于 0.007 rad。该 bag 足以验证接口和首次离线 ESDF，不代表完整空间覆盖。
+- 最后一帧 SAI map 含 2424 个有限点，header frame 为 `map`；其 raw 点范围较大，
+  仅用于诊断，ESDF 仍以同步 depth + CameraInfo + TF 为输入。
+- 工作站 NVIDIA RTX 4060 Laptop GPU、driver 595.84、PyTorch 2.9.1+cu128 已确认；
+  `torch.cuda.is_available()` 为 true，可运行当前 CUDA-only nvblox 路径。
+
+### 2.6 首次实机 ESDF 离线导出（2026-08-05）
+
+- 已增加 `mm_run/scripts/export_real_rosbag_esdf.py`，离线读取上述 bag 的
+  `/spectacular_ai/depth_image`、CameraInfo、`/tf` 和 `/tf_static`，按每帧 depth
+  header 时间插值并组合 `T_map_camera`，再由 nvblox-torch 构建 TSDF/ESDF。
+- 首次导出使用 `depth_scale=0.001 m/unit`、depth 0.25..4.0 m、voxel/grid 0.05 m、
+  bounds `[-4.2,-4.2,-0.2]..[4.2,4.2,2.2]`，并按 endpoint `map z >= 0.08 m`
+  做临时地面过滤。33/33 depth 帧完成融合，共使用 13,554,973 个有效深度像素；
+  相机高度约 1.298..1.300 m，动态 TF 插值年龄最大 32.94 ms、P95 31.65 ms。
+- 已接入与仿真一致的双地图地面处理：过滤 `map z < 0.08 m` 终点的 obstacle TSDF
+  只提供非地面障碍距离；第二张 occupancy map 使用未过滤深度保留相机射线的
+  observed-free 证据。导出时只将 occupancy log-odds `< 0` 的体素从 unknown 补为
+  valid，并从非地面障碍 site 传播距离（上限 2.0 m）；未观察体素仍为 invalid。
+- nvblox 未观测区哨兵距离为 100 m，导出器用运行时常量将其标为 invalid。固定查询网格
+  1,399,489 点中，原始 obstacle ESDF 有效 188,500 点；occupancy 确认 1,022,640 个
+  observed-free 点并补齐 888,208 点，最终有效 1,076,708 点（76.94%）。
+  `|distance| <= 0.08 m` 的零表面带有 35,600 点；自由空间补齐不引入地面零表面。
+- 按当前 offline OMPL base 配置（`query_z=[0.15,0.35]`、`base_radius=0.20 m`、
+  `d_safe=0.20 m`、5 cm lattice、XY bounds ±4 m）自动验收：两层均 known 的 lattice
+  占 70.50%，planner-valid 占 59.59%，共有 14 个连通分量。bag 的精确首帧
+  `map -> base_link` 起点约 `(-0.0002, 0.0002)`，两层 clearance 约 0.543/0.450 m，
+  `start_valid=true`；目标仍必须检查是否属于同一连通分量。
+- 产物目录为
+  `mm_run/results/nvblox_esdf/real_bag/2026-08-05_stage0_motion_01/`，包含
+  `esdf_grid.npz`、`map.nvblox`、`observed_space.nvblox`、`metadata.json`、四个高度切片、
+  `esdf_surface_band.ply` 和 `esdf_surface_preview.png`。NPZ 已可由
+  `mm_control.esdf_map.ESDFMap` 加载；metadata 保存双地图融合统计、全部
+  `T_map_camera`/`T_map_base` 和 planner-quality 报告。
+- 复现命令（在仓库根目录）：
+
+  ```bash
+  pixi run python mm_run/scripts/export_real_rosbag_esdf.py \
+    /home/miao/data/real_stretch_esdf_bags/2026-08-05_stage0_motion_01 \
+    -o mm_run/results/nvblox_esdf/real_bag/2026-08-05_stage0_motion_01 \
+    --bounds -4.2 -4.2 -0.2 4.2 4.2 2.2 \
+    --voxel-size 0.05 --grid-resolution 0.05 --ground-min-z 0.08
+  ```
+
+- 双地图已消除首版“过滤地面后起点上方成为 unknown”的 invalid 问题，但当前结果仍未
+  通过完整 planner-ready 门：depth scale 尚未独立标定、没有机器人 self mask，本次平移
+  覆盖很小且只有 33 个低频关键帧，并存在 14 个 planner-valid 连通分量。因此图中的空洞
+  或断裂不能直接判定为可通行区域，目标必须在同一连通分量内单独验收。
+
+剩余的明确缺口：
+
+- 尚未通过人工低速正/反向运动确认 `/odom.twist` 的实际方向和 yaw 符号。
+- 已完成该 bag 的 TF parent 检查；仍需长时检查 SAI `map -> base_link` 的连续性、
+  闭环跳变和最终 authority 选择。
+- depth/CameraInfo/TF 同步已确认；仍需冻结 depth scale，并补做 head pan/tilt
+  扫描以评估关键帧空间覆盖。尚未发现 Vicon 接口。
+- action server 及当前 driver mode 已确认；仍未确认 action 接受的 joint names、
+  goal 抢占/cancel/hold 及与底盘 Twist 的并发行为。
+- 未记录 commit/version、Zenoh 时延/丢帧和两台机器的时钟偏差；
+  当前频率测量仅是短时快照，仍需长时统计。
 
 ## 3. 目标架构
 
@@ -82,17 +253,19 @@
 
 | 用途 | 首选接口 | 状态 | 适配要求 |
 |---|---|---:|---|
-| 关节反馈 | `/stretch/joint_states` (`JointState`) | 已确认 | 按 `name` 映射，禁止依赖数组顺序；记录位置、速度是否完整 |
-| 底盘速度反馈 | `/odom` (`Odometry`) | 待实机确认 | 转成 `map` 或 `base_link` 下定义明确的速度；禁止混用 world/body velocity |
-| SLAM 位姿 | TF `map -> odom -> base_link` | 部分确认 | 用 tf2 lookup 组合变换，不直接扫描 `/tf` 等待一条 `map -> base_link` 消息 |
+| 关节反馈 | `/stretch/joint_states` (`JointState`) | 四段 arm 及速度已确认，约 30 Hz | 按 `name` 映射，禁止依赖数组顺序；校验聚合 `wrist_extension` 与四段之和 |
+| 底盘速度反馈 | `/odom` (`Odometry`) | `odom`/`base_link` 已确认，符号待验证，约 30 Hz | 转成 `map` 或 `base_link` 下定义明确的速度；禁止混用 world/body velocity |
+| SLAM 位姿 | 当前 SAI 为 TF `map -> base_link`；常规链为 `map -> odom -> base_link` | 运动 bag 捕获 125 条 SAI direct TF，无 `map -> odom`/`odom -> base_link` 且无多 parent | 定位适配器显式区分 direct/chained TF；采集节点先启动并等待有效 TF，持续检查跳变与 authority |
 | Vicon 位姿 | Vicon rigid-body topic/TF | 待确认 | 应用 `vicon_world -> map` 和 marker -> `base_link` 外参 |
-| 深度 | 参数化的 `Image` topic | 待确认 | 支持 `16UC1`/`32FC1`，显式配置米制 scale |
-| 相机内参 | 与深度匹配的 `CameraInfo` | 待确认 | 校验分辨率、K、畸变处理和时间戳 |
-| 相机位姿 | TF `map <- camera_optical_frame` | 待确认 | 按图像时间戳查询，不使用“最新 TF”代替历史 TF |
-| 底盘命令 | `/stretch/cmd_vel` (`Twist`) | 已确认 | 将 MPC 的 map-frame base velocity 转成 body-frame 非完整约束命令 |
-| 机械臂命令 | 候选 `/stretch_controller/follow_joint_trajectory` | 待确认 | 确认 driver mode、joint names、最大更新率、抢占/取消语义后再实现 |
-| Homing | `/home_the_robot` (`Trigger`) | 使用中 | 控制节点只检查状态；是否自动调用由 launch 参数决定 |
-| 急停/停止 | 零 Twist + 机械臂 cancel/hold + 硬件 E-stop | 待确认 | 必须为锁存故障，不能在下一帧自动恢复 |
+| 深度关键帧 | `/spectacular_ai/depth_image` (`Image`) | 运动 bag 33 帧；`1280x720 16UC1`，与 CameraInfo/RGB/TF 精确同 stamp，平均 0.766 Hz | 冻结 `0.001 m/unit` 候选 scale；按关键帧使用并执行覆盖率质量门，禁止按 30 Hz raw stream 使用 |
+| 相机内参 | `/spectacular_ai/camera_info` (`CameraInfo`) | 运动 bag 121 条；实机 K 已冻结候选，D/model/frame 为空 | 使用实机 K；按 `camera_color_optical_frame` 补 frame，并将空畸变解释写入 metadata |
+| 原始深度（可选） | 尚无 ROS topic | 当前 `sai_orbbec` 不发布每个 Orbbec depth frame | 若关键帧密度不满足 ESDF 质量门，再增加独立 raw-depth adapter；避免与 SAI 同时独占 USB |
+| 相机位姿 | TF `map <- camera_color_optical_frame` | 33 帧 depth 均有精确同 stamp 的 `map -> base_link`，且静态/关节 TF 可组合到相机 | bag 离线 tf2 lookup 必须支持 SAI direct `map -> base_link` 并验证完整组合变换 |
+| 底盘命令 | `/stretch/cmd_vel` (`Twist`) | 驱动订阅已确认，核查时无 publisher | 将 MPC 的 map-frame base velocity 转成 body-frame 非完整约束命令 |
+| 机械臂命令 | `/stretch_controller/follow_joint_trajectory` | action/type 已确认，语义待确认 | 确认 driver mode、joint names、最大更新率、抢占/取消语义后再实现 |
+| Streaming position | `/activate_streaming_position`、`/deactivate_streaming_position`、`/joint_pose_cmd` | 接口已确认，协议待确认 | 先查 driver 文档/源码与消息语义；未确认前不发布 |
+| Homing | `/home_the_robot` (`Trigger`) + `/is_homed` (`Bool`) | 接口已确认 | 控制节点只检查状态；是否自动调用由 launch 参数决定 |
+| 急停/停止 | `/is_runstopped`、`/runstop`、`/stop_the_robot` + 零 Twist + 机械臂 cancel/hold | 接口/type 已确认，行为待确认 | 必须为锁存故障，不能在下一帧自动恢复 |
 
 接口配置全部参数化，默认值只能在完成 graph 快照后写入实机 YAML。
 
@@ -111,7 +284,7 @@
 ### 5.2 SLAM 分支
 
 1. 从真实 graph 确认 `map -> odom` 和 `odom -> base_link` 的发布者、频率和 authority。
-2. 解决当前 `broadcast_odom_tf=False` 带来的 TF 链风险；全链只能有一个 authority，避免重复 TF。
+2. 确保全链每段只有一个 authority，避免重复 TF。
 3. ESDF 采集阶段保存 SLAM pose graph/地图及其初始位姿信息。
 4. 离线 ESDF 执行阶段优先运行 SLAM localization 模式，而不是继续无约束建图，避免 loop closure 或重定位导致 `map` 突跳。
 5. 监控 `map -> base_link` 的平移/旋转跳变；超过阈值立即停止，不把跳变后的状态送入 MPC 连续控制。
@@ -141,14 +314,16 @@
 任务：
 
 1. 记录三个仓库/子模块 commit、ROS distro、`rmw_zenoh_cpp` 版本、Stretch firmware/driver 版本和所用 pixi 环境。
-2. 在按 `real deploy.txt` 启动后保存以下快照：
+2. 在按 `REAL_DEPLOY.md` 启动后保存以下快照：
    - `ros2 node list`
    - `ros2 topic list -t` 与关键 topic 的 `ros2 topic info -v`
    - `ros2 service list -t`
    - `ros2 action list -t`
    - TF frame 图、各 transform authority 和频率
    - `/stretch/joint_states` 的完整 `name` 列表
-3. 确认相机 depth、CameraInfo、光学 frame、encoding、QoS 和稳定帧率。
+3. 在人工缓慢移动相机时，同步捕获 SAI depth 关键帧、CameraInfo 和
+   `map -> camera`；冻结 `16UC1` scale、关键帧 cadence，并据 ESDF 覆盖率决定
+   是否需要单独的 raw-depth adapter。
 4. 确认 SLAM TF 链；确认 Vicon base rigid body 接口。
 5. 在底盘静止时确认 `/odom` 的 twist frame 语义；通过小幅人工遥控确认正方向和 yaw 符号。
 6. 确认机械臂控制入口：
@@ -289,7 +464,8 @@ stretch_esdf_offline_ompl_wbmpc.yaml       # 当前算法基线
 
 以下问题由阶段 0 的实机证据决定，未确认前不进入相应编码或运动测试：
 
-1. 深度数据最终来自 Spectacular AI、Orbbec 原生驱动还是另一相机节点？
+1. 是否冻结已部署的 `ros2_orbbec_slam`/`sai_orbbec` 作为深度数据源；
+   其实际 depth/CameraInfo topic、encoding、QoS、optical frame 和时间戳是什么？
 2. SLAM 离线运行使用哪一个保存的 pose graph/map，谁发布 `odom -> base_link`？
 3. Vicon 底盘 rigid body 的名称、frame 和 marker-to-base 外参是什么？
 4. Stretch 在当前 driver 版本中能否同时接收底盘 Twist 和机械臂控制？需要 `navigation`、`trajectory` 或其他模式？

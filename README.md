@@ -36,6 +36,8 @@ A ROS-based framework for mobile manipulation research, featuring MPC-based cont
 - **mm_utils**: Utility functions for math, parsing, logging, etc.
 
 Configuration parameters are documented in [configuration.md](./mm_run/config/configuration.md).
+The verified real-robot startup, teleoperation, rosbag capture, and ESDF export
+procedure is documented in [REAL_DEPLOY.md](./REAL_DEPLOY.md).
 
 ## Current Setup
 Use the pixi environment and build the ROS2 packages into the default colcon
@@ -265,6 +267,25 @@ mm_run/results/nvblox_esdf/stretch_teleop/<TIMESTAMP>/
 Before pressing `X`, observe the intended navigation start from several
 viewpoints. OMPL treats unknown space as invalid and will reject a start pose
 whose base collision query points were not observed.
+
+Convert a real Spectacular-AI ROS 2 bag offline with the same two-map ground
+semantics:
+
+```bash
+pixi run python mm_run/scripts/export_real_rosbag_esdf.py \
+  /ABSOLUTE/PATH/TO/ROSBAG_DIRECTORY \
+  -o mm_run/results/nvblox_esdf/real_bag/MAP_NAME \
+  --bounds -4.2 -4.2 -0.2 4.2 4.2 2.2 \
+  --voxel-size 0.05 --grid-resolution 0.05 --ground-min-z 0.08
+```
+
+The primary TSDF receives ground-filtered depth, while `observed_space.nvblox`
+receives unfiltered depth and supplies observed-free ray evidence. The final
+NPZ keeps genuinely unobserved voxels invalid and records fusion and base
+planner quality statistics in `metadata.json`. The converter defaults to the
+canonical offline base checks (`query_z=[0.15, 0.35]`, required clearance
+0.4 m, XY bounds ±4 m); matching CLI options can override them for another
+planner profile.
 
 Reconstruct and inspect the approximate ESDF zero surface in PyBullet:
 
