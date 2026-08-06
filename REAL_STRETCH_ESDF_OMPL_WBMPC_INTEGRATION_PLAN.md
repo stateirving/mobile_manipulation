@@ -1,6 +1,6 @@
 # Stretch 实机接入：ESDF 采集 + Offline OMPL + WB-MPC 计划
 
-更新日期：2026-08-05
+更新日期：2026-08-06
 
 ## 1. 目标与边界
 
@@ -58,8 +58,10 @@
   `/stretch_controller/follow_joint_trajectory`
   (`control_msgs/action/FollowJointTrajectory`)；同时存在 streaming-position 激活/停用服务、
   `/joint_pose_cmd` (`Float64MultiArray`) 以及 navigation/position/trajectory 模式切换服务。
-  这仅证明接口存在，尚不证明它们可与底盘 Twist 并发、接受哪些 joint name
-  或满足 WB-MPC 频率。
+  2026-08-06 后续低速测试确认 action 接受 `joint_lift`、`wrist_extension` 和
+  `joint_wrist_yaw` 的两点轨迹；单点轨迹会 abort。另一路 streaming-position 已在
+  `navigation` 模式下以 10 Hz 与底盘 Twist 并发通过低幅实机验证。它仍不等于完整的
+  WB-MPC 命令安全验收：超时、仲裁、全关节跟踪误差和故障注入尚待阶段 3 完成。
 - 核查时 `/stretch/cmd_vel` 的 publisher count 为 0，`stretch_driver` 是唯一
   subscriber；trajectory action server 属于 `/stretch_driver`，当时 client count 为 0。
 - 核查时驱动状态为 `navigation`、homed=true、runstopped=false、
@@ -74,19 +76,19 @@
 - `mm_run/nodes/mpc_ros.py` 虽然是 ROS 2 节点，但依赖当前环境中不存在的
   `mobile_manipulation_central` 接口，并不是现有 Stretch bringup 的适配器。
 - 当前控制模型状态为 11 维：
-  `[base_x, base_y, base_yaw, lift, arm_l3, arm_l2, arm_l1, arm_l0,
-  wrist_yaw, wrist_pitch, wrist_roll]`。
+  `[base_x, base_y, base_yaw, lift, arm_l3, arm_l2, arm_l1, arm_l0, wrist_yaw, wrist_pitch, wrist_roll]`。
 - 控制 URDF 与 bringup URDF 的核心关节名称相近，但轮子、头部、夹爪的可动/固定定义不同；不能只凭同名假设两者运动学和零位完全一致。
 
 ### 2.3 当前不能直接连实机的三个阻塞项
 
-1. **状态契约尚未完全验证**：已确认实机驱动直接反馈
-   `joint_arm_l3/l2/l1/l0` 四段关节及其速度，同时反馈聚合的
-   `wrist_extension`。因此不需要猜测四段拆分，但仍需按名映射、校验
-   `wrist_extension == sum(joint_arm_l*)`，并验证模型/URDF 零位与方向。
-2. **命令契约不一致**：WB-MPC 输出 11 维速度；底盘
-   `/stretch/cmd_vel` 和机械臂 `FollowJointTrajectory`/streaming-position 接口虽然已在
-   graph 中确认，但机械臂的 joint 契约、更新率以及与 `navigation` 模式能否并发尚未确认。
+1. **状态契约已完成阶段 1 验证**：已完成按名关节映射、限位/时间戳检查、
+   `wrist_extension == sum(joint_arm_l*)`、base 三维状态、`/odom.twist`
+   frame/符号、完整 11+11 状态同步，以及模型 FK 对 live TF 的多姿态验证。
+   详见阶段 1 的 2026-08-06 验证记录。
+2. **命令安全适配器尚未实现**：WB-MPC 输出 11 维速度；底盘
+   `/stretch/cmd_vel` 与 streaming-position 的协议和 `navigation` 并发能力已经确认，
+   但仍需把速度积分为受限位置目标，并实现 receive-time watchdog、唯一 command owner、
+   跟踪误差门限和锁存停止后，才能接入 WB-MPC 实机输出。
 3. **坐标系尚未闭合**：ESDF、OMPL 和 MPC 必须使用同一个固定坐标系；SLAM 和 Vicon 的原点、时间戳、漂移/跳变语义不同，不能直接替换 topic 名。
 
 ### 2.4 阶段 0 首次实机快照（2026-08-05）
@@ -148,8 +150,7 @@
 - 33 帧 depth 均为 `1280x720`、`16UC1`、little-endian、step 2560、frame
   `camera_color_optical_frame`；每一帧都存在时间戳完全相等的 CameraInfo、RGB 和
   `map -> base_link` TF。
-- 实机 CameraInfo 固定为 `1280x720`，`K=[750.025, 0, 636.264, 0,
-  749.733, 369.197, 0, 0, 1]`；`D=[]`、`distortion_model` 和
+- 实机 CameraInfo 固定为 `1280x720`，`K=[750.025, 0, 636.264, 0, 749.733, 369.197, 0, 0, 1]`；`D=[]`、`distortion_model` 和
   `header.frame_id` 为空。它不同于仓库中基于 Femto Mega USD 的旧配置，实机适配器
   必须采用 bag 中的 K 并显式补齐已冻结的 optical frame。
 - depth 非零 raw 值范围 510..5945，中位数 1466，零值占 40.89%；数值强烈符合
@@ -203,7 +204,6 @@
     --bounds -4.2 -4.2 -0.2 4.2 4.2 2.2 \
     --voxel-size 0.05 --grid-resolution 0.05 --ground-min-z 0.08
   ```
-
 - 双地图已消除首版“过滤地面后起点上方成为 unknown”的 invalid 问题，但当前结果仍未
   通过完整 planner-ready 门：depth scale 尚未独立标定、没有机器人 self mask，本次平移
   覆盖很小且只有 33 个低频关键帧，并存在 14 个 planner-valid 连通分量。因此图中的空洞
@@ -216,8 +216,8 @@
   闭环跳变和最终 authority 选择。
 - depth/CameraInfo/TF 同步已确认；仍需冻结 depth scale，并补做 head pan/tilt
   扫描以评估关键帧空间覆盖。尚未发现 Vicon 接口。
-- action server 及当前 driver mode 已确认；仍未确认 action 接受的 joint names、
-  goal 抢占/cancel/hold 及与底盘 Twist 的并发行为。
+- action server、driver mode 以及 lift/extension/wrist-yaw 两点轨迹已确认；仍未确认
+  wrist pitch/roll 完整保持、goal 抢占/cancel/hold 及与底盘 Twist 的并发行为。
 - 未记录 commit/version、Zenoh 时延/丢帧和两台机器的时钟偏差；
   当前频率测量仅是短时快照，仍需长时统计。
 
@@ -251,21 +251,21 @@
 
 下表中的“待确认”项必须在阶段 0 从真实 ROS graph 获取，不能根据源码猜测。
 
-| 用途 | 首选接口 | 状态 | 适配要求 |
-|---|---|---:|---|
-| 关节反馈 | `/stretch/joint_states` (`JointState`) | 四段 arm 及速度已确认，约 30 Hz | 按 `name` 映射，禁止依赖数组顺序；校验聚合 `wrist_extension` 与四段之和 |
-| 底盘速度反馈 | `/odom` (`Odometry`) | `odom`/`base_link` 已确认，符号待验证，约 30 Hz | 转成 `map` 或 `base_link` 下定义明确的速度；禁止混用 world/body velocity |
-| SLAM 位姿 | 当前 SAI 为 TF `map -> base_link`；常规链为 `map -> odom -> base_link` | 运动 bag 捕获 125 条 SAI direct TF，无 `map -> odom`/`odom -> base_link` 且无多 parent | 定位适配器显式区分 direct/chained TF；采集节点先启动并等待有效 TF，持续检查跳变与 authority |
-| Vicon 位姿 | Vicon rigid-body topic/TF | 待确认 | 应用 `vicon_world -> map` 和 marker -> `base_link` 外参 |
-| 深度关键帧 | `/spectacular_ai/depth_image` (`Image`) | 运动 bag 33 帧；`1280x720 16UC1`，与 CameraInfo/RGB/TF 精确同 stamp，平均 0.766 Hz | 冻结 `0.001 m/unit` 候选 scale；按关键帧使用并执行覆盖率质量门，禁止按 30 Hz raw stream 使用 |
-| 相机内参 | `/spectacular_ai/camera_info` (`CameraInfo`) | 运动 bag 121 条；实机 K 已冻结候选，D/model/frame 为空 | 使用实机 K；按 `camera_color_optical_frame` 补 frame，并将空畸变解释写入 metadata |
-| 原始深度（可选） | 尚无 ROS topic | 当前 `sai_orbbec` 不发布每个 Orbbec depth frame | 若关键帧密度不满足 ESDF 质量门，再增加独立 raw-depth adapter；避免与 SAI 同时独占 USB |
-| 相机位姿 | TF `map <- camera_color_optical_frame` | 33 帧 depth 均有精确同 stamp 的 `map -> base_link`，且静态/关节 TF 可组合到相机 | bag 离线 tf2 lookup 必须支持 SAI direct `map -> base_link` 并验证完整组合变换 |
-| 底盘命令 | `/stretch/cmd_vel` (`Twist`) | 驱动订阅已确认，核查时无 publisher | 将 MPC 的 map-frame base velocity 转成 body-frame 非完整约束命令 |
-| 机械臂命令 | `/stretch_controller/follow_joint_trajectory` | action/type 已确认，语义待确认 | 确认 driver mode、joint names、最大更新率、抢占/取消语义后再实现 |
-| Streaming position | `/activate_streaming_position`、`/deactivate_streaming_position`、`/joint_pose_cmd` | 接口已确认，协议待确认 | 先查 driver 文档/源码与消息语义；未确认前不发布 |
-| Homing | `/home_the_robot` (`Trigger`) + `/is_homed` (`Bool`) | 接口已确认 | 控制节点只检查状态；是否自动调用由 launch 参数决定 |
-| 急停/停止 | `/is_runstopped`、`/runstop`、`/stop_the_robot` + 零 Twist + 机械臂 cancel/hold | 接口/type 已确认，行为待确认 | 必须为锁存故障，不能在下一帧自动恢复 |
+| 用途               | 首选接口                                                                                  |                                                                                      状态 | 适配要求                                                                                      |
+| ------------------ | ----------------------------------------------------------------------------------------- | ----------------------------------------------------------------------------------------: | --------------------------------------------------------------------------------------------- |
+| 关节反馈           | `/stretch/joint_states` (`JointState`)                                                |                                                           四段 arm 及速度已确认，约 30 Hz | 按`name` 映射，禁止依赖数组顺序；校验聚合 `wrist_extension` 与四段之和                    |
+| 底盘速度反馈       | `/odom` (`Odometry`)                                                                  |                                       `odom`/`base_link` 已确认，符号待验证，约 30 Hz | 转成`map` 或 `base_link` 下定义明确的速度；禁止混用 world/body velocity                   |
+| SLAM 位姿          | 当前 SAI 为 TF`map -> base_link`；常规链为 `map -> odom -> base_link`                 | 运动 bag 捕获 125 条 SAI direct TF，无`map -> odom`/`odom -> base_link` 且无多 parent | 定位适配器显式区分 direct/chained TF；采集节点先启动并等待有效 TF，持续检查跳变与 authority   |
+| Vicon 位姿         | Vicon rigid-body topic/TF                                                                 |                                                                                    待确认 | 应用`vicon_world -> map` 和 marker -> `base_link` 外参                                    |
+| 深度关键帧         | `/spectacular_ai/depth_image` (`Image`)                                               |      运动 bag 33 帧；`1280x720 16UC1`，与 CameraInfo/RGB/TF 精确同 stamp，平均 0.766 Hz | 冻结`0.001 m/unit` 候选 scale；按关键帧使用并执行覆盖率质量门，禁止按 30 Hz raw stream 使用 |
+| 相机内参           | `/spectacular_ai/camera_info` (`CameraInfo`)                                          |                                    运动 bag 121 条；实机 K 已冻结候选，D/model/frame 为空 | 使用实机 K；按`camera_color_optical_frame` 补 frame，并将空畸变解释写入 metadata            |
+| 原始深度（可选）   | 尚无 ROS topic                                                                            |                                          当前`sai_orbbec` 不发布每个 Orbbec depth frame | 若关键帧密度不满足 ESDF 质量门，再增加独立 raw-depth adapter；避免与 SAI 同时独占 USB         |
+| 相机位姿           | TF`map <- camera_color_optical_frame`                                                   |          33 帧 depth 均有精确同 stamp 的`map -> base_link`，且静态/关节 TF 可组合到相机 | bag 离线 tf2 lookup 必须支持 SAI direct`map -> base_link` 并验证完整组合变换                |
+| 底盘命令           | `/stretch/cmd_vel` (`Twist`)                                                          |                                                        驱动订阅已确认，核查时无 publisher | 将 MPC 的 map-frame base velocity 转成 body-frame 非完整约束命令                              |
+| 机械臂命令         | `/stretch_controller/follow_joint_trajectory`                                           |                  已确认 lift、`wrist_extension`、wrist yaw 两点轨迹；单点 goal 会 abort | trajectory 模式切换曾造成反馈中断，不选作当前 WB-MPC 高频入口；cancel/hold 仍作为故障恢复候选验证 |
+| Streaming position | `/activate_streaming_position`、`/deactivate_streaming_position`、`/joint_pose_cmd` | `navigation` 下 10 Hz 与 Twist 并发通过；SG3 为固定 10 元素全量位置向量；小幅 yaw 返回误差约 0.007 rad | 每帧由新鲜反馈/内部目标构造完整向量，base 两项置零；外置 receive-time watchdog、仲裁和跟踪误差门 |
+| Homing             | `/home_the_robot` (`Trigger`) + `/is_homed` (`Bool`)                              |                                                                                接口已确认 | 控制节点只检查状态；是否自动调用由 launch 参数决定                                            |
+| 急停/停止          | `/is_runstopped`、`/runstop`、`/stop_the_robot` + 零 Twist + 机械臂 cancel/hold     |                                                              接口/type 已确认，行为待确认 | 必须为锁存故障，不能在下一帧自动恢复                                                          |
 
 接口配置全部参数化，默认值只能在完成 graph 快照后写入实机 YAML。
 
@@ -335,9 +335,27 @@
 
 交付物：一份带时间戳的 ROS graph/TF/interface 清单。
 
-通过条件：状态、定位、相机、底盘命令和机械臂命令五类契约都已确定。尤其是机械臂并发控制未确认前，不进入 WB-MPC 实机下发阶段。
+通过条件：状态、定位、相机、底盘命令和机械臂命令五类契约都已确定。机械臂 streaming
+协议及其与 `navigation` 的低幅并发已于 2026-08-06 确认；在阶段 3 watchdog、仲裁、
+跟踪误差门和故障注入验收完成前，仍不进入 WB-MPC enabled 实机下发。
 
 ### 阶段 1：统一模型与实机状态
+
+2026-08-06 状态：**阶段 1 已完成。** 模型审计决策、关节状态链路和 base 状态适配器已经完成。关节部分
+在静止、wrist yaw、lift 和 extension 低速运动中通过；base 部分在显式 odom-local
+诊断模式下通过静止、约 5 cm 直线往返和约 4 度 yaw 往返的 frame、方向和速度符号
+验证。Spectacular AI 的 `map -> base_link` 被实测确认为 sparse keyframe TF，正式
+状态链已改为关键帧全局锚点加 30 Hz `/odom` 传播，并通过 30 秒静止和约 2 cm 低速
+往返初测；启动必须等待首个关键帧，关键帧修正跳变和无锚运动距离均 fail closed。
+base 与 8 个关节已按控制器顺序组成完整 11 位置/11 速度状态；修正一次 33 ms
+错周期配对后，594 个实机完整状态的 base/joint 时间戳差均为零且保持 30 Hz。
+模型 FK 对 live TF 已完成 151 个同时间戳样本的多姿态验证；真实聚合伸展约束下，
+可达近最坏姿态实测 33.74 mm / 4.60 度，与受约束离线预测 34.04 mm 相符。
+原始 39.07 mm 离线样本独立改变四段伸展量，实机不可达。项目决定仍保留 nominal
+控制模型并记录该已知偏差，不在状态桥中加入 offset。trajectory-mode 测试出现约
+300 ms 空窗，并在一次返回 navigation 后出现反馈流停止，作为后续 receive-time
+watchdog 和命令恢复测试的实测依据。重启 driver 后最终验收为 navigation、homed、
+runstop 未触发，JointState 121/121 有效且约 30 Hz。
 
 任务：
 
@@ -378,6 +396,14 @@
 通过条件：同一 rosbag 重建结果可重复；RViz/PyBullet 可视化与真实场景对齐；起点和测试目标位于同一已观察自由空间连通分量。
 
 ### 阶段 3：实机命令与安全适配器
+
+2026-08-06 前置验证：`eoa_wrist_dw3_tool_sg3` 的 streaming-position 命令顺序已从
+官方驱动源码核对，并用 10 Hz wrist yaw + 低速底盘往返实测确认可与 `navigation`
+共存；期间 JointState 连续约 30 Hz，最大接收间隔 41.2 ms，退出后模式仍为
+`navigation`、streaming=false。底盘返回误差约 0.67 mm，wrist yaw 返回误差约
+0.0070 rad，说明后续适配器必须使用反馈闭环而不能假设命令已精确执行。
+当前阶段 3 尚未完成；下一步是把已确认协议封装为默认 shadow 的命令适配器，并加入
+外部 receive-time watchdog、唯一命令所有权和锁存停止。
 
 任务：
 
@@ -475,14 +501,14 @@ stretch_esdf_offline_ompl_wbmpc.yaml       # 当前算法基线
 
 ## 9. 推荐实施顺序与里程碑
 
-| 里程碑 | 内容 | 可运动 |
-|---|---|---:|
-| M0 | graph/TF/driver/Zenoh 契约冻结 | 否 |
-| M1 | 状态适配 + SLAM/Vicon 统一输出 + rosbag | 否 |
-| M2 | 实机 ESDF 采集、导出和质量门 | 仅人工遥控采图 |
-| M3 | 命令适配、仲裁、watchdog、shadow runner | 否 |
-| M4 | base-only 与 arm-only 低速验收 | 是，分离运动 |
-| M5 | 顺序 OMPL + WB-MPC | 是 |
-| M6 | whole-body + ESDF 避障，SLAM/Vicon 双验收 | 是 |
+| 里程碑 | 内容                                      |         可运动 |
+| ------ | ----------------------------------------- | -------------: |
+| M0     | graph/TF/driver/Zenoh 契约冻结            |             否 |
+| M1     | 状态适配 + SLAM/Vicon 统一输出 + rosbag   |             否 |
+| M2     | 实机 ESDF 采集、导出和质量门              | 仅人工遥控采图 |
+| M3     | 命令适配、仲裁、watchdog、shadow runner   |             否 |
+| M4     | base-only 与 arm-only 低速验收            |   是，分离运动 |
+| M5     | 顺序 OMPL + WB-MPC                        |             是 |
+| M6     | whole-body + ESDF 避障，SLAM/Vicon 双验收 |             是 |
 
 首个可执行工作包应为 **M0 + M1 的只读状态链路和 rosbag 记录**。它能最早暴露 joint、TF、相机和 Zenoh 契约问题，同时不会向机器人发送任何运动命令。

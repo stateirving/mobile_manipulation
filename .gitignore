@@ -55,4 +55,18 @@ install_*/
 /mm_control/test/test_nonholonomic_dynamics.py
 /mm_simulator/test/test_acceleration_command.py
 
+# One-off real-hardware validation tools and reports. Keep the reusable
+# state/command adapters under mm_run/stretch_runtime tracked.
+/mm_run/config/real_state_bridge.md
+/mm_run/config/stretch_*probe_real.yaml
+/mm_run/nodes/stretch_*_probe.py
+/mm_run/nodes/stretch_*_test.py
+/mm_run/nodes/stretch_base_motion_test.py
+/mm_run/scripts/audit_stretch_models.py
+/mm_run/stretch_runtime/real_fk.py
+/mm_run/test/test_real_*.py
+/mm_run/test/test_streaming_position.py
+/mm_utils/src/mm_utils/urdf_audit.py
+/mm_utils/test/test_urdf_audit.py
+
 ros1/
