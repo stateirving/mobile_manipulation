@@ -108,6 +108,46 @@ class ESDFMap:
         gradients[interp_valid] = interp_gradient[interp_valid]
         return distances, gradients, interp_valid
 
+    def query_diagnostics(self, points):
+        """Explain offline-grid validity for a batch of query points.
+
+        A trilinear query is valid only when the point is inside the grid and,
+        with the conservative default policy, all eight interpolation corners
+        were observed when the ESDF was exported.
+        """
+        points = np.asarray(points, dtype=np.float64)
+        if points.ndim != 2 or points.shape[1] != 3:
+            raise ValueError("points must have shape (N, 3)")
+
+        ix, _, inside_x = self._axis_indices(self.xs, points[:, 0])
+        iy, _, inside_y = self._axis_indices(self.ys, points[:, 1])
+        iz, _, inside_z = self._axis_indices(self.zs, points[:, 2])
+        inside_bounds = inside_x & inside_y & inside_z
+        valid_corner_count = np.zeros(points.shape[0], dtype=np.int8)
+        for dx in (0, 1):
+            for dy in (0, 1):
+                for dz in (0, 1):
+                    valid_corner_count += self.valid[ix + dx, iy + dy, iz + dz].astype(
+                        np.int8
+                    )
+
+        reason = np.full(points.shape[0], "valid", dtype=object)
+        reason[~inside_bounds] = "outside_grid_bounds"
+        if self.require_all_corners_valid:
+            reason[inside_bounds & (valid_corner_count < 8)] = (
+                "unobserved_interpolation_corner"
+            )
+        else:
+            distances, _, query_valid = self.query_batch(points)
+            reason[inside_bounds & (~query_valid | ~np.isfinite(distances))] = (
+                "invalid_interpolation"
+            )
+        return {
+            "inside_bounds": inside_bounds,
+            "valid_corner_count": valid_corner_count,
+            "reason": reason,
+        }
+
     def _validate(self):
         if self.xs.ndim != 1 or self.ys.ndim != 1 or self.zs.ndim != 1:
             raise ValueError("ESDF axes xs, ys, zs must be one-dimensional")

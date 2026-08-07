@@ -1,0 +1,147 @@
+stretch_command_adapter:
+  velocity_command_topic: /wbmpc/velocity_command
+  state_topic: /wbmpc/state
+  odom_topic: /odom
+  joint_state_topic: /stretch/joint_states
+  base_command_topic: /stretch/cmd_vel
+  joint_command_topic: /joint_pose_cmd
+  status_topic: /stretch_command_adapter/status
+
+  activate_streaming_service: /activate_streaming_position
+  deactivate_streaming_service: /deactivate_streaming_position
+
+  mode_topic: /mode
+  homed_topic: /is_homed
+  runstop_topic: /is_runstopped
+  streaming_topic: /is_streaming_position
+
+  publish_rate: 10.0
+  state_receive_timeout: 0.30
+  command_receive_timeout: 0.40
+  status_receive_timeout: 1.00
+  startup_timeout: 10.0
+  # --execute additionally requires the most recently received 11-D velocity
+  # request to be zero. Motion can start only from a later command sample.
+  enable_zero_velocity_tolerance: 1.0e-6
+  shadow_log_path: ""
+
+  # Inline the tracked Stage-1 state contract so the installed command node does
+  # not depend on the ignored one-off physical validation probes.
+  state:
+    base:
+      pose_source: map_tf_odom
+      global_frame: map
+      odom_frame: odom
+      base_frame: base_link
+      max_pose_age: 0.50
+      max_odom_age: 0.50
+      max_pose_odom_skew: 0.50
+      future_tolerance: 0.10
+      quaternion_norm_tolerance: 0.001
+      max_abs_body_lateral_velocity: 0.05
+      odom_history_duration: 2.0
+      max_anchor_odom_skew: 0.25
+      max_anchor_translation_jump: 0.50
+      max_anchor_yaw_jump: 0.10
+      max_anchor_propagation_translation: 0.20
+      max_anchor_propagation_yaw: 0.35
+
+    joint:
+      joint_names:
+        - joint_lift
+        - joint_arm_l3
+        - joint_arm_l2
+        - joint_arm_l1
+        - joint_arm_l0
+        - joint_wrist_yaw
+        - joint_wrist_pitch
+        - joint_wrist_roll
+      aggregate_name: wrist_extension
+      aggregate_members:
+        - joint_arm_l3
+        - joint_arm_l2
+        - joint_arm_l1
+        - joint_arm_l0
+      aggregate_tolerance: 0.003
+      max_age: 0.50
+      future_tolerance: 0.10
+      allow_velocity_fallback: true
+      velocity_filter_time_constant: 0.10
+      max_differentiation_dt: 0.50
+      limit_tolerance: 0.001
+      joint_limit_tolerances:
+        joint_lift: 0.012
+      position_limits:
+        joint_lift: [0.0, 1.1]
+        joint_arm_l3: [0.0, 0.13]
+        joint_arm_l2: [0.0, 0.13]
+        joint_arm_l1: [0.0, 0.13]
+        joint_arm_l0: [0.0, 0.13]
+        joint_wrist_yaw: [-1.75, 4.0]
+        joint_wrist_pitch: [-1.57, 0.56]
+        joint_wrist_roll: [-3.14, 3.14]
+
+    full:
+      max_state_skew: 0.030
+      max_age: 0.50
+      future_tolerance: 0.10
+
+  command:
+    min_dt: 0.005
+    max_dt: 0.30
+    lateral_warn_threshold: 0.010
+    lateral_stop_threshold: 0.050
+    # Projection mismatch is a model-fidelity diagnostic, not a physical speed.
+    # The aggregate command remains subject to the effective model/driver limits.
+    arm_projection_warn_threshold: 0.020
+    arm_projection_stop_threshold: 0.100
+
+    # The effective limit is the intersection of all available layers. Model
+    # values come from the current WB-MPC config/URDF. Driver values freeze the
+    # currently audited SG3 contract. Commissioning directly aliases model so
+    # there is only one source for model-side speed/position/acceleration limits.
+    limits:
+      layers:
+        model: &model_limits
+          base_forward: {velocity: 1.0, acceleration: 1.0}
+          base_yaw: {velocity: 0.75, acceleration: 0.75}
+          joint_lift: {position: [0.0, 1.1], velocity: 0.5, acceleration: 0.3}
+          wrist_extension: {position: [0.0, 0.52], velocity: 1.2, acceleration: 0.8}
+          joint_wrist_yaw: {position: [-1.75, 4.0], velocity: 2.0, acceleration: 1.5}
+          joint_wrist_pitch: {position: [-1.57, 0.56], velocity: 2.0, acceleration: 1.5}
+          joint_wrist_roll: {position: [-3.14, 3.14], velocity: 2.0, acceleration: 1.5}
+
+        driver:
+          # Position limits match the audited deployed URDF. The ROS driver does
+          # not currently expose a frozen acceleration contract, so acceleration
+          # comes from the shared model limits.
+          base_forward: {velocity: 1.0}
+          base_yaw: {velocity: 1.0}
+          joint_lift: {position: [0.0, 1.1], velocity: 1.0}
+          wrist_extension: {position: [0.0, 0.52], velocity: 1.0}
+          joint_wrist_yaw: {position: [-1.75, 4.0], velocity: 1.0}
+          joint_wrist_pitch: {position: [-1.57, 0.56], velocity: 1.0}
+          joint_wrist_roll: {position: [-3.14, 3.14], velocity: 1.0}
+
+        commissioning: *model_limits
+
+      position_margin:
+        joint_lift: 0.010
+        wrist_extension: 0.005
+        joint_wrist_yaw: 0.050
+        joint_wrist_pitch: 0.050
+        joint_wrist_roll: 0.050
+
+    following_error:
+      soft:
+        joint_lift: 0.030
+        wrist_extension: 0.030
+        joint_wrist_yaw: 0.150
+        joint_wrist_pitch: 0.150
+        joint_wrist_roll: 0.150
+      hard:
+        joint_lift: 0.060
+        wrist_extension: 0.060
+        joint_wrist_yaw: 0.300
+        joint_wrist_pitch: 0.300
+        joint_wrist_roll: 0.300

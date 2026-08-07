@@ -1,0 +1,57 @@
+# Hardware-in-the-loop commissioning profile using the complete simulated room
+# ESDF. This map is a virtual constraint only; it does not represent obstacles
+# around the physical robot.
+include:
+  - package: "mm_run"
+    path: "config/stretch_esdf_offline_ompl_wbmpc.yaml"
+
+# planner:
+#   task_defaults:
+#     base:
+#       tracking_pos_err_tol: 0.008
+#       tracking_ori_err_tol: 0.05
+#       hold_period: 1.0
+#       end_stop: true
+#       ompl:
+#         solve_time: 1.0
+#         solve_attempts: 3
+#         goal_tolerance: 0.005
+#         range: 0.05
+#       path:
+#         linear_speed: 0.02
+#         angular_speed: 0.10
+#         interpolation_resolution: 0.01
+#       replan:
+#         force_periodic: false
+#     ee:
+#       tracking_pos_err_tol: 0.005
+#       tracking_ori_err_tol: 0.05
+#       hold_period: 1.0
+#       end_stop: true
+#       ompl:
+#         solve_time: 1.0
+#         solve_attempts: 3
+#         goal_tolerance: 0.003
+#         range: 0.03
+#       path:
+#         linear_speed: 0.01
+#         angular_speed: 0.10
+#         interpolation_resolution: 0.005
+#       replan:
+#         force_periodic: false
+
+planner:
+  tasks:
+    - defaults: base
+      name: "Real Test"
+      base_pose: [1.0, 0.0, 0.0]
+    - defaults: ee
+      name: "EE Approach"
+      ee_pose: [1.0, 0.0, 0.9, 0.0, 0.0, -0.0708]
+
+controller:
+  esdf_collision:
+    source: "offline"
+    map_path:
+      package: "mm_run"
+      path: "results/nvblox_esdf/esdf_test_room_full_2cm_dense/2026-06-15_12-32-10/esdf_grid.npz"

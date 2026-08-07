@@ -1,0 +1,13 @@
+stretch_wbmpc_shadow:
+  controller_config: stretch_esdf_sim_real_commissioning.yaml
+
+  state_topic: /wbmpc/state
+  velocity_command_topic: /wbmpc/velocity_command
+  status_topic: /wbmpc/status
+  global_frame: map
+
+  control_rate: 7.0
+  publish_rate: 20.0
+  state_timeout: 0.50
+  plan_timeout: 1.00
+  log_path: ""

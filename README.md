@@ -1,4 +1,5 @@
 # Mobile Manipulation
+
 A ROS-based framework for mobile manipulation research, featuring MPC-based control, robot simulation, and planning utilities.
 
 > [!IMPORTANT]
@@ -14,12 +15,13 @@ A ROS-based framework for mobile manipulation research, featuring MPC-based cont
 > The following commands were tested:
 >
 > - Build packages
+>
 >   - `colcon build && source install/setup.bash`
->
 > - Compile MPC Controller
->   - `python3 mm_control/scripts/generate_acados_code.py --config $(ros2 pkg prefix mm_run)/share/mm_run/config/simple_experiment.yaml`
 >
+>   - `python3 mm_control/scripts/generate_acados_code.py --config $(ros2 pkg prefix mm_run)/share/mm_run/config/simple_experiment.yaml`
 > - Run Controller with PyBullet Simulation (Synchronous)
+>
 >   - `python3 mm_run/scripts/experiment.py --config $(ros2 pkg prefix mm_run)/share/mm_run/config/simple_experiment.yaml --GUI`
 >
 > The two commands above no longer depend on `mobile_manipulation_central` or `ur_description`. Legacy ROS launch files and nodes still do.
@@ -28,6 +30,7 @@ A ROS-based framework for mobile manipulation research, featuring MPC-based cont
 >   - `ros2 launch mm_run run_pybullet_sim.launch.py config:=$(ros2 pkg prefix mm_run)/share/mm_run/config/simple_experiment.yaml`
 
 ## Package Overview
+
 - **mm_assets**: Robot and scene URDF/mesh files
 - **mm_control**: MPC controller implementation using Acados
 - **mm_plan**: Planning base classes and simple planners
@@ -38,8 +41,23 @@ A ROS-based framework for mobile manipulation research, featuring MPC-based cont
 Configuration parameters are documented in [configuration.md](./mm_run/config/configuration.md).
 The verified real-robot startup, teleoperation, rosbag capture, and ESDF export
 procedure is documented in [REAL_DEPLOY.md](./REAL_DEPLOY.md).
+The default-shadow real Stretch command adapter is documented in
+[real_command_adapter.md](./mm_run/config/real_command_adapter.md).
+
+Run the real-state OMPL + WB-MPC pipeline with hardware output disabled:
+
+```bash
+ros2 launch mm_run stretch_wbmpc_shadow.launch.py \
+  adapter_log:=/tmp/stretch_adapter_wbmpc_shadow.jsonl \
+  wbmpc_log:=/tmp/stretch_wbmpc_shadow.jsonl
+```
+
+The two nodes exchange validated named state on `/wbmpc/state` and 11-D model
+velocity on `/wbmpc/velocity_command`. The launch file never passes
+`--execute`, so it cannot create either Stretch hardware command publisher.
 
 ## Current Setup
+
 Use the pixi environment and build the ROS2 packages into the default colcon
 install tree:
 
@@ -54,14 +72,17 @@ In a new terminal, run `pixi shell` and `source install/setup.bash` again before
 using `ros2 pkg prefix`, launching nodes, or running experiments.
 
 ## Legacy Installation Notes
+
 The notes below are for older ROS Noetic/catkin workflows and some legacy launch
 files. They are not required for the synchronous pixi commands above.
 
 ### Prerequisites
+
 For the legacy workflow, ensure you have ROS Noetic installed on your system.
 Follow the [ROS Noetic installation guide](http://wiki.ros.org/noetic/Installation/Ubuntu) if it's not already set up.
 
 ### Installation of `mobile_manipulation_central`
+
 `mobile_manipulation_central` is no longer required for the synchronous commands above. It is still required for some legacy ROS launch files and nodes in this repository.
 
 ```bash
@@ -74,19 +95,23 @@ source devel/setup.bash
 ```
 
 ### Pinocchio
+
 ```bash
 sudo apt install libeigen3-dev ros-noetic-eigenpy ros-noetic-hpp-fcl ros-noetic-pinocchio
 ```
 
 Make sure to source your ROS environment:
+
 ```bash
 source /opt/ros/noetic/setup.bash
 ```
 
 ### Acados
+
 Follow the instructions on the [Acados website](https://docs.acados.org/installation/). Don't forget to install the Python interface.
 
 ### Installing this repo
+
 ```bash
 cd ~/catkin_ws/src
 git clone https://github.com/utiasDSL/mobile_manipulation
@@ -97,22 +122,27 @@ python3 -m pip install -r requirements.txt
 ```
 
 ## Usage
+
 ### Compile MPC Controller
+
 ```bash
 python3 mm_control/scripts/generate_acados_code.py --config $(ros2 pkg prefix mm_run)/share/mm_run/config/simple_experiment.yaml
 ```
 
 ### Run Controller with PyBullet Simulation (Synchronous)
+
 ```bash
 python3 mm_run/scripts/experiment.py --config $(ros2 pkg prefix mm_run)/share/mm_run/config/simple_experiment.yaml --GUI
 ```
 
 ### Run Controller and Simulation Asynchronously (ROS Nodes)
+
 ```bash
 ros2 launch mm_run run_pybullet_sim.launch.py config:=$(ros2 pkg prefix mm_run)/share/mm_run/config/simple_experiment.yaml
 ```
 
 ### Visualize Results
+
 Results are saved to `mm_run/results/[EXPERIMENT_NAME]/[TIMESTAMP]/` with `sim/` and `control/` subfolders.
 
 ```bash
@@ -121,12 +151,15 @@ python3 plot_logs.py --folder ../../mm_run/results/[EXPERIMENT_NAME]/[TIMESTAMP]
 ```
 
 ### Isaac Sim (Optional)
+
 If using Isaac Sim, ensure [mm_sim_isaac](https://github.com/TracyDuX/mm_sim_isaac) is installed:
+
 ```bash
 ros2 launch mm_run isaac_sim.launch config:=$(ros2 pkg prefix mm_run)/share/mm_run/config/3d_collision.yaml isaac-venv:=$ISAACSIM_PYTHON
 ```
 
 ## Configuration
+
 Configuration files are located in `mm_run/config/`. Key configuration options include:
 
 - **Robot**: Robot model parameters (`config/robot/`)
@@ -135,6 +168,7 @@ Configuration files are located in `mm_run/config/`. Key configuration options i
 - **Simulation**: Simulation settings (`config/sim/`)
 
 ## ESDF MPC Validation
+
 Use the default colcon install tree. Runtime config paths are resolved through
 `$(ros2 pkg prefix mm_run)`, so rebuild after editing Python files or YAML under
 `mm_run/config/`. The validation commands below assume you are already inside
@@ -155,6 +189,7 @@ ros2 pkg prefix mm_control
 ```
 
 ### OMPL Base/EE Planner Offline ESDF WB-MPC
+
 This is the canonical offline ESDF + OMPL base/EE + whole-body MPC config. It
 also owns the shared offline ESDF, scene, solver, robot, and simulation settings.
 
@@ -171,6 +206,7 @@ python3 mm_run/scripts/experiment.py --config $(ros2 pkg prefix mm_run)/share/mm
 ```
 
 ### OMPL Base/EE Planner Online nvblox WB-MPC
+
 This config inherits the offline OMPL WB-MPC setup, replaces the static ESDF
 with an online nvblox map, and uses OMPL for the base and Cartesian EE paths.
 
@@ -191,6 +227,7 @@ If you edit the ESDF MPC model structure or solver options such as
 again before running the experiment.
 
 ### UR10 OMPL Base/EE Planner Offline ESDF WB-MPC
+
 This config uses the UR10 mounted on a holonomic planar base, OMPL for the base
 and Cartesian EE paths, and whole-body MPC with offline ESDF collision avoidance.
 

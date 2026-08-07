@@ -12,6 +12,7 @@ from mm_control.MPCConstraints import (
     NonholonomicBaseConstraint,
 )
 from mm_control.MPCCostFunctions import (
+    ArmVelocityCouplingCostFunction,
     CostFunctionRegistry,
     JointSquaredHingeCostFunction,
     SoftConstraintsSquaredHingeCostFunction,
@@ -76,6 +77,11 @@ class MPC(MPCBase):
         )
         self.joint_soft_costs = self._create_joint_soft_costs(cost_params)
         costs.extend(self.joint_soft_costs)
+        self.arm_velocity_coupling_cost = self._create_arm_velocity_coupling_cost(
+            cost_params
+        )
+        if self.arm_velocity_coupling_cost is not None:
+            costs.append(self.arm_velocity_coupling_cost)
 
         # Add collision costs/constraints
         constraints = []
@@ -179,6 +185,23 @@ class MPC(MPCBase):
 
         return costs
 
+    def _create_arm_velocity_coupling_cost(self, cost_params):
+        """Create the optional physical telescoping-arm velocity coupling cost."""
+
+        coupling_params = cost_params.get("ArmVelocityCoupling", {})
+        if not coupling_params.get("enabled", False):
+            return None
+        joint_names = coupling_params.get(
+            "joint_names",
+            ["joint_arm_l3", "joint_arm_l2", "joint_arm_l1", "joint_arm_l0"],
+        )
+        q_indices = self._joint_names_to_q_indices(joint_names)
+        return ArmVelocityCouplingCostFunction(
+            self.robot,
+            q_indices=q_indices,
+            weight=coupling_params.get("weight", 300.0),
+        )
+
     def _joint_names_to_q_indices(self, joint_names):
         configured_joint_names = list(self.robot.config.get("joint_names", []))
         if len(configured_joint_names) == self.robot.DoF:
@@ -222,6 +245,11 @@ class MPC(MPCBase):
             curr_p_map[f"bounds_{cost.name}"] = bounds
             curr_p_map[f"weights_{cost.name}"] = cost.weights
             curr_p_map[f"smoothing_{cost.name}"] = cost.smoothing
+
+    def _set_arm_velocity_coupling_params(self, curr_p_map):
+        cost = self.arm_velocity_coupling_cost
+        if cost is not None:
+            curr_p_map[f"weight_{cost.name}"] = cost.weight
 
     def _setup_esdf_collision(self):
         """Configure optional ESDF linearization data used outside the solver."""
@@ -525,6 +553,7 @@ class MPC(MPCBase):
             self._set_tracking_params(curr_p_map, r_bar_map, i)
             self._set_control_effort_params(curr_p_map)
             self._set_joint_soft_cost_params(curr_p_map)
+            self._set_arm_velocity_coupling_params(curr_p_map)
             self._set_esdf_params(curr_p_map, i)
             self._set_ocp_params(curr_p_map, i)
             curr_p_map_bar.append(curr_p_map)
@@ -619,8 +648,59 @@ class MPC(MPCBase):
         self.log["esdf_node0_valid"] = valid[0].copy()
         self.log["esdf_min_distance_per_sphere"] = min_distances_per_sphere
         self.log["esdf_min_margin_per_sphere"] = min_margins_per_sphere
+        self.log["esdf_invalid_queries"] = self._describe_invalid_esdf_queries(
+            flat_centers, valid, num_nodes, num_spheres
+        )
         t2 = time.perf_counter()
         self.log["time_esdf_linearization"] = t2 - t1
+
+    def _describe_invalid_esdf_queries(
+        self, flat_centers, valid, num_nodes, num_spheres
+    ):
+        """Return compact, JSON-safe details for invalid ESDF samples."""
+        invalid_flat_indices = np.flatnonzero(~valid.reshape(-1))
+        if invalid_flat_indices.size == 0:
+            return []
+
+        diagnostics = None
+        diagnose = getattr(self.esdf_map, "query_diagnostics", None)
+        if callable(diagnose):
+            diagnostics = diagnose(flat_centers)
+        bounds = getattr(self.esdf_map, "bounds", None)
+        records = []
+        for flat_idx in invalid_flat_indices:
+            node_idx, sphere_idx = divmod(int(flat_idx), num_spheres)
+            center = np.asarray(flat_centers[flat_idx], dtype=float)
+            if diagnostics is not None:
+                reason = str(diagnostics["reason"][flat_idx])
+                inside_bounds = bool(diagnostics["inside_bounds"][flat_idx])
+                valid_corner_count = int(diagnostics["valid_corner_count"][flat_idx])
+            else:
+                inside_bounds = None
+                if bounds is not None:
+                    bounds_array = np.asarray(bounds, dtype=float)
+                    inside_bounds = bool(
+                        np.all(center >= bounds_array[:3])
+                        and np.all(center <= bounds_array[3:])
+                    )
+                reason = (
+                    "outside_grid_bounds"
+                    if inside_bounds is False
+                    else "unknown_or_unobserved"
+                )
+                valid_corner_count = None
+            records.append(
+                {
+                    "node": node_idx,
+                    "sphere_index": sphere_idx,
+                    "sphere": self.esdf_sphere_names[sphere_idx],
+                    "center": center.tolist(),
+                    "reason": reason,
+                    "inside_bounds": inside_bounds,
+                    "valid_corner_count": valid_corner_count,
+                }
+            )
+        return records
 
     def _compute_esdf_sphere_centers(self, q_bar):
         """Evaluate configured collision sphere centers for a q trajectory."""

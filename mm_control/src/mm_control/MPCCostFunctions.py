@@ -1,3 +1,4 @@
+import math
 from abc import ABC
 
 import casadi as cs
@@ -443,6 +444,57 @@ class ControlEffortCostFunction(CostFunctions):
             ["x", "u", "r"],
             ["H_approx"],
         ).expand()
+
+
+class ArmVelocityCouplingCostFunction(CostFunctions):
+    """Penalize telescoping-arm velocities outside the aggregate-drive subspace."""
+
+    def __init__(self, robot_mdl, q_indices, weight, name="ArmVelocityCoupling"):
+        ss_mdl = robot_mdl.ssSymMdl
+        super().__init__(ss_mdl["nx"], ss_mdl["nu"], name)
+
+        self.q_indices = [int(index) for index in q_indices]
+        if len(self.q_indices) < 2 or len(set(self.q_indices)) != len(self.q_indices):
+            raise ValueError(
+                "ArmVelocityCoupling requires at least two unique joint indices"
+            )
+        if min(self.q_indices) < 0 or max(self.q_indices) >= robot_mdl.DoF:
+            raise ValueError("ArmVelocityCoupling joint index is outside robot DoF")
+        self.weight = float(weight)
+        if not math.isfinite(self.weight) or self.weight <= 0.0:
+            raise ValueError("ArmVelocityCoupling weight must be finite and positive")
+
+        self.p_dict = {"weight": cs.MX.sym("weight_" + self.name, 1)}
+        self.p_struct = casadi_sym_struct(self.p_dict)
+        self.p_sym = self.p_struct.cat
+        velocities = self.x_sym[[robot_mdl.DoF + index for index in self.q_indices]]
+        self.error_eqn = velocities - cs.sum1(velocities) / len(self.q_indices)
+        weight_sym = self.p_struct["weight"]
+        self.J_eqn = 0.5 * weight_sym * cs.dot(self.error_eqn, self.error_eqn)
+
+        dz = cs.vertcat(self.u_sym, self.x_sym)
+        derror_dz = cs.jacobian(self.error_eqn, dz)
+        self.H_approx_eqn = weight_sym * (derror_dz.T @ derror_dz)
+        self.error_fcn = cs.Function(
+            "error_" + self.name,
+            [self.x_sym, self.u_sym, self.p_sym],
+            [self.error_eqn],
+        ).expand()
+        self.J_fcn = cs.Function(
+            "J_" + self.name,
+            [self.x_sym, self.u_sym, self.p_sym],
+            [self.J_eqn],
+        ).expand()
+        self.H_approx_fcn = cs.Function(
+            "H_approx_" + self.name,
+            [self.x_sym, self.u_sym, self.p_sym],
+            [self.H_approx_eqn],
+            ["x", "u", "weight"],
+            ["H_approx"],
+        ).expand()
+
+    def evaluate_error(self, x, u, p):
+        return self.error_fcn(x, u, p).toarray().flatten()
 
 
 class SoftConstraintsRBFCostFunction(CostFunctions):

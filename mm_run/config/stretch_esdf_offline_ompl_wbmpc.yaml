@@ -100,24 +100,28 @@ planner:
 
   tasks:
     - defaults: base
-      name: "OMPL Base Goal"
-      base_pose: [2.0, -2.0, 0.0]
+      name: "Real Test"
+      base_pose: [1.0, 0.0, 0.0]
 
-    - defaults: base
-      name: "OMPL Base Work Area"
-      base_pose: [2.0, 0.0, 0.0]
+    # - defaults: base
+    #   name: "OMPL Base Goal"
+    #   base_pose: [2.0, -2.0, 0.0]
 
-    - defaults: ee
-      name: "EE Approach"
-      ee_pose: [3.0, -0.5, 0.9, 0.0, 0.0, -0.0708]
+    # - defaults: base
+    #   name: "OMPL Base Work Area"
+    #   base_pose: [2.0, 0.0, 0.0]
 
-    - defaults: ee
-      name: "EE Reach Low"
-      ee_pose: [3.0, -0.5, 0.4, 0.0, 0.0, -0.0708]
+    # - defaults: ee
+    #   name: "EE Approach"
+    #   ee_pose: [3.0, -0.5, 0.9, 0.0, 0.0, -0.0708]
 
-    - defaults: ee
-      name: "EE Reach Side"
-      ee_pose: [3.0, 0.5, 0.4, 0.0, 0.0, -0.0708]
+    # - defaults: ee
+    #   name: "EE Reach Low"
+    #   ee_pose: [3.0, -0.5, 0.4, 0.0, 0.0, -0.0708]
+
+    # - defaults: ee
+    #   name: "EE Reach Side"
+    #   ee_pose: [3.0, 0.5, 0.4, 0.0, 0.0, -0.0708]
 
     # - defaults: base
     #   name: "test base"
@@ -150,9 +154,9 @@ controller:
     enabled: True
     source: "offline"
     map_path:
-      # package: "mm_run"
-      # path: "results/nvblox_esdf/esdf_test_room_full_2cm_dense/2026-06-15_12-32-10/esdf_grid.npz"
-      path: "/home/miao/repo/mobile_manipulation/mm_run/results/nvblox_esdf/stretch_teleop/2026-08-04_12-31-52/esdf_grid.npz"
+      package: "mm_run"
+      path: "results/nvblox_esdf/esdf_test_room_full_2cm_dense/2026-06-15_12-32-10/esdf_grid.npz"
+      # path: "/home/miao/repo/mobile_manipulation/mm_run/results/nvblox_esdf/stretch_teleop/2026-08-04_12-31-52/esdf_grid.npz"
     spheres:
       - "base_body_collision"
       - "lift_mast_collision_00"
@@ -247,6 +251,12 @@ controller:
       base_task_upper: [0.00, 0.00, 0.00, 0.00]
       weight: [10.0, 10.0, 10.0, 10.0]
       smoothing: 5.0e-03
+    # Guide the independent model joints toward the one-drive subspace without
+    # making the existing independent-joint simulator infeasible.
+    ArmVelocityCoupling:
+      enabled: True
+      joint_names: ["joint_arm_l3", "joint_arm_l2", "joint_arm_l1", "joint_arm_l0"]
+      weight: 300.0
     Regularization:
       eps: 1.0e-06
     slack:

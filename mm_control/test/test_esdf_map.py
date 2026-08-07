@@ -34,6 +34,35 @@ def test_esdf_map_trilinear_query(tmp_path):
     np.testing.assert_allclose(gradient_q, [1.0, 1.0, 1.0])
 
 
+def test_esdf_map_query_diagnostics_separates_bounds_and_unobserved(tmp_path):
+    axis = np.array([0.0, 1.0, 2.0], dtype=np.float32)
+    distance = np.ones((3, 3, 3), dtype=np.float32)
+    gradient = np.ones(distance.shape + (3,), dtype=np.float32)
+    valid = np.ones(distance.shape, dtype=bool)
+    valid[0, 0, 0] = False
+    path = tmp_path / "esdf_grid.npz"
+    np.savez(
+        path,
+        xs=axis,
+        ys=axis,
+        zs=axis,
+        distance=distance,
+        gradient=gradient,
+        valid=valid,
+    )
+
+    diagnostics = ESDFMap(path).query_diagnostics(
+        np.array([[1.75, 1.75, 1.75], [0.5, 0.5, 0.5], [-0.1, 0.5, 0.5]])
+    )
+
+    assert diagnostics["reason"].tolist() == [
+        "valid",
+        "unobserved_interpolation_corner",
+        "outside_grid_bounds",
+    ]
+    assert diagnostics["valid_corner_count"].tolist() == [8, 7, 7]
+
+
 def test_online_nvblox_from_config_merges_online_config(monkeypatch):
     init_kwargs = {}
 

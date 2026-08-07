@@ -402,8 +402,34 @@ runstop 未触发，JointState 121/121 有效且约 30 Hz。
 共存；期间 JointState 连续约 30 Hz，最大接收间隔 41.2 ms，退出后模式仍为
 `navigation`、streaming=false。底盘返回误差约 0.67 mm，wrist yaw 返回误差约
 0.0070 rad，说明后续适配器必须使用反馈闭环而不能假设命令已精确执行。
-当前阶段 3 尚未完成；下一步是把已确认协议封装为默认 shadow 的命令适配器，并加入
-外部 receive-time watchdog、唯一命令所有权和锁存停止。
+2026-08-07 已增加纯 Python 命令安全核心、默认 shadow 的 ROS 2 适配节点、三层限位
+交集、world-to-body 非完整投影、聚合 extension 映射、受限位置积分、receive-time
+watchdog、唯一 publisher preflight 和锁存停止。节点只有显式 `--execute`、零速度握手
+及完整 preflight 后才创建硬件命令 publisher。后续已把 Adapter 模式收敛为
+`shadow/wbmpc`；base target 与 arm target 仍由 TaskManager/MPC 负责，不在 Adapter
+重复增加 base-only/arm-only 模式。Adapter 现会在 `wbmpc` 期间持续检查两个硬件命令
+话题的 publisher count，并通过 `/wbmpc/state` 向独立 WB-MPC 节点提供已校验的 11+11
+状态。按当前项目决策，不再把极低概率故障的穷举注入作为阶段 3 门槛，但保留已有的
+fail-closed 检查。
+
+2026-08-07 首次真实 OMPL + acados WB-MPC shadow 连续运行 40 s：runner 以 20 Hz
+记录 800 条命令，其中 723 条来自 solver；Adapter 以 10 Hz 记录 401 条候选命令，
+全过程 `wbmpc_enabled=false`。最大状态接收龄期约 51 ms、plan 龄期约 200 ms，body
+lateral 最大约 6.1e-5 m/s，四段 arm 投影残差最大约 1.5e-7 m/s。当时执行门尚未
+打开；shadow 同时发现 MPC horizon 并非所有 collision sphere 都落在 ESDF 已知区。
+
+2026-08-07 状态：**阶段 3 已完成。** 全零 `--execute` 实测中，两个硬件命令 topic
+均恰好只有 Adapter 一个 publisher，streaming-position 正确激活；正常退出和 Ctrl-C
+退出后均恢复 `navigation`、`streaming=false` 且无残留 publisher。主动停止内部
+`/wbmpc/velocity_command` 后 0.270 s 触发锁存停止并停用 streaming-position。极低速
+并发往返以底盘 `±0.005 m/s` 和 wrist yaw `±0.01 rad/s` 完成，181 条 Adapter 记录中
+180 条处于 `wbmpc`，底盘 yaw 命令始终为零，body lateral 最大约 1.05e-6 m/s；退出后
+底盘 odom 往返残差约 1.45 mm，wrist yaw 反馈残差约 0.0070 rad。验收过程发现并修复
+三个真实边界问题：ROS array 的 hold 切片赋值、Ctrl-C 先关闭 rclpy context 导致无法
+执行 stop/deactivate、以及 streaming 激活恰逢 timer tick 导致首周期 `dt` 过小误锁存。
+修复后 21 项相关测试通过。按项目决策，不对整个 MPC horizon 的 ESDF unknown 做硬
+锁存；ESDF 覆盖缺口继续作为地图质量与后续避障验收问题处理，不再阻塞阶段 3 命令
+适配器验收。
 
 任务：
 
@@ -421,9 +447,11 @@ runstop 未触发，JointState 121/121 有效且约 30 Hz。
    - 控制周期 deadline 连续 miss；
    - Zenoh 连接中断；
    - Ctrl-C、节点异常或外部 E-stop。
-6. 将 `enabled`、`shadow`、`base_only`、`arm_only`、`whole_body` 设为明确模式；节点启动默认 `shadow`，绝不启动即运动。
+6. 将 `shadow` 和 `wbmpc` 设为明确模式；节点启动默认 `shadow`，绝不启动即运动。base/arm 目标切换由 TaskManager/MPC 内部代价处理。
 
-通过条件：所有故障注入都能在规定时间内停止；任意时刻只有一个底盘 command publisher；机械臂 cancel/hold 行为经过实机验证。
+通过条件：状态/命令超时能在规定时间内停止；任意时刻只有一个底盘 command
+publisher；机械臂 hold 行为经过实机验证。其他低概率故障保留 fail-closed 实现，
+不再要求逐项注入作为阶段门。
 
 ### 阶段 4：实机 planner/controller runner
 
