@@ -12,7 +12,6 @@ from mm_control.MPCConstraints import (
     NonholonomicBaseConstraint,
 )
 from mm_control.MPCCostFunctions import (
-    ArmVelocityCouplingCostFunction,
     CostFunctionRegistry,
     JointSquaredHingeCostFunction,
     SoftConstraintsSquaredHingeCostFunction,
@@ -77,11 +76,6 @@ class MPC(MPCBase):
         )
         self.joint_soft_costs = self._create_joint_soft_costs(cost_params)
         costs.extend(self.joint_soft_costs)
-        self.arm_velocity_coupling_cost = self._create_arm_velocity_coupling_cost(
-            cost_params
-        )
-        if self.arm_velocity_coupling_cost is not None:
-            costs.append(self.arm_velocity_coupling_cost)
 
         # Add collision costs/constraints
         constraints = []
@@ -185,23 +179,6 @@ class MPC(MPCBase):
 
         return costs
 
-    def _create_arm_velocity_coupling_cost(self, cost_params):
-        """Create the optional physical telescoping-arm velocity coupling cost."""
-
-        coupling_params = cost_params.get("ArmVelocityCoupling", {})
-        if not coupling_params.get("enabled", False):
-            return None
-        joint_names = coupling_params.get(
-            "joint_names",
-            ["joint_arm_l3", "joint_arm_l2", "joint_arm_l1", "joint_arm_l0"],
-        )
-        q_indices = self._joint_names_to_q_indices(joint_names)
-        return ArmVelocityCouplingCostFunction(
-            self.robot,
-            q_indices=q_indices,
-            weight=coupling_params.get("weight", 300.0),
-        )
-
     def _joint_names_to_q_indices(self, joint_names):
         configured_joint_names = list(self.robot.config.get("joint_names", []))
         if len(configured_joint_names) == self.robot.DoF:
@@ -245,11 +222,6 @@ class MPC(MPCBase):
             curr_p_map[f"bounds_{cost.name}"] = bounds
             curr_p_map[f"weights_{cost.name}"] = cost.weights
             curr_p_map[f"smoothing_{cost.name}"] = cost.smoothing
-
-    def _set_arm_velocity_coupling_params(self, curr_p_map):
-        cost = self.arm_velocity_coupling_cost
-        if cost is not None:
-            curr_p_map[f"weight_{cost.name}"] = cost.weight
 
     def _setup_esdf_collision(self):
         """Configure optional ESDF linearization data used outside the solver."""
@@ -553,7 +525,6 @@ class MPC(MPCBase):
             self._set_tracking_params(curr_p_map, r_bar_map, i)
             self._set_control_effort_params(curr_p_map)
             self._set_joint_soft_cost_params(curr_p_map)
-            self._set_arm_velocity_coupling_params(curr_p_map)
             self._set_esdf_params(curr_p_map, i)
             self._set_ocp_params(curr_p_map, i)
             curr_p_map_bar.append(curr_p_map)

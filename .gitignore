@@ -53,7 +53,6 @@ install_*/
 
 # Local validation tests for the nonholonomic dynamics changes
 /mm_control/test/test_nonholonomic_dynamics.py
-/mm_control/test/test_arm_velocity_coupling.py
 /mm_simulator/test/test_acceleration_command.py
 
 # One-off real-hardware validation tools and reports. Keep the reusable

@@ -19,7 +19,8 @@ planner:
       base_mask: [true, true, true]
       bounds_xy: [[-4.0, 4.0], [-4.0, 4.0]]
       bounds_margin: 0.75
-      tracking_pos_err_tol: 0.25
+      # tracking_pos_err_tol: 0.25
+      tracking_pos_err_tol: 0.05 # for real robot, we want to be more conservative with the base tracking error
       tracking_ori_err_tol: 0.25
       hold_period: 1.0
       end_stop: false
@@ -102,6 +103,11 @@ planner:
     - defaults: base
       name: "Real Test"
       base_pose: [1.0, 0.0, 0.0]
+
+    - defaults: ee
+      name: "EE Approach"
+      ee_pose: [1.0, 0.0, 0.9, 0.0, 0.0, -0.0708]
+
 
     # - defaults: base
     #   name: "OMPL Base Goal"
@@ -225,10 +231,10 @@ controller:
   cost_params:
     EEPose:
       Qk: [1.0, 1.0, 1.0, 0.0, 0.0, 0.0]
-      P: [0.0, 0.0, 0.0, 0.0, 0.0, 0.0]
+      P: [10.0, 10.0, 10.0, 0.0, 0.0, 0.0]
     EEVel:
       Qk: [0.0, 0.0, 0.0, 0.0, 0.0, 0.0]
-      P: [0.0, 0.0, 0.0, 0.0, 0.0, 0.0]
+      P: [10.0, 10.0, 10.0, 0.0, 0.0, 0.0]
     BasePose:
       Qk: [10.0, 10.0, 15.0]
       P: [10.0, 10.0, 15.0]
@@ -251,12 +257,6 @@ controller:
       base_task_upper: [0.00, 0.00, 0.00, 0.00]
       weight: [10.0, 10.0, 10.0, 10.0]
       smoothing: 5.0e-03
-    # Guide the independent model joints toward the one-drive subspace without
-    # making the existing independent-joint simulator infeasible.
-    ArmVelocityCoupling:
-      enabled: True
-      joint_names: ["joint_arm_l3", "joint_arm_l2", "joint_arm_l1", "joint_arm_l0"]
-      weight: 300.0
     Regularization:
       eps: 1.0e-06
     slack:

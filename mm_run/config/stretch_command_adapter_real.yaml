@@ -41,8 +41,8 @@ stretch_command_adapter:
       max_abs_body_lateral_velocity: 0.05
       odom_history_duration: 2.0
       max_anchor_odom_skew: 0.25
-      max_anchor_translation_jump: 0.50
-      max_anchor_yaw_jump: 0.10
+      max_anchor_translation_jump: 1.0
+      max_anchor_yaw_jump: 0.30
       max_anchor_propagation_translation: 0.20
       max_anchor_propagation_yaw: 0.35
 
