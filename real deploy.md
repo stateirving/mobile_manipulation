@@ -84,7 +84,7 @@ pixi run bash -lc 'source install/setup.bash; python3 mm_control/scripts/generat
 ```
 
 第二条命令必须在修改 MPC 代价、约束或重新创建 `install/mm_control` 后执行。它会
-生成运行时所需的 `acados_ocp_StretchESDFBase.json`、Cython 模块和动态库。
+生成运行时所需的 `acados_ocp_StretchESDFMimic.json`、Cython 模块和动态库。
 
 ## 2. 实机只读预检
 

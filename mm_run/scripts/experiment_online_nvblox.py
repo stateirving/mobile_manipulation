@@ -10,6 +10,12 @@ import pybullet as pyb
 from export_nvblox_esdf import make_base_spin_camera_poses, render_camera_pose
 from scipy.interpolate import interp1d
 from scipy.spatial.transform import Rotation as Rot
+from stretch_runtime.mpc_logging import append_mpc_diagnostics
+from stretch_runtime.stretch_mimic import (
+    expand_stretch_mimic_state,
+    expand_stretch_mimic_vector,
+    reduce_stretch_mimic_vector,
+)
 
 import mm_control.MPC as MPC
 from mm_plan.TaskManager import TaskManager
@@ -1000,13 +1006,27 @@ def main():
     ctrl_config = config["controller"]
     planner_config = config["planner"]
     online_config = config.get("online_nvblox_sim", {})
+    mimic = bool(ctrl_config.get("robot", {}).get("mimic", False))
     _configure_loggers(config)
     preview = CameraPreview(online_config)
 
     if "limits" not in sim_config.get("robot", {}) and "limits" in ctrl_config.get(
         "robot", {}
     ):
-        sim_config["robot"]["limits"] = ctrl_config["robot"]["limits"]
+        controller_limits = ctrl_config["robot"]["limits"]
+        if mimic:
+            sim_config["robot"]["limits"] = {
+                "state": {
+                    "lower": expand_stretch_mimic_state(
+                        parsing.parse_array(controller_limits["state"]["lower"])
+                    ).tolist(),
+                    "upper": expand_stretch_mimic_state(
+                        parsing.parse_array(controller_limits["state"]["upper"])
+                    ).tolist(),
+                }
+            }
+        else:
+            sim_config["robot"]["limits"] = controller_limits
     # The controller collision model is the authoritative robot-interface
     # representation used for simulator markers as well.
     if "collision_model" in ctrl_config.get("robot", {}):
@@ -1071,16 +1091,25 @@ def main():
         logger.add(f"online_nvblox_diag_{key}", value)
 
     sot.activatePlanners()
-    u = np.zeros(sim_config["robot"]["dims"]["v"])
+    controller_dimension = int(ctrl_config["robot"]["dims"]["v"])
+    u = np.zeros(controller_dimension)
     cmd_vel_lower, cmd_vel_upper = _get_command_velocity_limits(
-        ctrl_config, sim_config["robot"]["dims"]["v"]
+        ctrl_config, controller_dimension
     )
     cmd_vel_clip_count = 0
     step_idx = 0
     timing_log_interval = int(online_config.get("timing_log_interval_steps", 0))
 
     while t <= sim.duration:
-        robot_states = robot.joint_states(add_noise=False)
+        external_robot_states = robot.joint_states(add_noise=False)
+        robot_states = (
+            (
+                reduce_stretch_mimic_vector(external_robot_states[0]),
+                reduce_stretch_mimic_vector(external_robot_states[1]),
+            )
+            if mimic
+            else external_robot_states
+        )
 
         realtime_stats = _zero_integration_stats()
         diagnostic_stats = diagnostics.zero_stats()
@@ -1190,7 +1219,9 @@ def main():
                         "Further command velocity clipping messages suppressed"
                     )
 
-        robot.command_velocity(u)
+        external_u_raw = expand_stretch_mimic_vector(u_raw) if mimic else u_raw
+        external_u = expand_stretch_mimic_vector(u) if mimic else u
+        robot.command_velocity(external_u)
         t, _ = sim.step(t)
 
         ee_curr_pos, ee_cur_orn = robot.link_pose()
@@ -1225,10 +1256,10 @@ def main():
                 base_ref_vel = references["base_velocity"][0]
 
         logger.append("ts", t)
-        logger.append("xs", np.hstack(robot_states))
+        logger.append("xs", np.hstack(external_robot_states))
         logger.append("controller_run_time", t1 - t0)
-        logger.append("cmd_vels_raw", u_raw)
-        logger.append("cmd_vels", u)
+        logger.append("cmd_vels_raw", external_u_raw)
+        logger.append("cmd_vels", external_u)
         logger.append("cmd_vel_clipped", cmd_vel_clipped)
         logger.append("r_ew_ws", ee_curr_pos)
         logger.append("Q_wes", ee_cur_orn)
@@ -1257,8 +1288,7 @@ def main():
         if ee_ref_vel is not None:
             logger.append("v_ew_w_ds", ee_ref_vel)
         if "MPC" in ctrl_config["type"]:
-            for key, val in controller.log.items():
-                logger.append("_".join(["mpc", key]) + "s", val)
+            append_mpc_diagnostics(logger, controller.log)
 
         step_idx += 1
         time.sleep(sim.timestep)

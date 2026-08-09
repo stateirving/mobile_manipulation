@@ -106,7 +106,7 @@ stretch_command_adapter:
           base_forward: {velocity: 1.0, acceleration: 1.0}
           base_yaw: {velocity: 0.75, acceleration: 0.75}
           joint_lift: {position: [0.0, 1.1], velocity: 0.5, acceleration: 0.3}
-          wrist_extension: {position: [0.0, 0.52], velocity: 1.2, acceleration: 0.8}
+          wrist_extension: {position: [0.0, 0.52], velocity: 1.0, acceleration: 0.8}
           joint_wrist_yaw: {position: [-1.75, 4.0], velocity: 2.0, acceleration: 1.5}
           joint_wrist_pitch: {position: [-1.57, 0.56], velocity: 2.0, acceleration: 1.5}
           joint_wrist_roll: {position: [-3.14, 3.14], velocity: 2.0, acceleration: 1.5}

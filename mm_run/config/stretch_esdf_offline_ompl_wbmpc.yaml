@@ -20,7 +20,7 @@ planner:
       bounds_xy: [[-4.0, 4.0], [-4.0, 4.0]]
       bounds_margin: 0.75
       # tracking_pos_err_tol: 0.25
-      tracking_pos_err_tol: 0.05 # for real robot, we want to be more conservative with the base tracking error
+      tracking_pos_err_tol: 0.1 # for real robot, we want to be more conservative with the base tracking error
       tracking_ori_err_tol: 0.25
       hold_period: 1.0
       end_stop: false
@@ -100,34 +100,34 @@ planner:
         keep_previous_on_failure: true
 
   tasks:
-    - defaults: base
-      name: "Real Test"
-      base_pose: [1.0, 0.0, 0.0]
+    # - defaults: base
+    #   name: "Real Test"
+    #   base_pose: [1.0, 0.0, 0.0]
 
-    - defaults: ee
-      name: "EE Approach"
-      ee_pose: [1.0, 0.0, 0.9, 0.0, 0.0, -0.0708]
+    # - defaults: ee
+    #   name: "EE Approach"
+    #   ee_pose: [1.0, 0.0, 0.9, 0.0, 0.0, -0.0708]
 
 
     # - defaults: base
     #   name: "OMPL Base Goal"
     #   base_pose: [2.0, -2.0, 0.0]
 
-    # - defaults: base
-    #   name: "OMPL Base Work Area"
-    #   base_pose: [2.0, 0.0, 0.0]
+    - defaults: base
+      name: "OMPL Base Work Area"
+      base_pose: [2.0, 0.0, 0.0]
 
-    # - defaults: ee
-    #   name: "EE Approach"
-    #   ee_pose: [3.0, -0.5, 0.9, 0.0, 0.0, -0.0708]
+    - defaults: ee
+      name: "EE Approach"
+      ee_pose: [3.0, -0.5, 0.9, 0.0, 0.0, -0.0708]
 
-    # - defaults: ee
-    #   name: "EE Reach Low"
-    #   ee_pose: [3.0, -0.5, 0.4, 0.0, 0.0, -0.0708]
+    - defaults: ee
+      name: "EE Reach Low"
+      ee_pose: [3.0, -0.5, 0.4, 0.0, 0.0, -0.0708]
 
-    # - defaults: ee
-    #   name: "EE Reach Side"
-    #   ee_pose: [3.0, 0.5, 0.4, 0.0, 0.0, -0.0708]
+    - defaults: ee
+      name: "EE Reach Side"
+      ee_pose: [3.0, 0.5, 0.4, 0.0, 0.0, -0.0708]
 
     # - defaults: base
     #   name: "test base"
@@ -142,6 +142,35 @@ controller:
   self_collision_avoidance_enabled: False
   static_obstacles_collision_avoidance_enabled: False
   self_collision_emergency_stop: False
+  # Pinocchio collapses joint_arm_l2/l1/l0 onto joint_arm_l3 through the URDF
+  # mimic tags. Its q_arm coordinate is one virtual URDF segment, exactly
+  # wrist_extension/4; the ROS/driver boundary remains the full 11-D geometry.
+  robot:
+    mimic: True
+    dims:
+      q: 8
+      v: 8
+      x: 16
+      u: 8
+    joint_names:
+      - "x_to_world_joint"
+      - "y_to_x_joint"
+      - "base_to_y_joint"
+      - "joint_lift"
+      - "joint_arm_l3"
+      - "joint_wrist_yaw"
+      - "joint_wrist_pitch"
+      - "joint_wrist_roll"
+    x0: [0, 0, 0, 0.8, 0.025, 1.5, 0.0, 0.0]
+    limits:
+      input:
+        lower: [-1.0, -1.0, -0.75, -0.3, -0.2, -1.5, -1.5, -1.5]
+        upper: [1.0, 1.0, 0.75, 0.3, 0.2, 1.5, 1.5, 1.5]
+      state:
+        lower: [-10, -10, -2.pi, 0.0, 0.0, -1.75, -1.57, -3.14,
+                -1.0, -1.0, -0.75, -0.5, -0.25, -2.0, -2.0, -2.0]
+        upper: [10, 10, 2.pi, 1.1, 0.13, 4.0, 0.56, 3.14,
+                1.0, 1.0, 0.75, 0.5, 0.25, 2.0, 2.0, 2.0]
   collision_emergency_stop_margin:
     self: 0.0
     static_obstacles: 0.0
@@ -213,7 +242,7 @@ controller:
     name: "esdf"
 
   acados:
-    name: "StretchESDFBase"
+    name: "StretchESDFMimic"
     cython:
       enabled: True
       recompile: False
@@ -244,18 +273,18 @@ controller:
       Qvb: [0.01, 0.01, 0.01]
       Qub: [0.01, 0.01, 0.01]
     Effort:
-      Qqa: [0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0]
+      Qqa: [0.0, 0.0, 0.0, 0.0, 0.0]
       Qqb: [0.0, 0.0, 0.0]
-      Qva: [0.01, 0.01, 0.01, 0.01, 0.01, 0.01, 0.02, 0.02]
+      Qva: [0.01, 0.04, 0.01, 0.02, 0.02]
       Qvb: [0.05, 0.05, 0.001]
-      Qua: [0.01, 0.01, 0.01, 0.01, 0.01, 0.01, 0.02, 0.02]
+      Qua: [0.01, 0.04, 0.01, 0.02, 0.02]
       Qub: [0.05, 0.05, 0.001]
     ArmExtension:
       enabled: True
-      joint_names: ["joint_arm_l3", "joint_arm_l2", "joint_arm_l1", "joint_arm_l0"]
-      upper: [0.08, 0.08, 0.08, 0.08]
-      base_task_upper: [0.00, 0.00, 0.00, 0.00]
-      weight: [10.0, 10.0, 10.0, 10.0]
+      joint_names: ["joint_arm_l3"]
+      upper: [0.08]
+      base_task_upper: [0.00]
+      weight: [40.0]
       smoothing: 5.0e-03
     Regularization:
       eps: 1.0e-06
@@ -264,8 +293,27 @@ controller:
       Z: 1000000
 
 simulation:
-  duration: 80.0
+  duration: 40.0
   gui: False
+  robot:
+    # The real Stretch arm has one wrist_extension actuator and no measured or
+    # commanded per-stage DoFs. The equal four-joint split below is only the
+    # official ROS URDF/TF equivalent geometry; passive physical stages may
+    # redistribute extension internally while preserving the same total reach.
+    # The 1.0 m/s aggregate limit matches the deployed driver; the controller's
+    # 0.2 m/s^2 per-segment limit gives the same 0.8 m/s^2 aggregate acceleration.
+    home: [0, 0, 0, 0.8, 0.025, 0.025, 0.025, 0.025, 1.5, 0.0, 0.0]
+    aggregate_actuators:
+      enabled: True
+      groups:
+        - name: "wrist_extension"
+          joints: ["joint_arm_l3", "joint_arm_l2", "joint_arm_l1", "joint_arm_l0"]
+          geometry_distribution: [0.25, 0.25, 0.25, 0.25]
+          position_limits: [0.0, 0.52]
+          velocity_limits: [-1.0, 1.0]
+          # Measured on the deployed SG3 with a 10 Hz streaming-position input:
+          # best-fit target-to-feedback delay was 0.119 s (0.061 mm RMSE).
+          command_delay: 0.12
   collision_sphere_markers:
     enabled: True
     alpha: 0.25

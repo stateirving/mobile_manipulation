@@ -21,6 +21,12 @@ from rclpy.utilities import remove_ros_args
 from scipy.spatial.transform import Rotation
 from sensor_msgs.msg import JointState
 from std_msgs.msg import Float64MultiArray, String
+from stretch_runtime.stretch_mimic import (
+    STRETCH_EXTERNAL_DIMENSION,
+    STRETCH_MIMIC_DIMENSION,
+    expand_stretch_mimic_vector,
+    reduce_stretch_mimic_vector,
+)
 from stretch_runtime.wbmpc_shadow import (
     WBMPCState,
     controller_velocity_limits,
@@ -74,9 +80,14 @@ class StretchWBMPCShadow(Node):
                 raise ValueError(f"{name} must be positive and finite")
 
         self.dimension = int(self.controller_config["robot"]["dims"]["v"])
-        if self.dimension != 11:
+        self.mimic = bool(self.controller_config["robot"].get("mimic", False))
+        expected_dimension = (
+            STRETCH_MIMIC_DIMENSION if self.mimic else STRETCH_EXTERNAL_DIMENSION
+        )
+        if self.dimension != expected_dimension:
             raise ValueError(
-                f"real Stretch WB-MPC dimension must be 11, got {self.dimension}"
+                "real Stretch WB-MPC dimension must be "
+                f"{expected_dimension} when mimic={self.mimic}, got {self.dimension}"
             )
         self.velocity_lower, self.velocity_upper = controller_velocity_limits(
             self.controller_config, self.dimension
@@ -163,6 +174,11 @@ class StretchWBMPCShadow(Node):
             state = validate_wbmpc_state(
                 message.name, message.position, message.velocity
             )
+            if self.mimic:
+                state = WBMPCState(
+                    reduce_stretch_mimic_vector(state.position),
+                    reduce_stretch_mimic_vector(state.velocity),
+                )
             stamp = (
                 float(message.header.stamp.sec)
                 + float(message.header.stamp.nanosec) * 1.0e-9
@@ -389,8 +405,14 @@ class StretchWBMPCShadow(Node):
         with self._lock:
             self._velocity_command = command.copy()
 
+        external_acceleration = (
+            expand_stretch_mimic_vector(acceleration) if self.mimic else acceleration
+        )
+        external_command = (
+            expand_stretch_mimic_vector(command) if self.mimic else command
+        )
         message = Float64MultiArray()
-        message.data = command.tolist()
+        message.data = external_command.tolist()
         self._velocity_publisher.publish(message)
         self._write_record(
             {
@@ -400,15 +422,21 @@ class StretchWBMPCShadow(Node):
                 "source": source,
                 "state_age": None if not math.isfinite(state_age) else state_age,
                 "plan_age": None if not math.isfinite(plan_age) else plan_age,
-                "acceleration": acceleration.tolist(),
-                "velocity_command": command.tolist(),
+                "acceleration": external_acceleration.tolist(),
+                "velocity_command": external_command.tolist(),
+                "mimic_velocity_command": command.tolist() if self.mimic else None,
             }
         )
 
     def _publish_status(self) -> None:
         with self._lock:
             record = dict(self._latest_status)
-            record["velocity_command"] = self._velocity_command.tolist()
+            command = self._velocity_command.copy()
+        record["velocity_command"] = (
+            expand_stretch_mimic_vector(command).tolist()
+            if self.mimic
+            else command.tolist()
+        )
         record["record_type"] = "status"
         record["monotonic_time"] = time.monotonic()
         message = String()

@@ -163,7 +163,8 @@ class PinocchioInterface:
         # 1. build robot model
         urdf_path = parsing.parse_and_compile_urdf(config["robot"]["urdf"])
         package_dirs = [str(Path(urdf_path).parent)]
-        self.model = pin.buildModelFromUrdf(urdf_path)
+        mimic = bool(config["robot"].get("mimic", False))
+        self.model = pin.buildModelFromUrdf(urdf_path, mimic=mimic)
         self.collision_model = pin.buildGeomFromUrdf(
             self.model,
             urdf_path,
@@ -172,7 +173,7 @@ class PinocchioInterface:
         )
 
         self.model, self.collision_model, self.visual_model = pin.buildModelsFromUrdf(
-            urdf_path, package_dirs=package_dirs
+            urdf_path, package_dirs=package_dirs, mimic=mimic
         )
 
         # 2. add scene model
@@ -868,7 +869,11 @@ class MobileManipulator3D:
         package_dirs = [str(Path(urdf_path).parent)]
         self.config = config["robot"]
         # create Pinocchio model to get robot info such as number of joints, link names, and for collision checking
-        self.model = pin.buildModelsFromUrdf(urdf_path, package_dirs=package_dirs)[0]
+        self.model = pin.buildModelsFromUrdf(
+            urdf_path,
+            package_dirs=package_dirs,
+            mimic=bool(self.config.get("mimic", False)),
+        )[0]
         # create Casadi model for symbolic kinematics and dynamics functions
         self.cmodel = cpin.Model(self.model)
         # create Casadi data for kinematics and dynamics computations

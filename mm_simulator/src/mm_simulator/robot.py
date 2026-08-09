@@ -229,7 +229,6 @@ class SimulatedRobot:
             raise ValueError(
                 "Robot q/v dimensions must equal the actuated PyBullet joints"
             )
-
         # Position limits are taken from the loaded URDF so simulation can
         # enforce the same bounds even when simulation YAML does not define
         # explicit state limits.
@@ -256,6 +255,11 @@ class SimulatedRobot:
                     "Robot state velocity limits do not match simulator velocity dimension"
                 )
 
+        # Stretch exposes the telescoping arm as one wrist_extension actuator.
+        # Keep the four URDF joints for link geometry, but never simulate them
+        # as four independent motors.
+        self.aggregate_actuators = self._parse_aggregate_actuators(config["robot"])
+
         # set any locked joints to appropriate values
         self.locked_joints = {}
         if "locked_joints" in config["robot"]:
@@ -270,6 +274,181 @@ class SimulatedRobot:
         # set tool to have friction coefficient μ=1 for convenience
         pyb.changeDynamics(self.uid, self.tool_idx, lateralFriction=1.0)
 
+        self._set_aggregate_actuator_states_from_configuration(self.home)
+
+    def _parse_aggregate_actuators(self, robot_config):
+        """Build single-DoF actuators distributed over several URDF joints."""
+
+        actuator_config = robot_config.get("aggregate_actuators", {})
+        if not actuator_config or not bool(actuator_config.get("enabled", False)):
+            return []
+
+        joint_names = list(robot_config["joint_names"])
+        groups = []
+        used_joints = set()
+        for group_config in actuator_config.get("groups", []):
+            name = str(group_config["name"])
+            member_names = [str(value) for value in group_config["joints"]]
+            # This is the URDF/TF geometry convention, not a claim that the
+            # passive physical telescope stages move by equal distances.
+            weights = np.asarray(group_config["geometry_distribution"], dtype=float)
+            if len(member_names) < 2:
+                raise ValueError(f"Aggregate actuator {name} needs at least two joints")
+            if weights.shape != (len(member_names),):
+                raise ValueError(
+                    f"Aggregate actuator {name} geometry distribution must "
+                    "match its joints"
+                )
+            if not np.all(np.isfinite(weights)) or np.any(weights <= 0.0):
+                raise ValueError(
+                    f"Aggregate actuator {name} geometry distribution must "
+                    "be finite and positive"
+                )
+            if not np.isclose(float(np.sum(weights)), 1.0):
+                raise ValueError(
+                    f"Aggregate actuator {name} geometry distribution must sum to one"
+                )
+            unknown = [value for value in member_names if value not in joint_names]
+            if unknown:
+                raise ValueError(
+                    f"Unknown joints for aggregate actuator {name}: {unknown}"
+                )
+            duplicate = used_joints.intersection(member_names)
+            if duplicate:
+                raise ValueError(
+                    "Joints belong to multiple aggregate actuators: "
+                    f"{sorted(duplicate)}"
+                )
+            used_joints.update(member_names)
+
+            coordinates = np.array(
+                [joint_names.index(value) for value in member_names], dtype=int
+            )
+            pybullet_indices = np.array(
+                [self.joints[value][0] for value in member_names], dtype=int
+            )
+            position_limits = self._aggregate_limits(
+                coordinates, weights, self.q_lb, self.q_ub
+            )
+            velocity_limits = self._aggregate_limits(
+                coordinates, weights, self.v_lb, self.v_ub
+            )
+            if "position_limits" in group_config:
+                position_limits = self._parse_limit_pair(
+                    group_config["position_limits"], f"{name} position"
+                )
+            if "velocity_limits" in group_config:
+                velocity_limits = self._parse_limit_pair(
+                    group_config["velocity_limits"], f"{name} velocity"
+                )
+            command_delay = float(group_config.get("command_delay", 0.0))
+            if not np.isfinite(command_delay) or command_delay < 0.0:
+                raise ValueError(
+                    f"Aggregate actuator {name} command delay must be finite "
+                    "and nonnegative"
+                )
+            groups.append(
+                {
+                    "name": name,
+                    "coordinates": coordinates,
+                    "pybullet_indices": pybullet_indices,
+                    "distribution": weights,
+                    "position_limits": position_limits,
+                    "velocity_limits": velocity_limits,
+                    "command_delay": command_delay,
+                    "position": 0.0,
+                    "requested_velocity": 0.0,
+                    "applied_velocity": 0.0,
+                    "command_queue": [],
+                }
+            )
+        if not groups:
+            raise ValueError(
+                "Aggregate actuators are enabled but no groups are configured"
+            )
+        return groups
+
+    @staticmethod
+    def _aggregate_limits(coordinates, weights, lower, upper):
+        """Intersect virtual-geometry limits after q_i = weight_i * q_total."""
+
+        aggregate_lower = float(np.max(lower[coordinates] / weights))
+        aggregate_upper = float(np.min(upper[coordinates] / weights))
+        if aggregate_lower > aggregate_upper:
+            raise ValueError("Aggregate actuator member limits do not intersect")
+        return np.array([aggregate_lower, aggregate_upper], dtype=float)
+
+    @staticmethod
+    def _parse_limit_pair(values, label):
+        limits = np.asarray(values, dtype=float)
+        if limits.shape != (2,) or np.isnan(limits).any() or limits[0] > limits[1]:
+            raise ValueError(f"{label} limits must be an ordered pair")
+        return limits
+
+    def _set_aggregate_actuator_states_from_configuration(self, q):
+        """Preserve total extension and distribute it over the telescoping links."""
+
+        projected = np.asarray(q, dtype=float).copy()
+        for group in self.aggregate_actuators:
+            coordinates = group["coordinates"]
+            position = float(np.sum(projected[coordinates]))
+            position = float(np.clip(position, *group["position_limits"]))
+            group["position"] = position
+            group["requested_velocity"] = 0.0
+            group["applied_velocity"] = 0.0
+            group["command_queue"].clear()
+            projected[coordinates] = group["distribution"] * position
+        return projected
+
+    def _project_aggregate_actuator_velocity(self, velocity):
+        """Map member commands through the real robot's one aggregate actuator."""
+
+        projected = np.asarray(velocity, dtype=float).copy()
+        for group in self.aggregate_actuators:
+            coordinates = group["coordinates"]
+            aggregate_velocity = float(np.sum(projected[coordinates]))
+            aggregate_velocity = float(
+                np.clip(aggregate_velocity, *group["velocity_limits"])
+            )
+            lower, upper = group["position_limits"]
+            if (group["position"] <= lower and aggregate_velocity < 0.0) or (
+                group["position"] >= upper and aggregate_velocity > 0.0
+            ):
+                aggregate_velocity = 0.0
+            group["requested_velocity"] = aggregate_velocity
+            projected[coordinates] = group["distribution"] * aggregate_velocity
+        return projected
+
+    def advance_aggregate_actuators(self, timestep):
+        """Integrate each physical aggregate actuator exactly once per sim step."""
+
+        timestep = float(timestep)
+        if not np.isfinite(timestep) or timestep <= 0.0:
+            raise ValueError("Simulation timestep must be finite and positive")
+        for group in self.aggregate_actuators:
+            group["command_queue"].append([0.0, float(group["requested_velocity"])])
+            for queued_command in group["command_queue"]:
+                queued_command[0] += timestep
+            while (
+                group["command_queue"]
+                and group["command_queue"][0][0] >= group["command_delay"]
+            ):
+                _, group["applied_velocity"] = group["command_queue"].pop(0)
+            previous = group["position"]
+            position = previous + group["applied_velocity"] * timestep
+            position = float(np.clip(position, *group["position_limits"]))
+            aggregate_velocity = (position - previous) / timestep
+            group["position"] = position
+            for pybullet_index, weight in zip(
+                group["pybullet_indices"], group["distribution"]
+            ):
+                pyb.resetJointState(
+                    self.uid,
+                    int(pybullet_index),
+                    weight * position,
+                    targetVelocity=weight * aggregate_velocity,
+                )
+
     def reset_joint_configuration(self, q):
         """Reset the robot to a particular configuration.
 
@@ -279,6 +458,13 @@ class SimulatedRobot:
         Args:
             q (ndarray): Joint positions to set.
         """
+        q = np.asarray(q, dtype=float)
+        if q.shape != (self.nq,):
+            raise ValueError(
+                f"Expected joint configuration shape {(self.nq,)}, got {q.shape}"
+            )
+        q = self._set_aggregate_actuator_states_from_configuration(q)
+
         # Force joint velocities to be zero
         # TODO: may set to arbitrary velocity
         for idx, angle in zip(self.robot_joint_indices, q):
@@ -313,6 +499,7 @@ class SimulatedRobot:
         upper_mask = np.isfinite(self.q_ub) & (q >= self.q_ub) & (cmd_vel > 0)
         lower_mask = np.isfinite(self.q_lb) & (q <= self.q_lb) & (cmd_vel < 0)
         cmd_vel[upper_mask | lower_mask] = 0.0
+        cmd_vel = self._project_aggregate_actuator_velocity(cmd_vel)
 
         # convert to PyBullet actuator coordinates
         _, v_pyb = self.pyb_mapping.forward(q, cmd_vel, bodyframe=bodyframe)
@@ -326,11 +513,16 @@ class SimulatedRobot:
             v_pyb_noisy = v_pyb
 
         v_pyb_noisy = np.array(v_pyb_noisy, copy=True)
+        v_pyb_control = v_pyb_noisy.copy()
+        # These links are moved only by advance_aggregate_actuators(). Sending
+        # four motor commands here would recreate a non-existent four-motor arm.
+        for group in self.aggregate_actuators:
+            v_pyb_control[group["coordinates"]] = 0.0
         pyb.setJointMotorControlArray(
             self.uid,
             self.robot_joint_indices,
             controlMode=pyb.VELOCITY_CONTROL,
-            targetVelocities=list(v_pyb_noisy),
+            targetVelocities=list(v_pyb_control),
         )
 
         # return the actual commanded velocity

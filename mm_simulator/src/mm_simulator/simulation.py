@@ -831,6 +831,7 @@ class BulletSimulation:
         t = 0
         while t < duration:
             pyb.stepSimulation()
+            self.robot.advance_aggregate_actuators(self.timestep)
             t += self.timestep
 
     def launch_dynamic_obstacles(self, t0=0):
@@ -881,6 +882,7 @@ class BulletSimulation:
             self.video_manager.record(t)
 
         pyb.stepSimulation()
+        self.robot.advance_aggregate_actuators(self.timestep)
 
         return t + self.timestep, obstacle_reset
 

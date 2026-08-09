@@ -22,6 +22,11 @@ from rclpy.node import Node
 from scipy.interpolate import interp1d
 from scipy.spatial.transform import Rotation as Rot
 from spatialmath.base import r2q, rpy2r
+from stretch_runtime.mpc_logging import append_mpc_diagnostics
+from stretch_runtime.stretch_mimic import (
+    expand_stretch_mimic_vector,
+    reduce_stretch_mimic_vector,
+)
 from trajectory_msgs.msg import MultiDOFJointTrajectory, MultiDOFJointTrajectoryPoint
 from visualization_msgs.msg import Marker, MarkerArray
 
@@ -80,6 +85,7 @@ class ControllerROSNode(Node):
             )
 
         self.ctrl_config = config["controller"]
+        self.mimic = bool(self.ctrl_config.get("robot", {}).get("mimic", False))
         self.planner_config = config["planner"].copy()
         self.get_logger().info(f"Controller type: {self.ctrl_config['type']}")
         self.collision_emergency_stop_margin = self.ctrl_config.get(
@@ -143,10 +149,17 @@ class ControllerROSNode(Node):
         # ROS2 Related
         # create robot ros2 interface, vicon tool ros2 interface, and joystick ros2 interface
         # /home/miao/repo/mobile_manipulation/mobile_manipulation_central/src/mobile_manipulation_central/ros_interface.py
-        joint_names = self.ctrl_config["robot"].get(
-            "joint_names",
-            config.get("simulation", {}).get("robot", {}).get("joint_names"),
-        )
+        if self.mimic:
+            # ROS/PyBullet still exposes all four telescoping joints even though
+            # the controller model has one active mimic coordinate.
+            joint_names = (
+                config.get("simulation", {}).get("robot", {}).get("joint_names")
+            )
+        else:
+            joint_names = self.ctrl_config["robot"].get(
+                "joint_names",
+                config.get("simulation", {}).get("robot", {}).get("joint_names"),
+            )
         if joint_names is None:
             raise KeyError(
                 "Missing robot.joint_names in both controller and simulation config"
@@ -234,7 +247,10 @@ class ControllerROSNode(Node):
 
             self.lock.release()
 
-        self.robot_interface.publish_cmd_vel(self.cmd_vel)
+        command = (
+            expand_stretch_mimic_vector(self.cmd_vel) if self.mimic else self.cmd_vel
+        )
+        self.robot_interface.publish_cmd_vel(command)
 
     def _publish_cmd_vel_new(self):
         if self.mpc_plan is not None:
@@ -244,7 +260,10 @@ class ControllerROSNode(Node):
             self.cmd_vel = self.mpc_plan_interp(t_elasped)
             self.lock.release()
 
-        self.robot_interface.publish_cmd_vel(self.cmd_vel)
+        command = (
+            expand_stretch_mimic_vector(self.cmd_vel) if self.mimic else self.cmd_vel
+        )
+        self.robot_interface.publish_cmd_vel(command)
 
     def _publish_trajectory_tracking_pt(self, t, robot_states, planner):
         msg = MultiDOFJointTrajectory()
@@ -599,7 +618,18 @@ class ControllerROSNode(Node):
             t = self.get_clock().now().nanoseconds / 1e9
 
             # open-loop command
-            robot_states = (self.robot_interface.q, self.robot_interface.v)
+            external_robot_states = (
+                self.robot_interface.q,
+                self.robot_interface.v,
+            )
+            robot_states = (
+                (
+                    reduce_stretch_mimic_vector(external_robot_states[0]),
+                    reduce_stretch_mimic_vector(external_robot_states[1]),
+                )
+                if self.mimic
+                else external_robot_states
+            )
             # check collision
             q = robot_states[0]
             if self.ctrl_config["self_collision_emergency_stop"]:
@@ -837,8 +867,7 @@ class ControllerROSNode(Node):
         self.get_logger().info(f"Converged to within {dist} of home position.")
 
     def log_mpc_info(self, logger, controller):
-        for key, val in controller.log.items():
-            logger.append("_".join(["mpc", key]) + "s", val)
+        append_mpc_diagnostics(logger, controller.log)
 
 
 def main(args=None):
