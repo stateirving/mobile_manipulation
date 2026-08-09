@@ -10,6 +10,15 @@ stretch_wbmpc_shadow:
   control_rate: 7.0
   publish_rate: 20.0
   state_timeout: 0.25
-  # A solver result older than this is replaced by a continuous zero request.
-  plan_timeout: 0.50
+  solver_deadline: 0.12
+  plan_timeout: 0.20
+  forward_prediction:
+    enabled: true
+    expected_solver_time: 0.06
+    adaptation_alpha: 0.10
+    min_solver_time: 0.02
+    max_solver_time: 0.12
+    actuation_latency: 0.05
+    max_prediction_time: 0.30
+    constraint_tolerance: 0.01
   log_path: ""

@@ -27,17 +27,20 @@ flowchart TB
     REL["stretch_wbmpc_runner<br/>读取 planner.tasks 绝对目标"]
     OMPL["OMPL<br/>参考轨迹规划"]
     ESDF[("模拟房间 ESDF<br/>2 cm 虚拟碰撞场")]
-    MPC["acados WB-MPC"]
-    CMD["/wbmpc/velocity_command<br/>11 维模型速度命令"]
+    PRED["延迟补偿<br/>复用 MPC dynamics + x/u bounds"]
+    MPC["acados WB-MPC<br/>120 ms wall deadline"]
+    CMD["/wbmpc/velocity_command<br/>带代次与有效期的 11 维速度 envelope"]
 
     TF --> STATE
     ODOM --> STATE
     JS --> STATE
     HEALTH --> STATE
     STATE -->|/wbmpc/state| REL
+    STATE --> PRED
     REL --> OMPL
     ESDF --> OMPL
     ESDF --> MPC
+    PRED --> MPC
     OMPL --> MPC
     MPC --> CMD
 ```
@@ -47,9 +50,9 @@ flowchart TB
 ```mermaid
 %%{init: {"themeVariables": {"fontSize": "20px"}, "flowchart": {"useMaxWidth": true, "nodeSpacing": 50, "rankSpacing": 60}}}%%
 flowchart TB
-    CMD["/wbmpc/velocity_command<br/>11 维模型速度命令"]
+    CMD["/wbmpc/velocity_command<br/>速度 + generation + validity deadline"]
     STATE["实机状态 + 设备状态"]
-    SAFE["stretch_command_adapter<br/>纯 Python 安全命令核心<br/><br/>map → base_link 速度转换<br/>横向速度强制为 0<br/>四段 arm → wrist_extension<br/>速度积分成受限 qpos<br/>位置 / 速度 / 加速度限制<br/>超时与唯一发布者检查"]
+    SAFE["stretch_command_adapter<br/>纯 Python 安全命令核心<br/><br/>50 Hz 独立 deadline watchdog<br/>过期：base zero + arm measured-qpos hold<br/>map → base_link 速度转换<br/>横向速度强制为 0<br/>四段 arm → wrist_extension<br/>速度积分成受限 qpos<br/>位置 / 速度 / 加速度限制"]
     SHADOW["execute=false<br/>只写 JSONL 和状态<br/>不创建硬件 publisher"]
     TWIST["execute=true<br/>/stretch/cmd_vel<br/>Twist"]
     QPOS["execute=true<br/>/joint_pose_cmd<br/>10 维 SG3 qpos"]
@@ -74,6 +77,12 @@ flowchart TB
 
 ESDF 分支只在数学上约束规划和 MPC，并不观测真实房间。adapter 是唯一允许创建
 两个硬件命令 publisher 的节点；shadow 模式下这两条 publisher 分支根本不存在。
+
+每个 7 Hz 控制周期按“状态源年龄 + 自适应预计计算时间 + adapter 派发延迟”前向
+预测。预测直接调用 controller robot 的 `fmdlk` 和 acados 所用的
+`lb_x/ub_x/lb_u/ub_u`，不会额外扫描整张 ESDF。求解完成后立即发布，不再等待预测
+时长。超过 `solver_deadline: 0.12 s` 的结果被丢弃；adapter 根据上一条 envelope
+的绝对有效期自行进入软 hold，因此不依赖被阻塞的求解线程恢复。
 
 ## 1. 构建
 
@@ -132,13 +141,14 @@ pixi run bash -lc 'export RMW_IMPLEMENTATION=rmw_zenoh_cpp; export ROS_LOG_DIR=/
 求解器和模拟 ESDF 查询：
 
 ```bash
-jq -s '{solver_records:(map(select(.record_type=="solver"))|length), statuses:(map(select(.record_type=="solver")|.solver_status)|unique), max_failures:(map(select(.record_type=="solver")|.solver_failure_count)|max), max_fallbacks:(map(select(.record_type=="solver")|.solver_fallback_count)|max), esdf_all_valid:(map(select(.record_type=="solver")|.esdf_all_valid)|all), min_esdf_margin:(map(select(.record_type=="solver")|.esdf_min_margin)|min), tasks:(map(select(.record_type=="solver")|.task_name)|unique)}' /tmp/stretch_sim_esdf_wbmpc_shadow.jsonl
+jq -s '{solver_records:(map(select(.record_type=="solver"))|length), statuses:(map(select(.record_type=="solver")|.solver_status)|unique), max_failures:(map(select(.record_type=="solver")|.solver_failure_count)|max), max_fallbacks:(map(select(.record_type=="solver")|.solver_fallback_count)|max), deadline_misses:(map(select(.record_type=="solver" and .deadline_missed==true))|length), prediction_clips:(map(select(.record_type=="solver" and (.prediction_input_clipped==true or .prediction_state_clipped==true)))|length), tasks:(map(select(.record_type=="solver")|.task_name)|unique)}' /tmp/stretch_sim_esdf_wbmpc_shadow.jsonl
 jq -s '{records:length, enabled:(map(select(.wbmpc_enabled==true))|length), max_abs_base:(map(.base_linear_x|fabs)|max), max_abs_yaw:(map(.base_angular_z|fabs)|max)}' /tmp/stretch_sim_esdf_adapter_shadow.jsonl
 ```
 
-shadow 验收要求：`statuses=[0]`、`max_failures=0`、`max_fallbacks=0`、
-`esdf_all_valid=true`、`enabled=0`，且命令为有限值并处于 model/driver 有效限制内。
-`enabled=0` 表示 adapter 从未进入硬件执行模式。
+shadow 正常稳定段要求：`statuses=[0]`、`max_failures=0`、`max_fallbacks=0`、
+`deadline_misses=0`、`prediction_clips=0`、`enabled=0`，且命令为有限值并处于
+model/driver 有效限制内。首次 OMPL 或重规划超过 120 ms 时出现 deadline hold 是
+预期安全行为；不能把迟到结果继续下发。
 
 ## 4. 实机组合测试
 
@@ -154,6 +164,10 @@ runner 先启动，只发布 WB-MPC 内部命令 topic。8 秒后，adapter 完�
 设备状态、streaming 和命令唯一所有者预检，随后才创建硬件 publisher。任何时候都
 可按 `Ctrl-C` 停止；ROS 关闭前 adapter 会发送 5 次零命令/位置保持，并停用
 streaming-position。
+
+运行中若 `/stretch_command_adapter/status` 显示 `state: hold`，先看
+`soft_hold_reason`：solver overrun/fallback/plan expired 是可自动恢复的软 hold；
+`state: latched` 才需要停止进程、排查硬故障并重新预检。
 
 ## 5. 强制收尾检查
 

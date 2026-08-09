@@ -16,6 +16,10 @@ stretch_command_adapter:
   streaming_topic: /is_streaming_position
 
   publish_rate: 10.0
+  # Independent of the solver process: expired/invalid plan envelopes trigger
+  # immediate base zero and a measured-qpos arm hold without deactivating
+  # streaming-position.
+  watchdog_rate: 50.0
   state_receive_timeout: 0.30
   command_receive_timeout: 0.40
   status_receive_timeout: 1.00
@@ -96,25 +100,13 @@ stretch_command_adapter:
     arm_projection_warn_threshold: 0.020
     arm_projection_stop_threshold: 0.100
 
-    # The effective limit is the intersection of all available layers. Model
-    # values come from the current WB-MPC config/URDF. Driver values freeze the
-    # currently audited SG3 contract. Commissioning directly aliases model so
-    # there is only one source for model-side speed/position/acceleration limits.
+    # Hardware position/velocity constraints come only from the audited Stretch
+    # driver contract. MPC owns and enforces its model constraints separately.
+    # The adapter_shaping layer supplies only local acceleration slew rates
+    # because the current driver interface does not publish acceleration limits.
     limits:
       layers:
-        model: &model_limits
-          base_forward: {velocity: 1.0, acceleration: 1.0}
-          base_yaw: {velocity: 0.75, acceleration: 0.75}
-          joint_lift: {position: [0.0, 1.1], velocity: 0.5, acceleration: 0.3}
-          wrist_extension: {position: [0.0, 0.52], velocity: 1.0, acceleration: 0.8}
-          joint_wrist_yaw: {position: [-1.75, 4.0], velocity: 2.0, acceleration: 1.5}
-          joint_wrist_pitch: {position: [-1.57, 0.56], velocity: 2.0, acceleration: 1.5}
-          joint_wrist_roll: {position: [-3.14, 3.14], velocity: 2.0, acceleration: 1.5}
-
         driver:
-          # Position limits match the audited deployed URDF. The ROS driver does
-          # not currently expose a frozen acceleration contract, so acceleration
-          # comes from the shared model limits.
           base_forward: {velocity: 1.0}
           base_yaw: {velocity: 1.0}
           joint_lift: {position: [0.0, 1.1], velocity: 1.0}
@@ -123,14 +115,21 @@ stretch_command_adapter:
           joint_wrist_pitch: {position: [-1.57, 0.56], velocity: 1.0}
           joint_wrist_roll: {position: [-3.14, 3.14], velocity: 1.0}
 
-        commissioning: *model_limits
+        adapter_shaping:
+          base_forward: {acceleration: 1.0}
+          base_yaw: {acceleration: 0.75}
+          joint_lift: {acceleration: 0.3}
+          wrist_extension: {acceleration: 0.8}
+          joint_wrist_yaw: {acceleration: 1.5}
+          joint_wrist_pitch: {acceleration: 1.5}
+          joint_wrist_roll: {acceleration: 1.5}
 
       position_margin:
-        joint_lift: 0.010
-        wrist_extension: 0.005
-        joint_wrist_yaw: 0.050
-        joint_wrist_pitch: 0.050
-        joint_wrist_roll: 0.050
+        joint_lift: 0.0
+        wrist_extension: 0.0
+        joint_wrist_yaw: 0.0
+        joint_wrist_pitch: 0.0
+        joint_wrist_roll: 0.0
 
     following_error:
       soft:

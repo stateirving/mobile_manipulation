@@ -10,6 +10,7 @@ import sys
 import threading
 import time
 from copy import deepcopy
+from dataclasses import dataclass
 from pathlib import Path
 
 import numpy as np
@@ -20,7 +21,7 @@ from rclpy.qos import DurabilityPolicy, QoSProfile, ReliabilityPolicy
 from rclpy.utilities import remove_ros_args
 from scipy.spatial.transform import Rotation
 from sensor_msgs.msg import JointState
-from std_msgs.msg import Float64MultiArray, String
+from std_msgs.msg import String
 from stretch_runtime.stretch_mimic import (
     STRETCH_EXTERNAL_DIMENSION,
     STRETCH_MIMIC_DIMENSION,
@@ -28,8 +29,10 @@ from stretch_runtime.stretch_mimic import (
     reduce_stretch_mimic_vector,
 )
 from stretch_runtime.wbmpc_shadow import (
+    WBMPCCommandEnvelope,
     WBMPCState,
     controller_velocity_limits,
+    forward_predict_with_controller_model,
     integrate_acceleration_velocity,
     sample_acceleration_plan,
     validate_wbmpc_state,
@@ -38,6 +41,15 @@ from stretch_runtime.wbmpc_shadow import (
 import mm_control.MPC as MPC
 from mm_plan.TaskManager import TaskManager
 from mm_utils import parsing
+
+
+@dataclass(frozen=True)
+class _ScheduledPlan:
+    generation: int
+    state_stamp: float
+    origin_time: float
+    predicted_application_time: float
+    acceleration: np.ndarray
 
 
 class StretchWBMPCShadow(Node):
@@ -70,14 +82,60 @@ class StretchWBMPCShadow(Node):
         )
         self.state_timeout = float(config.get("state_timeout", 0.25))
         self.plan_timeout = float(config.get("plan_timeout", 0.50))
+        default_deadline = (
+            1.0 / self.control_rate
+            if math.isfinite(self.control_rate) and self.control_rate > 0.0
+            else math.nan
+        )
+        self.solver_deadline = float(config.get("solver_deadline", default_deadline))
+        prediction_config = dict(config.get("forward_prediction", {}))
+        self.forward_prediction_enabled = bool(prediction_config.get("enabled", True))
+        self.expected_solver_time = float(
+            prediction_config.get("expected_solver_time", 0.06)
+        )
+        self.solver_time_adaptation = float(
+            prediction_config.get("adaptation_alpha", 0.10)
+        )
+        self.min_expected_solver_time = float(
+            prediction_config.get("min_solver_time", 0.02)
+        )
+        self.max_expected_solver_time = float(
+            prediction_config.get("max_solver_time", self.solver_deadline)
+        )
+        self.actuation_latency = float(prediction_config.get("actuation_latency", 0.05))
+        self.max_prediction_time = float(
+            prediction_config.get("max_prediction_time", 0.30)
+        )
+        self.prediction_constraint_tolerance = float(
+            prediction_config.get("constraint_tolerance", 0.01)
+        )
         for name, value in (
             ("control_rate", self.control_rate),
             ("publish_rate", self.publish_rate),
             ("state_timeout", self.state_timeout),
             ("plan_timeout", self.plan_timeout),
+            ("solver_deadline", self.solver_deadline),
+            ("expected_solver_time", self.expected_solver_time),
+            ("min_solver_time", self.min_expected_solver_time),
+            ("max_solver_time", self.max_expected_solver_time),
+            ("max_prediction_time", self.max_prediction_time),
         ):
             if not math.isfinite(value) or value <= 0.0:
                 raise ValueError(f"{name} must be positive and finite")
+        if not 0.0 <= self.solver_time_adaptation <= 1.0:
+            raise ValueError("forward_prediction.adaptation_alpha must be in [0, 1]")
+        if not math.isfinite(self.actuation_latency) or self.actuation_latency < 0.0:
+            raise ValueError("forward_prediction.actuation_latency must be nonnegative")
+        if (
+            not math.isfinite(self.prediction_constraint_tolerance)
+            or self.prediction_constraint_tolerance < 0.0
+        ):
+            raise ValueError(
+                "forward_prediction.constraint_tolerance must be nonnegative"
+            )
+        if self.min_expected_solver_time > self.max_expected_solver_time:
+            raise ValueError("forward-prediction solver-time interval is reversed")
+        self.control_period = 1.0 / self.control_rate
 
         self.dimension = int(self.controller_config["robot"]["dims"]["v"])
         self.mimic = bool(self.controller_config["robot"].get("mimic", False))
@@ -115,7 +173,7 @@ class StretchWBMPCShadow(Node):
             JointState, self.state_topic, self._state_callback, qos
         )
         self._velocity_publisher = self.create_publisher(
-            Float64MultiArray, self.velocity_topic, qos
+            String, self.velocity_topic, qos
         )
         self._status_publisher = self.create_publisher(String, self.status_topic, qos)
 
@@ -123,15 +181,22 @@ class StretchWBMPCShadow(Node):
         self._latest_state: WBMPCState | None = None
         self._latest_state_receive_time: float | None = None
         self._latest_state_stamp: float | None = None
+        self._latest_state_source_age_at_receive: float | None = None
         self._state_error = "state has not been received"
-        self._acceleration_plan: np.ndarray | None = None
-        self._plan_time: float | None = None
+        self._pending_plan: _ScheduledPlan | None = None
+        self._active_plan: _ScheduledPlan | None = None
+        self._inflight_generation: int | None = None
+        self._inflight_deadline: float | None = None
+        self._deadline_miss_reported_generation: int | None = None
+        self._generation = 0
         self._velocity_command = np.zeros(self.dimension)
+        self._published_acceleration = np.zeros(self.dimension)
         self._last_publish_time = time.monotonic()
         self._control_started = time.monotonic()
         self._solver_count = 0
         self._solver_failure_count = 0
         self._solver_fallback_count = 0
+        self._solver_deadline_miss_count = 0
         self._latest_status = {
             "mode": "shadow",
             "state": "initializing",
@@ -185,6 +250,9 @@ class StretchWBMPCShadow(Node):
             )
             if not math.isfinite(stamp):
                 raise ValueError("state timestamp is not finite")
+            source_age = self.get_clock().now().nanoseconds * 1.0e-9 - stamp
+            if not math.isfinite(source_age):
+                raise ValueError("state source age is not finite")
         except ValueError as error:
             with self._lock:
                 self._latest_state = None
@@ -205,53 +273,127 @@ class StretchWBMPCShadow(Node):
             self._latest_state = state
             self._latest_state_stamp = stamp
             self._latest_state_receive_time = time.monotonic()
+            self._latest_state_source_age_at_receive = max(0.0, source_age)
             self._state_error = ""
 
-    def _state_snapshot(self) -> tuple[WBMPCState | None, float, str]:
+    def _state_snapshot(
+        self,
+    ) -> tuple[
+        WBMPCState | None,
+        float,
+        float,
+        str,
+        float | None,
+        float | None,
+    ]:
         with self._lock:
             state = self._latest_state
             receive_time = self._latest_state_receive_time
+            stamp = self._latest_state_stamp
+            source_age_at_receive = self._latest_state_source_age_at_receive
             error = self._state_error
             if state is not None:
                 state = WBMPCState(state.position.copy(), state.velocity.copy())
-        age = math.inf if receive_time is None else time.monotonic() - receive_time
-        if not error and age > self.state_timeout:
-            error = f"state receive timeout: {age:.3f}s"
-        return state, age, error
+        receive_age = (
+            math.inf if receive_time is None else time.monotonic() - receive_time
+        )
+        source_age = (
+            math.inf
+            if source_age_at_receive is None
+            else source_age_at_receive + receive_age
+        )
+        if not error and receive_age > self.state_timeout:
+            error = f"state receive timeout: {receive_age:.3f}s"
+        return state, receive_age, source_age, error, receive_time, stamp
 
     def _control_worker(self) -> None:
-        period = 1.0 / self.control_rate
+        period = self.control_period
         next_tick = time.monotonic()
         while not self._stop_event.is_set():
             delay = next_tick - time.monotonic()
             if delay > 0.0 and self._stop_event.wait(delay):
                 break
+            cycle_started = time.monotonic()
             next_tick = max(next_tick + period, time.monotonic())
-            state, state_age, state_error = self._state_snapshot()
-            if state is None or state_error:
+            (
+                state,
+                state_receive_age,
+                state_source_age,
+                state_error,
+                state_receive_time,
+                state_stamp,
+            ) = self._state_snapshot()
+            if (
+                state is None
+                or state_error
+                or state_receive_time is None
+                or state_stamp is None
+            ):
                 self._clear_plan("waiting_state", state_error or "state unavailable")
                 continue
 
-            control_time = time.monotonic() - self._control_started
-            robot_states = (state.position, state.velocity)
+            measurement_control_time = cycle_started - self._control_started
             started = time.perf_counter()
             with self._lock:
+                self._generation += 1
+                generation = self._generation
+                deadline = cycle_started + self.solver_deadline
+                current_acceleration = self._published_acceleration.copy()
+                expected_solver_time = self.expected_solver_time
+                self._inflight_generation = generation
+                self._inflight_deadline = deadline
                 self._latest_status = {
                     "mode": "shadow",
                     "state": "solving",
                     "error": None,
-                    "state_age": state_age,
+                    "state_receive_age": state_receive_age,
+                    "state_source_age": state_source_age,
+                    "generation": generation,
+                    "solver_deadline": deadline,
                 }
             try:
+                prediction_time = 0.0
+                prediction = None
+                if self.forward_prediction_enabled:
+                    prediction_time = (
+                        state_source_age + expected_solver_time + self.actuation_latency
+                    )
+                    if prediction_time > self.max_prediction_time:
+                        raise ValueError(
+                            f"forward prediction time {prediction_time:.3f}s exceeds "
+                            f"{self.max_prediction_time:.3f}s"
+                        )
+                    prediction = forward_predict_with_controller_model(
+                        self.controller.robot,
+                        state,
+                        current_acceleration,
+                        prediction_time,
+                        constraint_tolerance=self.prediction_constraint_tolerance,
+                    )
+                    predicted_state = WBMPCState(
+                        prediction.position,
+                        prediction.velocity,
+                    )
+                else:
+                    predicted_state = state
+                robot_states = (
+                    predicted_state.position,
+                    predicted_state.velocity,
+                )
+                predicted_control_time = measurement_control_time + prediction_time
+                planner_started = time.perf_counter()
                 references = self.task_manager.getReferences(
-                    control_time,
+                    predicted_control_time,
                     robot_states,
                     self.controller.N + 1,
                     self.controller.dt,
                 )
+                planner_elapsed = time.perf_counter() - planner_started
+                mpc_started = time.perf_counter()
                 _, acceleration_plan = self.controller.control(
-                    control_time, robot_states, references
+                    predicted_control_time, robot_states, references
                 )
+                mpc_elapsed = time.perf_counter() - mpc_started
                 acceleration_plan = np.asarray(acceleration_plan, dtype=float)
                 if acceleration_plan.shape != (self.controller.N, self.dimension):
                     raise ValueError(
@@ -264,28 +406,81 @@ class StretchWBMPCShadow(Node):
                 solver_log = getattr(self.controller, "log", {})
                 fallback = bool(solver_log.get("solver_fallback", False))
                 elapsed = time.perf_counter() - started
+                finished = time.monotonic()
+                deadline_missed = finished > deadline
                 with self._lock:
                     self._solver_count += 1
                     if fallback:
                         self._solver_fallback_count += 1
-                        self._acceleration_plan = None
-                        self._plan_time = None
+                        self._pending_plan = None
+                        self._active_plan = None
+                        self._velocity_command.fill(0.0)
+                        self._published_acceleration.fill(0.0)
+                    elif deadline_missed:
+                        if self._deadline_miss_reported_generation != generation:
+                            self._solver_deadline_miss_count += 1
+                            self._deadline_miss_reported_generation = generation
+                        self._pending_plan = None
+                        self._active_plan = None
+                        self._velocity_command.fill(0.0)
+                        self._published_acceleration.fill(0.0)
                     else:
-                        self._acceleration_plan = acceleration_plan.copy()
-                        self._plan_time = time.monotonic()
+                        # The predicted state already includes expected compute
+                        # and dispatch delay. Do not deliberately wait for that
+                        # delay again after the solver returns.
+                        plan_origin = finished
+                        self._pending_plan = _ScheduledPlan(
+                            generation=generation,
+                            state_stamp=state_stamp,
+                            origin_time=plan_origin,
+                            predicted_application_time=(
+                                cycle_started
+                                + expected_solver_time
+                                + self.actuation_latency
+                            ),
+                            acceleration=acceleration_plan.copy(),
+                        )
+                        alpha = self.solver_time_adaptation
+                        estimate = (1.0 - alpha) * self.expected_solver_time + (
+                            alpha * elapsed
+                        )
+                        self.expected_solver_time = float(
+                            np.clip(
+                                estimate,
+                                self.min_expected_solver_time,
+                                self.max_expected_solver_time,
+                            )
+                        )
+                    if self._inflight_generation == generation:
+                        self._inflight_generation = None
+                        self._inflight_deadline = None
                     status_record = self._solver_status_record(
-                        elapsed, state_age, fallback, solver_log
+                        elapsed,
+                        state_receive_age,
+                        state_source_age,
+                        fallback,
+                        solver_log,
+                        generation=generation,
+                        planner_time=planner_elapsed,
+                        mpc_time=mpc_elapsed,
+                        prediction_time=prediction_time,
+                        deadline_missed=deadline_missed,
+                        prediction=prediction,
                     )
                     self._latest_status = status_record
                 self._write_solver_record(status_record)
-                self._update_task_manager(control_time, state)
+                self._update_task_manager(measurement_control_time, state)
             except Exception as error:
                 elapsed = time.perf_counter() - started
                 with self._lock:
                     self._solver_failure_count += 1
-                    self._acceleration_plan = None
-                    self._plan_time = None
+                    self._pending_plan = None
+                    self._active_plan = None
                     self._velocity_command.fill(0.0)
+                    self._published_acceleration.fill(0.0)
+                    if self._inflight_generation == generation:
+                        self._inflight_generation = None
+                        self._inflight_deadline = None
                     self._latest_status = {
                         "mode": "shadow",
                         "state": "solver_error",
@@ -294,6 +489,8 @@ class StretchWBMPCShadow(Node):
                         "solver_count": self._solver_count,
                         "solver_failure_count": self._solver_failure_count,
                         "solver_fallback_count": self._solver_fallback_count,
+                        "solver_deadline_miss_count": self._solver_deadline_miss_count,
+                        "generation": generation,
                     }
                     status_record = dict(self._latest_status)
                 self._write_solver_record(status_record)
@@ -303,20 +500,56 @@ class StretchWBMPCShadow(Node):
         task_manager.activatePlanners()
         return task_manager
 
-    def _solver_status_record(self, elapsed, state_age, fallback, solver_log):
+    def _solver_status_record(
+        self,
+        elapsed,
+        state_receive_age,
+        state_source_age,
+        fallback,
+        solver_log,
+        *,
+        generation,
+        planner_time,
+        mpc_time,
+        prediction_time,
+        deadline_missed,
+        prediction,
+    ):
         planner = self.task_manager.getPlanner()
         return {
             "mode": "shadow",
-            "state": "fallback" if fallback else "ready",
-            "error": "solver fallback" if fallback else None,
+            "state": (
+                "fallback"
+                if fallback
+                else "deadline_hold" if deadline_missed else "ready"
+            ),
+            "error": (
+                "solver fallback"
+                if fallback
+                else "solver deadline missed" if deadline_missed else None
+            ),
             "task_index": self.task_manager.curr_task_id,
             "task_name": planner.name,
+            "generation": generation,
             "solver_time": elapsed,
+            "planner_time": planner_time,
+            "mpc_time": mpc_time,
+            "prediction_time": prediction_time,
+            "expected_solver_time": self.expected_solver_time,
+            "prediction_input_clipped": bool(
+                prediction is not None and prediction.input_clipped
+            ),
+            "prediction_state_clipped": bool(
+                prediction is not None and prediction.state_clipped
+            ),
+            "deadline_missed": deadline_missed,
             "solver_status": int(solver_log.get("solver_status", 0)),
             "solver_count": self._solver_count,
             "solver_failure_count": self._solver_failure_count,
             "solver_fallback_count": self._solver_fallback_count,
-            "state_age": state_age,
+            "solver_deadline_miss_count": self._solver_deadline_miss_count,
+            "state_receive_age": state_receive_age,
+            "state_source_age": state_source_age,
             "esdf_all_valid": bool(solver_log.get("esdf_all_valid", False)),
             "esdf_valid_count": int(solver_log.get("esdf_valid_count", 0)),
             "esdf_total_count": int(solver_log.get("esdf_total_count", 0)),
@@ -352,9 +585,10 @@ class StretchWBMPCShadow(Node):
 
     def _clear_plan(self, state_name: str, error: str) -> None:
         with self._lock:
-            self._acceleration_plan = None
-            self._plan_time = None
+            self._pending_plan = None
+            self._active_plan = None
             self._velocity_command.fill(0.0)
+            self._published_acceleration.fill(0.0)
             self._latest_status = {
                 "mode": "shadow",
                 "state": state_name,
@@ -362,29 +596,49 @@ class StretchWBMPCShadow(Node):
                 "solver_count": self._solver_count,
                 "solver_failure_count": self._solver_failure_count,
                 "solver_fallback_count": self._solver_fallback_count,
+                "solver_deadline_miss_count": self._solver_deadline_miss_count,
             }
 
     def _publish_velocity(self) -> None:
         now = time.monotonic()
-        state, state_age, state_error = self._state_snapshot()
+        state, state_receive_age, state_source_age, state_error, _, _ = (
+            self._state_snapshot()
+        )
         with self._lock:
-            plan = (
-                None
-                if self._acceleration_plan is None
-                else self._acceleration_plan.copy()
-            )
-            plan_time = self._plan_time
+            if (
+                self._inflight_generation is not None
+                and self._inflight_deadline is not None
+                and now > self._inflight_deadline
+            ):
+                missed_generation = self._inflight_generation
+                if self._deadline_miss_reported_generation != missed_generation:
+                    self._solver_deadline_miss_count += 1
+                    self._deadline_miss_reported_generation = missed_generation
+                self._pending_plan = None
+                self._active_plan = None
+            if self._pending_plan is not None and now >= self._pending_plan.origin_time:
+                self._active_plan = self._pending_plan
+                self._pending_plan = None
+            plan = self._active_plan
+            pending_plan_exists = self._pending_plan is not None
             previous = self._velocity_command.copy()
-        plan_age = math.inf if plan_time is None else now - plan_time
+            inflight_deadline = self._inflight_deadline
+            generation = self._generation
+        plan_age = math.inf if plan is None else now - plan.origin_time
+        valid_until = None if plan is None else plan.origin_time + self.plan_timeout
+        if valid_until is not None and inflight_deadline is not None:
+            valid_until = min(valid_until, inflight_deadline)
         valid = (
             state is not None
             and not state_error
             and plan is not None
-            and plan_age <= self.plan_timeout
+            and plan_age >= 0.0
+            and valid_until is not None
+            and now <= valid_until
         )
         if valid:
             acceleration = sample_acceleration_plan(
-                plan, plan_age, float(self.controller.dt)
+                plan.acceleration, plan_age, float(self.controller.dt)
             )
             dt = float(np.clip(now - self._last_publish_time, 1.0e-4, 0.25))
             command = integrate_acceleration_velocity(
@@ -397,13 +651,25 @@ class StretchWBMPCShadow(Node):
             )
             command = np.clip(command, self.velocity_lower, self.velocity_upper)
             source = "solver"
+            reason = ""
         else:
             acceleration = np.zeros(self.dimension)
             command = np.zeros(self.dimension)
-            source = "zero"
+            source = "hold"
+            if state is None or state_error:
+                reason = state_error or "state unavailable"
+            elif plan is None and pending_plan_exists:
+                reason = "waiting for predicted plan origin"
+            elif plan is None:
+                reason = "no valid solver plan"
+            elif valid_until is not None and now > valid_until:
+                reason = "solver plan deadline expired"
+            else:
+                reason = "solver plan is not active"
         self._last_publish_time = now
         with self._lock:
             self._velocity_command = command.copy()
+            self._published_acceleration = acceleration.copy()
 
         external_acceleration = (
             expand_stretch_mimic_vector(acceleration) if self.mimic else acceleration
@@ -411,8 +677,17 @@ class StretchWBMPCShadow(Node):
         external_command = (
             expand_stretch_mimic_vector(command) if self.mimic else command
         )
-        message = Float64MultiArray()
-        message.data = external_command.tolist()
+        envelope = WBMPCCommandEnvelope(
+            generation=plan.generation if valid else generation,
+            valid=valid,
+            reason=reason,
+            state_stamp=plan.state_stamp if valid else None,
+            plan_origin_monotonic=plan.origin_time if valid else None,
+            valid_until_monotonic=valid_until if valid else None,
+            velocity=external_command,
+        )
+        message = String()
+        message.data = envelope.to_json()
         self._velocity_publisher.publish(message)
         self._write_record(
             {
@@ -420,8 +695,21 @@ class StretchWBMPCShadow(Node):
                 "monotonic_time": now,
                 "mode": "shadow",
                 "source": source,
-                "state_age": None if not math.isfinite(state_age) else state_age,
+                "generation": envelope.generation,
+                "command_valid": envelope.valid,
+                "hold_reason": reason or None,
+                "state_receive_age": (
+                    None if not math.isfinite(state_receive_age) else state_receive_age
+                ),
+                "state_source_age": (
+                    None if not math.isfinite(state_source_age) else state_source_age
+                ),
                 "plan_age": None if not math.isfinite(plan_age) else plan_age,
+                "plan_origin_monotonic": envelope.plan_origin_monotonic,
+                "predicted_application_monotonic": (
+                    None if plan is None else plan.predicted_application_time
+                ),
+                "valid_until_monotonic": envelope.valid_until_monotonic,
                 "acceleration": external_acceleration.tolist(),
                 "velocity_command": external_command.tolist(),
                 "mimic_velocity_command": command.tolist() if self.mimic else None,

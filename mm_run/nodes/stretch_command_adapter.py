@@ -45,6 +45,7 @@ from stretch_runtime.real_state import (
     StretchJointStateMapper,
 )
 from stretch_runtime.streaming_position import sg3_qpos_from_joint_state
+from stretch_runtime.wbmpc_shadow import WBMPCCommandEnvelope
 from tf2_ros import Buffer, TransformException, TransformListener
 
 
@@ -95,6 +96,9 @@ class StretchCommandAdapter(Node):
         self.enable_zero_velocity_tolerance = float(
             config.get("enable_zero_velocity_tolerance", 1.0e-6)
         )
+        self.watchdog_rate = float(config.get("watchdog_rate", 50.0))
+        if not math.isfinite(self.watchdog_rate) or self.watchdog_rate <= 0.0:
+            raise ValueError("watchdog_rate must be positive and finite")
 
         self.velocity_command_topic = str(
             config.get("velocity_command_topic", "/wbmpc/velocity_command")
@@ -114,6 +118,7 @@ class StretchCommandAdapter(Node):
         self._latest_qpos = None
         self._latest_qpos_receive_time = None
         self._latest_velocity_request = None
+        self._latest_command_envelope: WBMPCCommandEnvelope | None = None
         self._latest_command_receive_time = None
         self._mode = None
         self._homed = None
@@ -127,6 +132,8 @@ class StretchCommandAdapter(Node):
         self._latched = False
         self._stop_reason = ""
         self._streaming_activated_by_us = False
+        self._soft_hold_active = False
+        self._soft_hold_reason = ""
         self._deactivate_future = None
         self._last_combined_pair = None
 
@@ -149,7 +156,7 @@ class StretchCommandAdapter(Node):
             qos,
         )
         self._velocity_subscription = self.create_subscription(
-            Float64MultiArray,
+            String,
             self.velocity_command_topic,
             self._velocity_command_callback,
             qos,
@@ -203,6 +210,9 @@ class StretchCommandAdapter(Node):
             ),
         )
         self._timer = self.create_timer(self.period, self._command_tick)
+        self._watchdog_timer = self.create_timer(
+            1.0 / self.watchdog_rate, self._deadline_watchdog_tick
+        )
 
         configured_log_path = config.get("shadow_log_path", "")
         selected_log_path = log_path if log_path is not None else configured_log_path
@@ -368,18 +378,65 @@ class StretchCommandAdapter(Node):
         if self._enabled:
             self._latch_stop(reason)
 
-    def _velocity_command_callback(self, message: Float64MultiArray) -> None:
-        values = np.asarray(message.data, dtype=float).reshape(-1)
-        if values.size != WB_MPC_VELOCITY_SIZE or not np.all(np.isfinite(values)):
-            reason = (
-                f"velocity request must contain {WB_MPC_VELOCITY_SIZE} finite values"
-            )
+    def _velocity_command_callback(self, message: String) -> None:
+        try:
+            envelope = WBMPCCommandEnvelope.from_json(message.data)
+        except ValueError as error:
+            reason = f"invalid WB-MPC command envelope: {error}"
             self._warn_throttled(reason)
             if self._enabled:
                 self._latch_stop(reason)
             return
+        values = envelope.velocity
+        if values.size != WB_MPC_VELOCITY_SIZE:
+            reason = f"velocity request must contain {WB_MPC_VELOCITY_SIZE} values"
+            self._warn_throttled(reason)
+            if self._enabled:
+                self._latch_stop(reason)
+            return
+        self._latest_command_envelope = envelope
         self._latest_velocity_request = values.copy()
         self._latest_command_receive_time = time.monotonic()
+
+    def _command_validity_error(self, now: float) -> str:
+        envelope = self._latest_command_envelope
+        if envelope is None:
+            return "WB-MPC command envelope has not been received"
+        if not envelope.valid:
+            return envelope.reason or "WB-MPC requested hold"
+        if now < float(envelope.plan_origin_monotonic):
+            return "WB-MPC plan has not reached its predicted origin"
+        if now > float(envelope.valid_until_monotonic):
+            return (
+                "WB-MPC plan expired by "
+                f"{now - float(envelope.valid_until_monotonic):.3f}s"
+            )
+        return ""
+
+    def _enter_soft_hold(self, reason: str, *, include_joint: bool) -> None:
+        reason = str(reason)
+        entering = not self._soft_hold_active
+        self._soft_hold_active = True
+        self._soft_hold_reason = reason
+        if self._latest_qpos is not None:
+            try:
+                self.core.reset(self._latest_qpos)
+            except CommandSafetyError as error:
+                self._latch_stop(f"soft hold reset failed: {error}")
+                return
+        # The watchdog publishes base zero immediately. Joint hold is emitted
+        # once on entry and then at the normal 10 Hz command tick.
+        self._publish_stop_once(include_joint=include_joint and entering)
+        if entering:
+            self.get_logger().warning(f"WB-MPC SOFT HOLD: {reason}")
+
+    def _deadline_watchdog_tick(self) -> None:
+        if not self._enabled or self._latched:
+            return
+        now = time.monotonic()
+        error = self._command_validity_error(now)
+        if error:
+            self._enter_soft_hold(error, include_joint=True)
 
     def _record_status(self, name: str, value) -> None:
         setattr(self, f"_{name}", value)
@@ -470,6 +527,25 @@ class StretchCommandAdapter(Node):
             if errors:
                 self._latch_stop("; ".join(errors))
                 return
+            command_error = self._command_validity_error(now)
+            if command_error:
+                was_holding = self._soft_hold_active
+                self._enter_soft_hold(command_error, include_joint=True)
+                # Repeat measured qpos hold only at the normal Stretch command
+                # rate; the faster watchdog handles immediate base zero.
+                if was_holding:
+                    self._publish_stop_once(include_joint=True)
+                self._publish_status(None, error=command_error)
+                return
+            if self._soft_hold_active:
+                try:
+                    self.core.reset(self._latest_qpos)
+                except CommandSafetyError as error:
+                    self._latch_stop(f"soft hold recovery failed: {error}")
+                    return
+                self._soft_hold_active = False
+                self._soft_hold_reason = ""
+                self.get_logger().warning("WB-MPC soft hold released by fresh plan")
             step_dt = dt
             enforce_tracking = True
         else:
@@ -663,10 +739,26 @@ class StretchCommandAdapter(Node):
     def _publish_status(
         self, command: SafeCommand | None, *, error: str | None = None
     ) -> None:
-        state = "latched" if self._latched else "wbmpc" if self._enabled else "shadow"
+        state = (
+            "latched"
+            if self._latched
+            else (
+                "hold"
+                if self._enabled and self._soft_hold_active
+                else "wbmpc" if self._enabled else "shadow"
+            )
+        )
+        envelope = self._latest_command_envelope
         record = {
             "state": state,
             "stop_reason": self._stop_reason,
+            "soft_hold": self._soft_hold_active,
+            "soft_hold_reason": self._soft_hold_reason or None,
+            "command_generation": (None if envelope is None else envelope.generation),
+            "command_valid": None if envelope is None else envelope.valid,
+            "command_valid_until_monotonic": (
+                None if envelope is None else envelope.valid_until_monotonic
+            ),
             "error": error if error is not None else self._last_state_error or None,
             "state_ready": self._latest_full_state is not None,
             "qpos_ready": self._latest_qpos is not None,
@@ -695,9 +787,12 @@ class StretchCommandAdapter(Node):
     def _write_command_record(self, command: SafeCommand) -> None:
         if self._command_log_file is None:
             return
+        envelope = self._latest_command_envelope
         record = {
             "monotonic_time": time.monotonic(),
             "wbmpc_enabled": self._enabled,
+            "soft_hold": self._soft_hold_active,
+            "command_generation": (None if envelope is None else envelope.generation),
             "base_linear_x": command.base_linear_x,
             "base_angular_z": command.base_angular_z,
             "lateral_velocity": command.lateral_velocity,
