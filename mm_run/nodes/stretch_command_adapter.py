@@ -31,6 +31,7 @@ from stretch_runtime.real_base_state import (
     yaw_from_quaternion_xyzw,
 )
 from stretch_runtime.real_command import (
+    DRIVER_CHANNEL_NAMES,
     WB_MPC_VELOCITY_SIZE,
     CommandCoreConfig,
     CommandSafetyError,
@@ -44,7 +45,7 @@ from stretch_runtime.real_state import (
     StateValidationError,
     StretchJointStateMapper,
 )
-from stretch_runtime.streaming_position import sg3_qpos_from_joint_state
+from stretch_runtime.streaming_position import SG3_QPOS_NAMES, sg3_qpos_from_joint_state
 from stretch_runtime.wbmpc_shadow import WBMPCCommandEnvelope
 from tf2_ros import Buffer, TransformException, TransformListener
 
@@ -112,6 +113,16 @@ class StretchCommandAdapter(Node):
         )
 
         self._latest_base_state = None
+        # Preserve the two localization inputs separately for post-run diagnosis.
+        # These values are logging-only; control continues to use the validated,
+        # propagated state produced below.
+        self._latest_odom_pose_raw = None
+        self._latest_odom_twist_body_raw = None
+        self._latest_odom_stamp_raw = None
+        self._latest_map_base_tf_pose_raw = None
+        self._latest_map_base_tf_stamp_raw = None
+        self._latest_map_base_tf_parent_raw = None
+        self._latest_map_base_tf_child_raw = None
         self._latest_joint_state = None
         self._latest_full_state = None
         self._latest_full_receive_time = None
@@ -249,12 +260,25 @@ class StretchCommandAdapter(Node):
                         "expected 1"
                     ]
                 )
+            odom_yaw = yaw_from_quaternion_xyzw(quaternion)
+            self._latest_odom_pose_raw = np.asarray(
+                [pose.position.x, pose.position.y, odom_yaw], dtype=float
+            )
+            self._latest_odom_twist_body_raw = np.asarray(
+                [
+                    message.twist.twist.linear.x,
+                    message.twist.twist.linear.y,
+                    message.twist.twist.angular.z,
+                ],
+                dtype=float,
+            )
+            self._latest_odom_stamp_raw = stamp
             self.propagator.add_odom_pose(
                 stamp,
                 [
                     pose.position.x,
                     pose.position.y,
-                    yaw_from_quaternion_xyzw(quaternion),
+                    odom_yaw,
                 ],
             )
             try:
@@ -267,15 +291,25 @@ class StretchCommandAdapter(Node):
                 transform = None
             if transform is not None:
                 rotation = transform.transform.rotation
-                self.propagator.update_anchor(
-                    map_pose=[
+                tf_pose = np.asarray(
+                    [
                         transform.transform.translation.x,
                         transform.transform.translation.y,
                         yaw_from_quaternion_xyzw(
                             [rotation.x, rotation.y, rotation.z, rotation.w]
                         ),
                     ],
-                    anchor_stamp=_stamp_seconds(transform.header.stamp),
+                    dtype=float,
+                )
+                self._latest_map_base_tf_pose_raw = tf_pose
+                self._latest_map_base_tf_stamp_raw = _stamp_seconds(
+                    transform.header.stamp
+                )
+                self._latest_map_base_tf_parent_raw = transform.header.frame_id
+                self._latest_map_base_tf_child_raw = transform.child_frame_id
+                self.propagator.update_anchor(
+                    map_pose=tf_pose,
+                    anchor_stamp=self._latest_map_base_tf_stamp_raw,
                     parent_frame=transform.header.frame_id,
                     child_frame=transform.child_frame_id,
                 )
@@ -312,6 +346,7 @@ class StretchCommandAdapter(Node):
             self._handle_state_error("base", error)
             return
         self._latest_base_state = mapped
+        self._write_localization_record(mapped)
         self._try_combine_state()
 
     def _joint_state_callback(self, message: JointState) -> None:
@@ -789,10 +824,23 @@ class StretchCommandAdapter(Node):
             return
         envelope = self._latest_command_envelope
         record = {
+            "record_type": "command",
             "monotonic_time": time.monotonic(),
             "wbmpc_enabled": self._enabled,
             "soft_hold": self._soft_hold_active,
             "command_generation": (None if envelope is None else envelope.generation),
+            "base_pose_map": self._latest_full_state.position[:3].tolist(),
+            "base_velocity_map": self._latest_full_state.velocity[:3].tolist(),
+            "model_joint_names": list(self._latest_full_state.names[3:]),
+            "measured_model_joint_position": (
+                self._latest_full_state.position[3:].tolist()
+            ),
+            "measured_model_joint_velocity": (
+                self._latest_full_state.velocity[3:].tolist()
+            ),
+            "streaming_qpos_names": list(SG3_QPOS_NAMES),
+            "measured_streaming_qpos": self._latest_qpos.tolist(),
+            "driver_velocity_names": list(DRIVER_CHANNEL_NAMES),
             "base_linear_x": command.base_linear_x,
             "base_angular_z": command.base_angular_z,
             "lateral_velocity": command.lateral_velocity,
@@ -802,6 +850,36 @@ class StretchCommandAdapter(Node):
             "realized_model_velocity": command.realized_model_velocity.tolist(),
             "streaming_qpos": command.streaming_qpos.tolist(),
             "clipped_channels": list(command.clipped_channels),
+        }
+        self._command_log_file.write(json.dumps(record, sort_keys=True) + "\n")
+        self._command_log_file.flush()
+
+    def _write_localization_record(self, mapped) -> None:
+        """Log every valid odometry update, including while commands are held."""
+
+        if self._command_log_file is None:
+            return
+        record = {
+            "record_type": "localization",
+            "monotonic_time": time.monotonic(),
+            "base_pose_map": mapped.position[:3].tolist(),
+            "base_velocity_map": mapped.velocity_world[:3].tolist(),
+            "odom_pose_raw": self._latest_odom_pose_raw.tolist(),
+            "odom_twist_body_raw": self._latest_odom_twist_body_raw.tolist(),
+            "odom_stamp": self._latest_odom_stamp_raw,
+            "map_base_tf_pose_raw": (
+                None
+                if self._latest_map_base_tf_pose_raw is None
+                else self._latest_map_base_tf_pose_raw.tolist()
+            ),
+            "map_base_tf_stamp": self._latest_map_base_tf_stamp_raw,
+            "map_base_tf_parent": self._latest_map_base_tf_parent_raw,
+            "map_base_tf_child": self._latest_map_base_tf_child_raw,
+            "map_base_tf_odom_skew": (
+                None
+                if self._latest_map_base_tf_stamp_raw is None
+                else self._latest_map_base_tf_stamp_raw - self._latest_odom_stamp_raw
+            ),
         }
         self._command_log_file.write(json.dumps(record, sort_keys=True) + "\n")
         self._command_log_file.flush()

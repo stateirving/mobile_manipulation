@@ -55,6 +55,8 @@ setup(
             "planner_test_ros=nodes.planner_test_ros:main",
             "stretch_command_adapter=nodes.stretch_command_adapter:main",
             "stretch_wbmpc_shadow=nodes.stretch_wbmpc_shadow:main",
+            "plot_real_base_path=scripts.plot_real_base_path:main",
+            "plot_real_command_state=scripts.plot_real_command_state:main",
         ],
     },
 )

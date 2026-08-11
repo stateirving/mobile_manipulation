@@ -295,49 +295,34 @@ def sample_acceleration_plan(
     return (1.0 - alpha) * values[lower] + alpha * values[upper]
 
 
-def integrate_acceleration_velocity(
-    previous_velocity: Sequence[float],
-    acceleration: Sequence[float],
-    dt: float,
-    position: Sequence[float],
-    measured_velocity: Sequence[float],
-    *,
-    nonholonomic: bool,
+def sample_velocity_plan(
+    plan: Sequence[Sequence[float]], elapsed: float, plan_dt: float
 ) -> np.ndarray:
-    """Integrate acceleration while anchoring nonholonomic base speed to feedback."""
+    """Linearly sample the MPC state-velocity trajectory.
 
-    command = np.asarray(previous_velocity, dtype=float).reshape(-1).copy()
-    acceleration = np.asarray(acceleration, dtype=float).reshape(-1)
-    position = np.asarray(position, dtype=float).reshape(-1)
-    measured = np.asarray(measured_velocity, dtype=float).reshape(-1)
-    dt = float(dt)
-    if command.size != acceleration.size or command.size != measured.size:
-        raise ValueError("velocity, acceleration and feedback dimensions must match")
-    if position.size != command.size:
-        raise ValueError("position and velocity dimensions must match")
-    if (
-        not math.isfinite(dt)
-        or dt <= 0.0
-        or not np.all(np.isfinite(command))
-        or not np.all(np.isfinite(acceleration))
-        or not np.all(np.isfinite(position))
-        or not np.all(np.isfinite(measured))
-    ):
-        raise ValueError("velocity integration inputs must be finite and dt positive")
-    command += acceleration * dt
-    if not nonholonomic:
-        return command
+    Velocity targets are held at the terminal node. Plan validity is enforced
+    independently by the real runner, so terminal hold avoids an artificial
+    zero discontinuity if the configured validity window reaches the horizon.
+    """
 
-    yaw = float(position[2])
-    cosine = math.cos(yaw)
-    sine = math.sin(yaw)
-    measured_forward = cosine * measured[0] + sine * measured[1]
-    forward_acceleration = cosine * acceleration[0] + sine * acceleration[1]
-    forward = measured_forward + forward_acceleration * dt
-    command[0] = cosine * forward
-    command[1] = sine * forward
-    command[2] = measured[2] + acceleration[2] * dt
-    return command
+    values = np.asarray(plan, dtype=float)
+    if values.ndim != 2 or values.shape[0] < 1:
+        raise ValueError("velocity plan must be a non-empty matrix")
+    if not np.all(np.isfinite(values)):
+        raise ValueError("velocity plan contains NaN or Inf")
+    elapsed = float(elapsed)
+    plan_dt = float(plan_dt)
+    if not math.isfinite(elapsed) or not math.isfinite(plan_dt) or plan_dt <= 0.0:
+        raise ValueError("plan sampling time must be finite and plan_dt positive")
+    if elapsed <= 0.0:
+        return values[0].copy()
+    scaled = elapsed / plan_dt
+    lower = int(math.floor(scaled))
+    if lower >= values.shape[0] - 1:
+        return values[-1].copy()
+    upper = lower + 1
+    alpha = scaled - lower
+    return (1.0 - alpha) * values[lower] + alpha * values[upper]
 
 
 def controller_velocity_limits(

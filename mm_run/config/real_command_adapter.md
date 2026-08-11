@@ -21,9 +21,11 @@ order:
  wrist_yaw_velocity, wrist_pitch_velocity, wrist_roll_velocity]
 ```
 
-This input is a velocity, not the WB-MPC `u_bar` acceleration. A real runner
-using `cmd_vel_type: integration` must first integrate the acceleration into the
-same velocity contract used by the simulation runner.
+This input is a velocity, not the WB-MPC `u_bar` acceleration. The real runner
+uses `cmd_vel_type: interpolation` and samples the optimized `v_bar` velocity
+trajectory one MPC step ahead. The adapter is the only real-deploy layer that
+slews the current safe velocity toward that target using the configured
+hardware acceleration limits.
 
 The envelope also carries `generation`, `valid`, `reason`, `state_stamp`,
 `plan_origin_monotonic`, and `valid_until_monotonic`. The adapter's independent
@@ -66,9 +68,10 @@ ros2 launch mm_run stretch_wbmpc_shadow.launch.py \
 The WB-MPC source predicts feedback forward by the source-state age, adaptive
 expected controller time, and configured dispatch latency. Prediction calls the
 controller robot's own discrete dynamics and the exact state/input bound arrays
-used by acados; it does not add a second full-ESDF scan. A result later than
-`solver_deadline` is discarded, while the adapter holds from the envelope's
-deadline even if OMPL/acados is still blocked.
+used by acados; it does not add a second full-ESDF scan. At `solver_deadline`
+the adapter holds even if OMPL/acados is still blocked. With
+`accept_late_results: true`, a completed non-fallback result is rebased to its
+completion time, starts a new validity window, and releases that hold.
 
 ## Explicit hardware enable
 

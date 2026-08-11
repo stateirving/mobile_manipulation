@@ -40,14 +40,14 @@ include:
 #       replan:
 #         force_periodic: false
 
-planner:
-  tasks:
-    - defaults: base
-      name: "Real Test"
-      base_pose: [1.0, 0.0, 0.0]
-    - defaults: ee
-      name: "EE Approach"
-      ee_pose: [1.0, 0.0, 0.9, 0.0, 0.0, -0.0708]
+# planner:
+#   tasks:
+#     - defaults: base
+#       name: "Real Test"
+#       base_pose: [1.0, 0.0, 0.0]
+#     - defaults: ee
+#       name: "EE Approach"
+#       ee_pose: [1.0, 0.0, 0.9, 0.0, 0.0, -0.0708]
 
 controller:
   esdf_collision:

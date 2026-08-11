@@ -28,7 +28,7 @@ flowchart TB
     OMPL["OMPL<br/>参考轨迹规划"]
     ESDF[("模拟房间 ESDF<br/>2 cm 虚拟碰撞场")]
     PRED["延迟补偿<br/>复用 MPC dynamics + x/u bounds"]
-    MPC["acados WB-MPC<br/>120 ms wall deadline"]
+    MPC["acados WB-MPC<br/>直接采样 v_bar 速度轨迹<br/>120 ms wall deadline"]
     CMD["/wbmpc/velocity_command<br/>带代次与有效期的 11 维速度 envelope"]
 
     TF --> STATE
@@ -81,8 +81,9 @@ ESDF 分支只在数学上约束规划和 MPC，并不观测真实房间。adapt
 每个 7 Hz 控制周期按“状态源年龄 + 自适应预计计算时间 + adapter 派发延迟”前向
 预测。预测直接调用 controller robot 的 `fmdlk` 和 acados 所用的
 `lb_x/ub_x/lb_u/ub_u`，不会额外扫描整张 ESDF。求解完成后立即发布，不再等待预测
-时长。超过 `solver_deadline: 0.12 s` 的结果被丢弃；adapter 根据上一条 envelope
-的绝对有效期自行进入软 hold，因此不依赖被阻塞的求解线程恢复。
+时长。超过 `solver_deadline: 0.12 s` 时，adapter 根据上一条 envelope 的绝对
+有效期自行进入软 hold；求解器继续运行，完成后的非 fallback 解会以完成时刻作为
+新的 plan origin 下发并解除 hold。
 
 ## 1. 构建
 
@@ -120,7 +121,7 @@ streaming_position=false
 /joint_pose_cmd publisher count=0
 ```
 
-把机器人放到空地后，等待新的 SAI keyframe，再检查位姿。模拟测试房间中心为空，
+把机器人放到空地后，等待 SAI 的 `map -> base_link` TF 稳定，再检查位姿。模拟测试房间中心为空，
 起点应留在 ESDF 边界 `x/y=[-4.2, 4.2]` 内并保持足够余量：
 
 ```bash
@@ -164,6 +165,19 @@ runner 先启动，只发布 WB-MPC 内部命令 topic。8 秒后，adapter 完�
 设备状态、streaming 和命令唯一所有者预检，随后才创建硬件 publisher。任何时候都
 可按 `Ctrl-C` 停止；ROS 关闭前 adapter 会发送 5 次零命令/位置保持，并停用
 streaming-position。
+
+结束后生成命令、关节以及原始 `/odom`、原始 `map -> base_link` TF、adapter 融合状态
+的对比图：
+
+```bash
+cd /home/miao/repo/mobile_manipulation
+pixi run python mm_run/scripts/plot_real_command_state.py \
+  --wbmpc-log /tmp/stretch_sim_esdf_wbmpc_execute.jsonl \
+  --adapter-log /tmp/stretch_sim_esdf_adapter_execute.jsonl \
+  --output-dir results/diagnostics/command_state
+```
+
+定位对比图为 `results/diagnostics/command_state/base_localization_state.png`。
 
 运行中若 `/stretch_command_adapter/status` 显示 `state: hold`，先看
 `soft_hold_reason`：solver overrun/fallback/plan expired 是可自动恢复的软 hold；

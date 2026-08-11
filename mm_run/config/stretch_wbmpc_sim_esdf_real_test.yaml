@@ -9,13 +9,17 @@ stretch_wbmpc_shadow:
   control_rate: 7.0
   publish_rate: 20.0
   state_timeout: 0.50
-  # A result arriving after this wall-clock budget is discarded. The adapter
-  # receives an invalid command envelope and performs base-zero/arm-hold.
+  # The adapter holds after this wall-clock budget while the solver continues.
   solver_deadline: 0.12
+  # A completed non-fallback result starts a new validity window and is sent
+  # even if the 120 ms hold deadline was exceeded.
+  accept_late_results: true
   plan_timeout: 0.20
   forward_prediction:
-    enabled: true
-    # Updated online only by successful, on-deadline controller cycles.
+    # Disabled for real-deploy A/B diagnosis: the predictor integrates the MPC
+    # acceleration request, while the adapter/driver may clip or hold it.
+    enabled: false
+    # Updated by successful non-fallback cycles and capped at the hold deadline.
     expected_solver_time: 0.06
     adaptation_alpha: 0.10
     min_solver_time: 0.02

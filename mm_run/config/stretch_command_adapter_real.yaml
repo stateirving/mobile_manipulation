@@ -46,8 +46,8 @@ stretch_command_adapter:
       odom_history_duration: 2.0
       max_anchor_odom_skew: 0.25
       max_anchor_translation_jump: 1.0
-      max_anchor_yaw_jump: 0.30
-      max_anchor_propagation_translation: 0.20
+      max_anchor_yaw_jump: 0.50
+      max_anchor_propagation_translation: 0.30
       max_anchor_propagation_yaw: 0.35
 
     joint:
@@ -110,14 +110,14 @@ stretch_command_adapter:
           base_forward: {velocity: 1.0}
           base_yaw: {velocity: 1.0}
           joint_lift: {position: [0.0, 1.1], velocity: 1.0}
-          wrist_extension: {position: [0.0, 0.52], velocity: 1.0}
+          wrist_extension: {position: [-0.001, 0.52], velocity: 1.0}
           joint_wrist_yaw: {position: [-1.75, 4.0], velocity: 1.0}
           joint_wrist_pitch: {position: [-1.57, 0.56], velocity: 1.0}
           joint_wrist_roll: {position: [-3.14, 3.14], velocity: 1.0}
 
         adapter_shaping:
-          base_forward: {acceleration: 1.0}
-          base_yaw: {acceleration: 0.75}
+          base_forward: {acceleration: 0.2}
+          base_yaw: {acceleration: 0.2}
           joint_lift: {acceleration: 0.3}
           wrist_extension: {acceleration: 0.8}
           joint_wrist_yaw: {acceleration: 1.5}

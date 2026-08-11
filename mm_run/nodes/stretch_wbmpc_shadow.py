@@ -33,8 +33,8 @@ from stretch_runtime.wbmpc_shadow import (
     WBMPCState,
     controller_velocity_limits,
     forward_predict_with_controller_model,
-    integrate_acceleration_velocity,
     sample_acceleration_plan,
+    sample_velocity_plan,
     validate_wbmpc_state,
 )
 
@@ -49,6 +49,7 @@ class _ScheduledPlan:
     state_stamp: float
     origin_time: float
     predicted_application_time: float
+    velocity: np.ndarray
     acceleration: np.ndarray
 
 
@@ -88,6 +89,7 @@ class StretchWBMPCShadow(Node):
             else math.nan
         )
         self.solver_deadline = float(config.get("solver_deadline", default_deadline))
+        self.accept_late_results = bool(config.get("accept_late_results", False))
         prediction_config = dict(config.get("forward_prediction", {}))
         self.forward_prediction_enabled = bool(prediction_config.get("enabled", True))
         self.expected_solver_time = float(
@@ -150,14 +152,10 @@ class StretchWBMPCShadow(Node):
         self.velocity_lower, self.velocity_upper = controller_velocity_limits(
             self.controller_config, self.dimension
         )
-        robot_config = self.controller_config["robot"]
-        self.nonholonomic = (
-            str(robot_config.get("base_type", "")).lower() == "nonholonomic"
-            and str(robot_config.get("nonholonomic_mode", "")).lower() == "dynamics"
-        )
-        if str(self.controller_config["cmd_vel_type"]).lower() != "integration":
+        if str(self.controller_config["cmd_vel_type"]).lower() != "interpolation":
             raise ValueError(
-                "real Stretch runner currently requires cmd_vel_type=integration"
+                "real Stretch runner requires cmd_vel_type=interpolation so the "
+                "adapter receives the MPC velocity trajectory directly"
             )
 
         qos = QoSProfile(depth=1)
@@ -191,12 +189,12 @@ class StretchWBMPCShadow(Node):
         self._generation = 0
         self._velocity_command = np.zeros(self.dimension)
         self._published_acceleration = np.zeros(self.dimension)
-        self._last_publish_time = time.monotonic()
         self._control_started = time.monotonic()
         self._solver_count = 0
         self._solver_failure_count = 0
         self._solver_fallback_count = 0
         self._solver_deadline_miss_count = 0
+        self._late_result_accept_count = 0
         self._latest_status = {
             "mode": "shadow",
             "state": "initializing",
@@ -390,17 +388,29 @@ class StretchWBMPCShadow(Node):
                 )
                 planner_elapsed = time.perf_counter() - planner_started
                 mpc_started = time.perf_counter()
-                _, acceleration_plan = self.controller.control(
+                velocity_plan, acceleration_plan = self.controller.control(
                     predicted_control_time, robot_states, references
                 )
                 mpc_elapsed = time.perf_counter() - mpc_started
+                velocity_plan = np.asarray(velocity_plan, dtype=float)
                 acceleration_plan = np.asarray(acceleration_plan, dtype=float)
+                if velocity_plan.shape != (
+                    self.controller.N + 1,
+                    self.dimension,
+                ):
+                    raise ValueError(
+                        "solver velocity plan shape is "
+                        f"{velocity_plan.shape}, expected "
+                        f"({self.controller.N + 1}, {self.dimension})"
+                    )
                 if acceleration_plan.shape != (self.controller.N, self.dimension):
                     raise ValueError(
                         "solver acceleration plan shape is "
                         f"{acceleration_plan.shape}, expected "
                         f"({self.controller.N}, {self.dimension})"
                     )
+                if not np.all(np.isfinite(velocity_plan)):
+                    raise ValueError("solver velocity plan contains NaN or Inf")
                 if not np.all(np.isfinite(acceleration_plan)):
                     raise ValueError("solver acceleration plan contains NaN or Inf")
                 solver_log = getattr(self.controller, "log", {})
@@ -416,7 +426,7 @@ class StretchWBMPCShadow(Node):
                         self._active_plan = None
                         self._velocity_command.fill(0.0)
                         self._published_acceleration.fill(0.0)
-                    elif deadline_missed:
+                    elif deadline_missed and not self.accept_late_results:
                         if self._deadline_miss_reported_generation != generation:
                             self._solver_deadline_miss_count += 1
                             self._deadline_miss_reported_generation = generation
@@ -425,9 +435,16 @@ class StretchWBMPCShadow(Node):
                         self._velocity_command.fill(0.0)
                         self._published_acceleration.fill(0.0)
                     else:
+                        if deadline_missed:
+                            if self._deadline_miss_reported_generation != generation:
+                                self._solver_deadline_miss_count += 1
+                                self._deadline_miss_reported_generation = generation
+                            self._late_result_accept_count += 1
                         # The predicted state already includes expected compute
                         # and dispatch delay. Do not deliberately wait for that
-                        # delay again after the solver returns.
+                        # delay again after the solver returns. A late result is
+                        # deliberately rebased here: the publisher has held zero
+                        # since the deadline and starts a fresh validity window.
                         plan_origin = finished
                         self._pending_plan = _ScheduledPlan(
                             generation=generation,
@@ -438,6 +455,7 @@ class StretchWBMPCShadow(Node):
                                 + expected_solver_time
                                 + self.actuation_latency
                             ),
+                            velocity=velocity_plan.copy(),
                             acceleration=acceleration_plan.copy(),
                         )
                         alpha = self.solver_time_adaptation
@@ -465,7 +483,15 @@ class StretchWBMPCShadow(Node):
                         mpc_time=mpc_elapsed,
                         prediction_time=prediction_time,
                         deadline_missed=deadline_missed,
+                        late_result_accepted=(
+                            deadline_missed
+                            and self.accept_late_results
+                            and not fallback
+                        ),
                         prediction=prediction,
+                        measured_state=state,
+                        predicted_state=predicted_state,
+                        references=references,
                     )
                     self._latest_status = status_record
                 self._write_solver_record(status_record)
@@ -490,6 +516,7 @@ class StretchWBMPCShadow(Node):
                         "solver_failure_count": self._solver_failure_count,
                         "solver_fallback_count": self._solver_fallback_count,
                         "solver_deadline_miss_count": self._solver_deadline_miss_count,
+                        "late_result_accept_count": self._late_result_accept_count,
                         "generation": generation,
                     }
                     status_record = dict(self._latest_status)
@@ -513,20 +540,32 @@ class StretchWBMPCShadow(Node):
         mpc_time,
         prediction_time,
         deadline_missed,
+        late_result_accepted,
         prediction,
+        measured_state,
+        predicted_state,
+        references,
     ):
         planner = self.task_manager.getPlanner()
-        return {
+        record = {
             "mode": "shadow",
             "state": (
                 "fallback"
                 if fallback
-                else "deadline_hold" if deadline_missed else "ready"
+                else (
+                    "late_ready"
+                    if late_result_accepted
+                    else "deadline_hold" if deadline_missed else "ready"
+                )
             ),
             "error": (
                 "solver fallback"
                 if fallback
-                else "solver deadline missed" if deadline_missed else None
+                else (
+                    "solver deadline missed"
+                    if deadline_missed and not late_result_accepted
+                    else None
+                )
             ),
             "task_index": self.task_manager.curr_task_id,
             "task_name": planner.name,
@@ -543,11 +582,13 @@ class StretchWBMPCShadow(Node):
                 prediction is not None and prediction.state_clipped
             ),
             "deadline_missed": deadline_missed,
+            "late_result_accepted": late_result_accepted,
             "solver_status": int(solver_log.get("solver_status", 0)),
             "solver_count": self._solver_count,
             "solver_failure_count": self._solver_failure_count,
             "solver_fallback_count": self._solver_fallback_count,
             "solver_deadline_miss_count": self._solver_deadline_miss_count,
+            "late_result_accept_count": self._late_result_accept_count,
             "state_receive_age": state_receive_age,
             "state_source_age": state_source_age,
             "esdf_all_valid": bool(solver_log.get("esdf_all_valid", False)),
@@ -556,7 +597,28 @@ class StretchWBMPCShadow(Node):
             "esdf_min_distance": _finite_or_none(solver_log.get("esdf_min_distance")),
             "esdf_min_margin": _finite_or_none(solver_log.get("esdf_min_margin")),
             "esdf_invalid_queries": list(solver_log.get("esdf_invalid_queries", [])),
+            "base_pose_map": measured_state.position[:3].tolist(),
+            "base_velocity_map": measured_state.velocity[:3].tolist(),
+            "predicted_base_pose_map": predicted_state.position[:3].tolist(),
+            "predicted_base_velocity_map": predicted_state.velocity[:3].tolist(),
+            "base_reference_horizon_map": _array_or_none(references.get("base_pose")),
+            "base_target_map": _array_or_none(getattr(planner, "base_target", None)),
         }
+        base_plan = getattr(planner, "base_plan", None)
+        if isinstance(base_plan, dict) and base_plan.get("p") is not None:
+            record.update(
+                {
+                    "ompl_path_waypoints_map": _array_or_none(base_plan["p"]),
+                    "ompl_path_progress": _finite_or_none(
+                        getattr(planner, "path_progress", None)
+                    ),
+                    "ompl_replan_count": int(getattr(planner, "replan_count", 0)),
+                    "ompl_last_replan_reason": getattr(
+                        planner, "last_replan_reason", None
+                    ),
+                }
+            )
+        return record
 
     def _write_solver_record(self, status_record: dict) -> None:
         record = dict(status_record)
@@ -597,6 +659,7 @@ class StretchWBMPCShadow(Node):
                 "solver_failure_count": self._solver_failure_count,
                 "solver_fallback_count": self._solver_fallback_count,
                 "solver_deadline_miss_count": self._solver_deadline_miss_count,
+                "late_result_accept_count": self._late_result_accept_count,
             }
 
     def _publish_velocity(self) -> None:
@@ -621,7 +684,6 @@ class StretchWBMPCShadow(Node):
                 self._pending_plan = None
             plan = self._active_plan
             pending_plan_exists = self._pending_plan is not None
-            previous = self._velocity_command.copy()
             inflight_deadline = self._inflight_deadline
             generation = self._generation
         plan_age = math.inf if plan is None else now - plan.origin_time
@@ -637,22 +699,27 @@ class StretchWBMPCShadow(Node):
             and now <= valid_until
         )
         if valid:
+            # Send the next MPC velocity node as a target. The adapter is the
+            # sole layer that slews the current safe command toward this target,
+            # so the acceleration constraint is not integrated twice.
+            velocity_plan_sample_time = plan_age + float(self.controller.dt)
+            raw_command = sample_velocity_plan(
+                plan.velocity,
+                velocity_plan_sample_time,
+                float(self.controller.dt),
+            )
+            command = np.clip(raw_command, self.velocity_lower, self.velocity_upper)
+            velocity_plan_command_clipped = not np.allclose(
+                command, raw_command, rtol=1.0e-12, atol=1.0e-12
+            )
             acceleration = sample_acceleration_plan(
                 plan.acceleration, plan_age, float(self.controller.dt)
             )
-            dt = float(np.clip(now - self._last_publish_time, 1.0e-4, 0.25))
-            command = integrate_acceleration_velocity(
-                previous,
-                acceleration,
-                dt,
-                state.position,
-                state.velocity,
-                nonholonomic=self.nonholonomic,
-            )
-            command = np.clip(command, self.velocity_lower, self.velocity_upper)
             source = "solver"
             reason = ""
         else:
+            velocity_plan_sample_time = None
+            velocity_plan_command_clipped = False
             acceleration = np.zeros(self.dimension)
             command = np.zeros(self.dimension)
             source = "hold"
@@ -666,7 +733,6 @@ class StretchWBMPCShadow(Node):
                 reason = "solver plan deadline expired"
             else:
                 reason = "solver plan is not active"
-        self._last_publish_time = now
         with self._lock:
             self._velocity_command = command.copy()
             self._published_acceleration = acceleration.copy()
@@ -710,6 +776,8 @@ class StretchWBMPCShadow(Node):
                     None if plan is None else plan.predicted_application_time
                 ),
                 "valid_until_monotonic": envelope.valid_until_monotonic,
+                "velocity_plan_sample_time": velocity_plan_sample_time,
+                "velocity_plan_command_clipped": velocity_plan_command_clipped,
                 "acceleration": external_acceleration.tolist(),
                 "velocity_command": external_command.tolist(),
                 "mimic_velocity_command": command.tolist() if self.mimic else None,
@@ -756,6 +824,15 @@ def _finite_or_none(value):
         return None
     value = float(value)
     return value if math.isfinite(value) else None
+
+
+def _array_or_none(value):
+    if value is None:
+        return None
+    array = np.asarray(value, dtype=float)
+    if not np.all(np.isfinite(array)):
+        return None
+    return array.tolist()
 
 
 def _load_configs(path_text: str) -> tuple[dict, dict]:
