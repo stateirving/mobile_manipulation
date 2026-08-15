@@ -1,0 +1,94 @@
+\relax
+\providecommand\hyper@newdestlabel[2]{}
+\providecommand\HyField@AuxAddToFields[1]{}
+\providecommand\HyField@AuxAddToCoFields[2]{}
+\citation{kemp2022stretch}
+\@writefile{toc}{\contentsline {section}{\numberline {I}Introduction}{1}{section.1}\protected@file@percent }
+\@writefile{lof}{\contentsline {figure}{\numberline {1}{\ignorespaces Planning, control, and deployment pipeline. The ESDF is shared by reference planning and WB-MPC; the adapter is the only component that can own physical command topics.}}{1}{figure.1}\protected@file@percent }
+\newlabel{fig:system-overview}{{1}{1}{Planning, control, and deployment pipeline. The ESDF is shared by reference planning and WB-MPC; the adapter is the only component that can own physical command topics}{figure.1}{}}
+\citation{seraji1998unified}
+\citation{deluca2010kinematic}
+\citation{bhardwaj2022storm}
+\citation{pezzato2025sampling}
+\citation{vasilopoulos2023ramp}
+\citation{minniti2019wholebody}
+\citation{pan2012fcl}
+\citation{oleynikova2017voxblox}
+\citation{millane2023nvblox}
+\citation{gaertner2021collisionfree}
+\citation{chiu2022collisionfree}
+\@writefile{toc}{\contentsline {section}{\numberline {II}Related Work}{2}{section.2}\protected@file@percent }
+\@writefile{toc}{\contentsline {subsection}{\numberline {\mbox  {II-A}}Mobile-Manipulator Planning and Control Paradigms}{2}{subsection.2.1}\protected@file@percent }
+\@writefile{toc}{\contentsline {subsection}{\numberline {\mbox  {II-B}}Whole-Body Model Predictive Control}{2}{subsection.2.2}\protected@file@percent }
+\@writefile{toc}{\contentsline {subsection}{\numberline {\mbox  {II-C}}Distance-Field-Based Collision Avoidance}{2}{subsection.2.3}\protected@file@percent }
+\@writefile{toc}{\contentsline {section}{\numberline {III}Method}{2}{section.3}\protected@file@percent }
+\@writefile{toc}{\contentsline {subsection}{\numberline {\mbox  {III-A}}Model Predictive Control}{2}{subsection.3.1}\protected@file@percent }
+\@writefile{toc}{\contentsline {subsubsection}{\numberline {\mbox  {III-A}1}Robot-Parameterized Dynamics}{2}{subsubsection.3.1.1}\protected@file@percent }
+\newlabel{eq:q}{{1}{3}{Robot-Parameterized Dynamics}{equation.3.1}{}}
+\newlabel{eq:state-dynamics}{{2}{3}{Robot-Parameterized Dynamics}{equation.3.2}{}}
+\newlabel{eq:omni-state-dynamics}{{3}{3}{Robot-Parameterized Dynamics}{equation.3.3}{}}
+\newlabel{eq:no-slip}{{5}{3}{Robot-Parameterized Dynamics}{equation.3.5}{}}
+\newlabel{eq:unicycle}{{9}{3}{Robot-Parameterized Dynamics}{equation.3.9}{}}
+\@writefile{toc}{\contentsline {subsubsection}{\numberline {\mbox  {III-A}2}ESDF Collision Avoidance}{3}{subsubsection.3.1.2}\protected@file@percent }
+\newlabel{eq:esdf-linearization}{{10}{3}{ESDF Collision Avoidance}{equation.3.10}{}}
+\newlabel{eq:linearized-esdf-gradient}{{13}{3}{ESDF Collision Avoidance}{equation.3.13}{}}
+\newlabel{eq:margin}{{14}{3}{ESDF Collision Avoidance}{equation.3.14}{}}
+\newlabel{eq:sdf-cost}{{15}{3}{ESDF Collision Avoidance}{equation.3.15}{}}
+\citation{verschueren2022acados}
+\newlabel{eq:smooth-hinge}{{17}{4}{ESDF Collision Avoidance}{equation.3.17}{}}
+\@writefile{toc}{\contentsline {subsubsection}{\numberline {\mbox  {III-A}3}Whole-Body MPC Formulation}{4}{subsubsection.3.1.3}\protected@file@percent }
+\newlabel{eq:ocp}{{19}{4}{Whole-Body MPC Formulation}{equation.3.19}{}}
+\@writefile{toc}{\contentsline {subsection}{\numberline {\mbox  {III-B}}Task Management and OMPL References}{4}{subsection.3.2}\protected@file@percent }
+\@writefile{lof}{\contentsline {figure}{\numberline {2}{\ignorespaces The shared algorithm is specialized through robot profiles and an explicit platform boundary.}}{4}{figure.2}\protected@file@percent }
+\newlabel{fig:mimic-mapping}{{2}{4}{The shared algorithm is specialized through robot profiles and an explicit platform boundary}{figure.2}{}}
+\@writefile{toc}{\contentsline {subsection}{\numberline {\mbox  {III-C}}Platform-Specific Coordinate and Command Mapping}{4}{subsection.3.3}\protected@file@percent }
+\@writefile{toc}{\contentsline {section}{\numberline {IV}System Implementation}{4}{section.4}\protected@file@percent }
+\@writefile{toc}{\contentsline {subsection}{\numberline {\mbox  {IV-A}}Software Architecture}{4}{subsection.4.1}\protected@file@percent }
+\@writefile{lot}{\contentsline {table}{\numberline {I}{\ignorespaces Reuse Boundary for a New Mobile Manipulator}}{5}{table.1}\protected@file@percent }
+\newlabel{tab:reuse-boundary}{{I}{5}{Reuse Boundary for a New Mobile Manipulator}{table.1}{}}
+\@writefile{toc}{\contentsline {subsection}{\numberline {\mbox  {IV-B}}Configuration and Portability Contract}{5}{subsection.4.2}\protected@file@percent }
+\@writefile{toc}{\contentsline {subsection}{\numberline {\mbox  {IV-C}}Current Real Stretch Pipeline}{5}{subsection.4.3}\protected@file@percent }
+\@writefile{lof}{\contentsline {figure}{\numberline {3}{\ignorespaces Simplified command-adapter state machine. Holds are recoverable; hard validation or ownership faults latch.}}{5}{figure.3}\protected@file@percent }
+\newlabel{fig:safety-states}{{3}{5}{Simplified command-adapter state machine. Holds are recoverable; hard validation or ownership faults latch}{figure.3}{}}
+\@writefile{toc}{\contentsline {subsection}{\numberline {\mbox  {IV-D}}Runtime Safety Boundary}{5}{subsection.4.4}\protected@file@percent }
+\@writefile{toc}{\contentsline {section}{\numberline {V}Experimental Evaluation}{5}{section.5}\protected@file@percent }
+\@writefile{toc}{\contentsline {subsection}{\numberline {\mbox  {V-A}}Setup and Metrics}{5}{subsection.5.1}\protected@file@percent }
+\@writefile{lot}{\contentsline {table}{\numberline {II}{\ignorespaces Evaluated Specializations of the Shared Framework}}{6}{table.2}\protected@file@percent }
+\newlabel{tab:platform-models}{{II}{6}{Evaluated Specializations of the Shared Framework}{table.2}{}}
+\@writefile{lot}{\contentsline {table}{\numberline {III}{\ignorespaces Simulation Results for Two Robot Configurations}}{6}{table.3}\protected@file@percent }
+\newlabel{tab:results}{{III}{6}{Simulation Results for Two Robot Configurations}{table.3}{}}
+\@writefile{toc}{\contentsline {subsection}{\numberline {\mbox  {V-B}}Cross-Platform Tracking}{6}{subsection.5.2}\protected@file@percent }
+\@writefile{lof}{\contentsline {figure}{\numberline {4}{\ignorespaces Measured reference tracking and complete control-call time for the two configurations. Different geometry and tuning preclude a robot ranking.}}{6}{figure.4}\protected@file@percent }
+\newlabel{fig:platform-comparison}{{4}{6}{Measured reference tracking and complete control-call time for the two configurations. Different geometry and tuning preclude a robot ranking}{figure.4}{}}
+\@writefile{toc}{\contentsline {subsection}{\numberline {\mbox  {V-C}}ESDF Clearance}{6}{subsection.5.3}\protected@file@percent }
+\@writefile{toc}{\contentsline {subsection}{\numberline {\mbox  {V-D}}Solver and Runtime Timing}{6}{subsection.5.4}\protected@file@percent }
+\@writefile{lof}{\contentsline {figure}{\numberline {5}{\ignorespaces Detailed tracking for both configurations. The left column shows reference and measured base paths during the base task; the right column shows Euclidean EE reference error during all subsequent task samples.}}{7}{figure.5}\protected@file@percent }
+\newlabel{fig:platform-tracking}{{5}{7}{Detailed tracking for both configurations. The left column shows reference and measured base paths during the base task; the right column shows Euclidean EE reference error during all subsequent task samples}{figure.5}{}}
+\@writefile{lot}{\contentsline {table}{\numberline {IV}{\ignorespaces Runtime and Solver Breakdown}}{7}{table.4}\protected@file@percent }
+\newlabel{tab:runtime-breakdown}{{IV}{7}{Runtime and Solver Breakdown}{table.4}{}}
+\@writefile{toc}{\contentsline {subsection}{\numberline {\mbox  {V-E}}Real-Interface Validation Evidence}{7}{subsection.5.5}\protected@file@percent }
+\@writefile{lot}{\contentsline {table}{\numberline {V}{\ignorespaces Recorded Real-Interface Checks}}{7}{table.5}\protected@file@percent }
+\newlabel{tab:real-interface}{{V}{7}{Recorded Real-Interface Checks}{table.5}{}}
+\@writefile{lof}{\contentsline {figure}{\numberline {6}{\ignorespaces Runtime distributions and minimum executed-state ESDF margins for Stretch (top) and mobile UR10 (bottom). The 120-ms line is a shared timing reference; the zero-margin line denotes each profile's own configured collision boundary.}}{8}{figure.6}\protected@file@percent }
+\newlabel{fig:platform-timing-clearance}{{6}{8}{Runtime distributions and minimum executed-state ESDF margins for Stretch (top) and mobile UR10 (bottom). The 120-ms line is a shared timing reference; the zero-margin line denotes each profile's own configured collision boundary}{figure.6}{}}
+\@writefile{toc}{\contentsline {section}{\numberline {VI}Discussion}{8}{section.6}\protected@file@percent }
+\@writefile{toc}{\contentsline {section}{\numberline {VII}Conclusion}{8}{section.7}\protected@file@percent }
+\bibstyle{IEEEtran}
+\bibdata{references}
+\bibcite{kemp2022stretch}{1}
+\bibcite{seraji1998unified}{2}
+\bibcite{deluca2010kinematic}{3}
+\bibcite{bhardwaj2022storm}{4}
+\bibcite{pezzato2025sampling}{5}
+\bibcite{vasilopoulos2023ramp}{6}
+\bibcite{minniti2019wholebody}{7}
+\bibcite{pan2012fcl}{8}
+\bibcite{oleynikova2017voxblox}{9}
+\@writefile{toc}{\contentsline {section}{Appendix\nobreakspace  A: Reproduction and Data Archive}{9}{section*.1}\protected@file@percent }
+\@writefile{toc}{\contentsline {section}{Appendix\nobreakspace  B: Procedure for Adding Another Robot}{9}{section*.2}\protected@file@percent }
+\@writefile{toc}{\contentsline {section}{References}{9}{section*.3}\protected@file@percent }
+\bibcite{millane2023nvblox}{10}
+\bibcite{gaertner2021collisionfree}{11}
+\bibcite{chiu2022collisionfree}{12}
+\bibcite{verschueren2022acados}{13}
+\gdef \@abspage@last{10}

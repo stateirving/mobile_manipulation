@@ -1,0 +1,174 @@
+{
+  "stretch": {
+    "source": "results/report_experiments/stretch_esdf_offline_ompl_wbmpc/2026-08-14_12-25-30/raw/data.npz",
+    "sha256": "48556b2f89123df82d7f2519bc08eddf60d5e9812194324e6daa9fc0803dc169",
+    "sample_count": 1334,
+    "simulated_duration_s": 40.020000000000756,
+    "simulation_timestep_s": 0.03,
+    "base_reference_samples": 314,
+    "ee_reference_samples": 1020,
+    "base_task_end_s": 9.419999999999991,
+    "tracking": {
+      "base_position_rmse_m": 0.020453100285311922,
+      "base_x_rmse_m": 0.012395006773849358,
+      "base_y_rmse_m": 0.016269392070918168,
+      "base_yaw_rmse_rad": 0.006552444563748004,
+      "base_final_reference_error_m": 0.0497701339726121,
+      "base_final_yaw_reference_error_rad": 0.0020648404949327164,
+      "ee_position_rmse_m": 0.016627279735324945,
+      "ee_x_rmse_m": 0.010423108408476506,
+      "ee_y_rmse_m": 0.009911585526912257,
+      "ee_z_rmse_m": 0.008341805250939235,
+      "ee_final_reference_error_m": 0.007155897221485299,
+      "ee_final_task_target_error_m": 0.36606317619651024,
+      "base_drift_from_completed_target_at_end_m": 0.5369770888254106
+    },
+    "collision": {
+      "all_esdf_queries_valid": true,
+      "invalid_query_count": 0,
+      "minimum_node0_safety_margin_m": 0.003221368725297935,
+      "node0_margin_p05_m": 0.005914851568608412,
+      "minimum_warm_start_horizon_margin_m": -0.02452530976597686,
+      "configured_safety_distance_m": 0.07,
+      "minimum_node0_surface_clearance_m": 0.07322136872529794
+    },
+    "timing": {
+      "controller": {
+        "mean_ms": 81.40789957121439,
+        "median_ms": 53.579489499952615,
+        "p95_ms": 141.00047584998944,
+        "p99_ms": 700.6486322598813,
+        "max_ms": 785.290163000127
+      },
+      "ocp_solve": {
+        "mean_ms": 41.619662991003125,
+        "median_ms": 13.216402500006552,
+        "p95_ms": 100.24446234989452,
+        "p99_ms": 636.2072378899442,
+        "max_ms": 722.286639999993
+      },
+      "parameter_update": {
+        "mean_ms": 30.62536557196278,
+        "median_ms": 30.918446999976368,
+        "p95_ms": 34.213094899928365,
+        "p99_ms": 37.275354939979486,
+        "max_ms": 78.87584299987793
+      },
+      "esdf_linearization": {
+        "mean_ms": 15.899937809593693,
+        "median_ms": 15.812057000061941,
+        "p95_ms": 18.569233649998296,
+        "p99_ms": 21.964935549990518,
+        "max_ms": 37.6814410001316
+      },
+      "logging_overhead": {
+        "mean_ms": 6.726569574962314,
+        "median_ms": 6.782114499856107,
+        "p95_ms": 7.432474300026115,
+        "p99_ms": 7.8642989400441365,
+        "max_ms": 12.712997000107862
+      },
+      "deadline_s": 0.12,
+      "deadline_miss_count": 100,
+      "deadline_miss_fraction": 0.07496251874062969
+    },
+    "solver": {
+      "status_counts": {
+        "0": 1296,
+        "2": 38
+      },
+      "accepted_nonzero_status_count": 38,
+      "fallback_count": 0,
+      "command_clip_count": 0,
+      "sqp_iterations_mean": 32.026986506746624,
+      "sqp_iterations_p95": 77.69999999999982,
+      "sqp_iterations_max": 500
+    }
+  },
+  "ur10": {
+    "source": "results/report_experiments/ur10_esdf_offline_ompl_wbmpc/2026-08-14_12-51-35/raw/data.npz",
+    "sha256": "b67af19edba4d9cf3cd48228e1035f2152dd7ed809613f7e490cc00abe51c23c",
+    "sample_count": 2000,
+    "simulated_duration_s": 60.00000000000151,
+    "simulation_timestep_s": 0.03,
+    "base_reference_samples": 300,
+    "ee_reference_samples": 1700,
+    "base_task_end_s": 9.0,
+    "tracking": {
+      "base_position_rmse_m": 0.014090862800149933,
+      "base_x_rmse_m": 0.013154807294914486,
+      "base_y_rmse_m": 0.005050094997751418,
+      "base_yaw_rmse_rad": 0.0033144833592846775,
+      "base_final_reference_error_m": 0.004865120736734916,
+      "base_final_yaw_reference_error_rad": 0.00041151535938274486,
+      "ee_position_rmse_m": 0.018513738206942024,
+      "ee_x_rmse_m": 0.007929629652763753,
+      "ee_y_rmse_m": 0.003704959816332408,
+      "ee_z_rmse_m": 0.016314188570828666,
+      "ee_final_reference_error_m": 0.016433081938169756,
+      "ee_final_task_target_error_m": 0.020441039958598032,
+      "base_drift_from_completed_target_at_end_m": 0.6002267198976894
+    },
+    "collision": {
+      "all_esdf_queries_valid": true,
+      "invalid_query_count": 0,
+      "minimum_node0_safety_margin_m": 0.0014696386587577381,
+      "node0_margin_p05_m": 0.005086351919958962,
+      "minimum_warm_start_horizon_margin_m": -0.0838837289972867,
+      "configured_safety_distance_m": 0.1,
+      "minimum_node0_surface_clearance_m": 0.10146963865875774
+    },
+    "timing": {
+      "controller": {
+        "mean_ms": 71.42849924350253,
+        "median_ms": 68.56202200015105,
+        "p95_ms": 80.38263609976183,
+        "p99_ms": 120.33999580983159,
+        "max_ms": 799.265609000031
+      },
+      "ocp_solve": {
+        "mean_ms": 8.738916762997405,
+        "median_ms": 5.669427499924495,
+        "p95_ms": 15.980535450125899,
+        "p99_ms": 51.89684578978809,
+        "max_ms": 691.857022000022
+      },
+      "parameter_update": {
+        "mean_ms": 51.279233200002636,
+        "median_ms": 50.937269499854665,
+        "p95_ms": 54.43528299967966,
+        "p99_ms": 57.597790529821395,
+        "max_ms": 68.50715900009163
+      },
+      "esdf_linearization": {
+        "mean_ms": 37.36213243299699,
+        "median_ms": 37.03522649993829,
+        "p95_ms": 40.13855479995527,
+        "p99_ms": 42.726968129900335,
+        "max_ms": 53.21459300012066
+      },
+      "logging_overhead": {
+        "mean_ms": 10.158429059998753,
+        "median_ms": 9.99872200009122,
+        "p95_ms": 10.974094799985323,
+        "p99_ms": 11.334279909774523,
+        "max_ms": 69.53988299983394
+      },
+      "deadline_s": 0.12,
+      "deadline_miss_count": 21,
+      "deadline_miss_fraction": 0.0105
+    },
+    "solver": {
+      "status_counts": {
+        "0": 1998,
+        "2": 2
+      },
+      "accepted_nonzero_status_count": 1,
+      "fallback_count": 1,
+      "command_clip_count": 0,
+      "sqp_iterations_mean": 5.148,
+      "sqp_iterations_p95": 10.0,
+      "sqp_iterations_max": 500
+    }
+  }
+}

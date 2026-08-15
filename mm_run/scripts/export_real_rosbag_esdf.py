@@ -81,10 +81,22 @@ class OfflineTFGraph:
         self.static = dict(static_records)
         self.dynamic = {}
         self.dynamic_stamps = {}
+        self.duplicate_records_discarded = {}
         self.max_age_ns = int(float(max_age_s) * 1.0e9)
 
         for pair, records in dynamic_records.items():
-            ordered = sorted(records, key=lambda record: record[0])
+            # SLAM can republish a corrected transform with the same header
+            # timestamp.  The bag preserves all revisions in receive order, so
+            # retain the last (newest) revision before interpolating.  Keeping
+            # duplicate stamps would make bisect join an old estimate to a new
+            # one and create large, physically impossible pose jumps.
+            latest_by_stamp = {}
+            for record in records:
+                latest_by_stamp[record[0]] = record
+            discarded = len(records) - len(latest_by_stamp)
+            if discarded:
+                self.duplicate_records_discarded[pair] = discarded
+            ordered = sorted(latest_by_stamp.values(), key=lambda record: record[0])
             self.dynamic[pair] = ordered
             self.dynamic_stamps[pair] = [record[0] for record in ordered]
 
@@ -164,16 +176,12 @@ def _read_bag(bag_path):
         rosbag2_py.StorageOptions(uri=str(bag_path), storage_id="sqlite3"),
         rosbag2_py.ConverterOptions("", ""),
     )
-    topic_types = {
-        item.name: item.type for item in reader.get_all_topics_and_types()
-    }
+    topic_types = {item.name: item.type for item in reader.get_all_topics_and_types()}
     required = {DEPTH_TOPIC, CAMERA_INFO_TOPIC, TF_TOPIC, TF_STATIC_TOPIC}
     missing = sorted(required.difference(topic_types))
     if missing:
         raise KeyError(f"Bag is missing required topics: {', '.join(missing)}")
-    message_types = {
-        topic: get_message(topic_types[topic]) for topic in required
-    }
+    message_types = {topic: get_message(topic_types[topic]) for topic in required}
 
     depth_records = []
     camera_info_by_stamp = {}
@@ -207,9 +215,7 @@ def _read_bag(bag_path):
 
 def _decode_depth(message, depth_scale):
     if message.encoding != "16UC1":
-        raise ValueError(
-            f"Expected 16UC1 depth, got {message.encoding!r}"
-        )
+        raise ValueError(f"Expected 16UC1 depth, got {message.encoding!r}")
     dtype = np.dtype(">u2" if message.is_bigendian else "<u2")
     raw = np.frombuffer(bytes(message.data), dtype=dtype)
     expected = int(message.height) * int(message.width)
@@ -300,9 +306,7 @@ def _fuse_observed_free_space(
     )
     fill_mask = observed_free & ~valid
     obstacle_sites = (
-        valid
-        & np.isfinite(distances)
-        & (distances <= float(obstacle_site_distance))
+        valid & np.isfinite(distances) & (distances <= float(obstacle_site_distance))
     )
     fill_count = int(np.count_nonzero(fill_mask))
     obstacle_count = int(np.count_nonzero(obstacle_sites))
@@ -324,9 +328,9 @@ def _fuse_observed_free_space(
         np.minimum(propagated, float(max_fill_distance), out=propagated)
         distances[fill_mask] = propagated[fill_mask]
         for axis in range(3):
-            component = np.gradient(
-                propagated, float(resolution), axis=axis
-            ).astype(np.float32, copy=False)
+            component = np.gradient(propagated, float(resolution), axis=axis).astype(
+                np.float32, copy=False
+            )
             gradients[..., axis][fill_mask] = component[fill_mask]
         del propagated
 
@@ -414,7 +418,9 @@ def _save_static_preview(
     ax_top.scatter(points[:, 0], points[:, 1], c=colors, cmap="turbo", s=0.8, alpha=0.7)
     if len(camera_positions):
         trajectory = np.asarray(camera_positions)
-        ax_top.plot(trajectory[:, 0], trajectory[:, 1], "k.-", linewidth=1.4, markersize=4)
+        ax_top.plot(
+            trajectory[:, 0], trajectory[:, 1], "k.-", linewidth=1.4, markersize=4
+        )
         ax_top.scatter(
             trajectory[0, 0],
             trajectory[0, 1],
@@ -470,9 +476,7 @@ def _planner_quality_report(
     )
     xx, yy = np.meshgrid(xs, ys, indexing="ij")
     xy = np.column_stack((xx.reshape(-1), yy.reshape(-1)))
-    points = np.vstack(
-        [np.column_stack((xy, np.full(len(xy), z))) for z in query_z]
-    )
+    points = np.vstack([np.column_stack((xy, np.full(len(xy), z))) for z in query_z])
     distances, _, valid = esdf_map.query(points)
     distances = np.asarray(distances).reshape((len(query_z), -1))
     valid = np.asarray(valid).reshape((len(query_z), -1))
@@ -621,13 +625,34 @@ def main():
     tf_graph = OfflineTFGraph(
         static_records, dynamic_records, max_age_s=args.max_tf_age
     )
+    duplicate_tf_count = sum(tf_graph.duplicate_records_discarded.values())
+    if duplicate_tf_count:
+        details = ", ".join(
+            f"{parent}->{child}: {count}"
+            for (parent, child), count in sorted(
+                tf_graph.duplicate_records_discarded.items()
+            )
+        )
+        print(
+            f"Discarded {duplicate_tf_count} superseded TF records with duplicate "
+            f"header stamps ({details}).",
+            flush=True,
+        )
 
-    first_info = camera_infos.get(depth_records[0][0])
+    first_info = next(
+        (camera_infos[stamp] for stamp, _ in depth_records if stamp in camera_infos),
+        None,
+    )
     if first_info is None:
-        raise KeyError("The first depth frame has no exactly synchronized CameraInfo")
+        raise KeyError("No depth frame has an exactly synchronized CameraInfo")
     camera = _camera_from_info(first_info)
     sensor = Sensor.from_camera(
-        camera["fx"], camera["fy"], camera["cx"], camera["cy"], camera["width"], camera["height"]
+        camera["fx"],
+        camera["fy"],
+        camera["cx"],
+        camera["cy"],
+        camera["width"],
+        camera["height"],
     )
     mapper = Mapper(float(args.voxel_size), ProjectiveIntegratorType.TSDF)
     observed_voxel_size = (
@@ -673,9 +698,7 @@ def main():
         ):
             raise ValueError(f"Invalid camera pose for frame {index}")
         try:
-            t_map_base, _, _ = tf_graph.lookup(
-                args.world_frame, args.base_frame, stamp
-            )
+            t_map_base, _, _ = tf_graph.lookup(args.world_frame, args.base_frame, stamp)
         except KeyError as exc:
             raise KeyError(
                 f"Cannot evaluate planner start without {args.base_frame!r}: {exc}"
@@ -858,6 +881,12 @@ def main():
             {"path": list(path), "frame_count": count}
             for path, count in tf_paths.items()
         ],
+        "duplicate_tf_records_discarded": {
+            f"{parent}->{child}": count
+            for (parent, child), count in sorted(
+                tf_graph.duplicate_records_discarded.items()
+            )
+        },
         "camera_poses_t_map_camera": camera_poses,
         "base_poses_t_map_base": base_poses,
         "planner_quality": quality_report,

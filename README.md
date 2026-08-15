@@ -1,297 +1,142 @@
 # Mobile Manipulation
 
-A ROS-based framework for mobile manipulation research, featuring MPC-based control, robot simulation, and planning utilities.
+A ROS 2 research framework for mobile-manipulator planning, whole-body model
+predictive control, ESDF collision avoidance, and PyBullet validation. The
+repository currently supports Stretch and a mobile UR10 model.
 
 > [!IMPORTANT]
-> Current ROS2/pixi workflow. Build into the default `install/` tree and source
-> `install/setup.bash` for all runtime commands.
->
-> Make sure submodules are cloned
-> `git submodule update --init --recursive`
->
-> For installation, simply install the pixi environment:
-> `pixi shell`
->
-> The following commands were tested:
->
-> - Build packages
->
->   - `colcon build && source install/setup.bash`
-> - Compile MPC Controller
->
->   - `python3 mm_control/scripts/generate_acados_code.py --config $(ros2 pkg prefix mm_run)/share/mm_run/config/simple_experiment.yaml`
-> - Run Controller with PyBullet Simulation (Synchronous)
->
->   - `python3 mm_run/scripts/experiment.py --config $(ros2 pkg prefix mm_run)/share/mm_run/config/simple_experiment.yaml --GUI`
->
-> The two commands above no longer depend on `mobile_manipulation_central` or `ur_description`. Legacy ROS launch files and nodes still do.
->
-> - Run Controller and Simulation Asynchronously (ROS Nodes)
->   - `ros2 launch mm_run run_pybullet_sim.launch.py config:=$(ros2 pkg prefix mm_run)/share/mm_run/config/simple_experiment.yaml`
+> Use the pixi environment, build into the default `install/` tree, and source
+> `install/setup.bash` before resolving package paths or launching ROS nodes.
 
-## Package Overview
+> [!WARNING]
+> Real-robot operation is safety critical. Follow the complete
+> [Real Stretch Deployment Runbook](./REAL_DEPLOY.md). The offline/simulated
+> ESDF does not detect obstacles in the physical workspace.
 
-- **mm_assets**: Robot and scene URDF/mesh files
-- **mm_control**: MPC controller implementation using Acados
-- **mm_plan**: Planning base classes and simple planners
-- **mm_run**: Launch files, configurations, and ROS nodes
-- **mm_simulator**: PyBullet simulation interface
-- **mm_utils**: Utility functions for math, parsing, logging, etc.
+## Documentation
 
-Configuration parameters are documented in [configuration.md](./mm_run/config/configuration.md).
-The verified real-robot startup, teleoperation, rosbag capture, and ESDF export
-procedure is documented in [REAL_DEPLOY.md](./REAL_DEPLOY.md).
-The default-shadow real Stretch command adapter is documented in
-[real_command_adapter.md](./mm_run/config/real_command_adapter.md).
+- [Real Stretch deployment, ESDF capture, ROS data flow, and WB-MPC execution](./REAL_DEPLOY.md)
+- [Configuration reference](./mm_run/config/configuration.md)
+- [Real Stretch command-adapter contract](./mm_run/config/real_command_adapter.md)
 
-Run the real-state OMPL + WB-MPC pipeline with hardware output disabled:
+## Quick Start
 
-```bash
-ros2 launch mm_run stretch_wbmpc_shadow.launch.py \
-  adapter_log:=/tmp/stretch_adapter_wbmpc_shadow.jsonl \
-  wbmpc_log:=/tmp/stretch_wbmpc_shadow.jsonl
-```
-
-The two nodes exchange validated named state on `/wbmpc/state` and 11-D model
-velocity on `/wbmpc/velocity_command`. The launch file never passes
-`--execute`, so it cannot create either Stretch hardware command publisher.
-
-## Current Setup
-
-Use the pixi environment and build the ROS2 packages into the default colcon
-install tree:
+Clone submodules, enter the environment, and build:
 
 ```bash
 cd ~/repo/mobile_manipulation
 git submodule update --init --recursive
 pixi shell
-colcon build && source install/setup.bash
+colcon build
+source install/setup.bash
 ```
 
-In a new terminal, run `pixi shell` and `source install/setup.bash` again before
-using `ros2 pkg prefix`, launching nodes, or running experiments.
-
-## Legacy Installation Notes
-
-The notes below are for older ROS Noetic/catkin workflows and some legacy launch
-files. They are not required for the synchronous pixi commands above.
-
-### Prerequisites
-
-For the legacy workflow, ensure you have ROS Noetic installed on your system.
-Follow the [ROS Noetic installation guide](http://wiki.ros.org/noetic/Installation/Ubuntu) if it's not already set up.
-
-### Installation of `mobile_manipulation_central`
-
-`mobile_manipulation_central` is no longer required for the synchronous commands above. It is still required for some legacy ROS launch files and nodes in this repository.
-
-```bash
-cd ~/catkin_ws/src
-git clone https://github.com/utiasDSL/mobile_manipulation_central
-git checkout mm_dev
-cd ~/catkin_ws
-catkin build mobile_manipulation_central
-source devel/setup.bash
-```
-
-### Pinocchio
-
-```bash
-sudo apt install libeigen3-dev ros-noetic-eigenpy ros-noetic-hpp-fcl ros-noetic-pinocchio
-```
-
-Make sure to source your ROS environment:
-
-```bash
-source /opt/ros/noetic/setup.bash
-```
-
-### Acados
-
-Follow the instructions on the [Acados website](https://docs.acados.org/installation/). Don't forget to install the Python interface.
-
-### Installing this repo
-
-```bash
-cd ~/catkin_ws/src
-git clone https://github.com/utiasDSL/mobile_manipulation
-cd ~/catkin_ws
-catkin build mobile_manipulation
-source devel/setup.bash
-python3 -m pip install -r requirements.txt
-```
-
-## Usage
-
-### Compile MPC Controller
-
-```bash
-python3 mm_control/scripts/generate_acados_code.py --config $(ros2 pkg prefix mm_run)/share/mm_run/config/simple_experiment.yaml
-```
-
-### Run Controller with PyBullet Simulation (Synchronous)
-
-```bash
-python3 mm_run/scripts/experiment.py --config $(ros2 pkg prefix mm_run)/share/mm_run/config/simple_experiment.yaml --GUI
-```
-
-### Run Controller and Simulation Asynchronously (ROS Nodes)
-
-```bash
-ros2 launch mm_run run_pybullet_sim.launch.py config:=$(ros2 pkg prefix mm_run)/share/mm_run/config/simple_experiment.yaml
-```
-
-### Visualize Results
-
-Results are saved to `mm_run/results/[EXPERIMENT_NAME]/[TIMESTAMP]/` with `sim/` and `control/` subfolders.
-
-```bash
-roscd mm_utils/scripts
-python3 plot_logs.py --folder ../../mm_run/results/[EXPERIMENT_NAME]/[TIMESTAMP]/ --tracking
-```
-
-### Isaac Sim (Optional)
-
-If using Isaac Sim, ensure [mm_sim_isaac](https://github.com/TracyDuX/mm_sim_isaac) is installed:
-
-```bash
-ros2 launch mm_run isaac_sim.launch config:=$(ros2 pkg prefix mm_run)/share/mm_run/config/3d_collision.yaml isaac-venv:=$ISAACSIM_PYTHON
-```
-
-## Configuration
-
-Configuration files are located in `mm_run/config/`. Key configuration options include:
-
-- **Robot**: Robot model parameters (`config/robot/`)
-- **Scene**: Environment and obstacle definitions (`config/scene/`)
-- **Controller**: MPC parameters (`config/controller/`)
-- **Simulation**: Simulation settings (`config/sim/`)
-
-## ESDF MPC Validation
-
-Use the default colcon install tree. Runtime config paths are resolved through
-`$(ros2 pkg prefix mm_run)`, so rebuild after editing Python files or YAML under
-`mm_run/config/`. The validation commands below assume you are already inside
-`pixi shell`.
-
-Build only after code/config changes:
+In every new terminal:
 
 ```bash
 cd ~/repo/mobile_manipulation
-colcon build && source install/setup.bash
+pixi shell
+source install/setup.bash
 ```
 
-Verify the default install tree:
+Verify that ROS resolves packages from the default install tree:
 
 ```bash
 ros2 pkg prefix mm_run
 ros2 pkg prefix mm_control
 ```
 
-### OMPL Base/EE Planner Offline ESDF WB-MPC
+Rebuild after changing Python code or YAML under `mm_run/config/`.
 
-This is the canonical offline ESDF + OMPL base/EE + whole-body MPC config. It
-also owns the shared offline ESDF, scene, solver, robot, and simulation settings.
+## Repository Layout
 
-Compile the offline OMPL WB-MPC acados solver:
+| Package          | Purpose                                                      |
+| ---------------- | ------------------------------------------------------------ |
+| `mm_assets`    | Robot, scene, URDF, xacro, and mesh assets                   |
+| `mm_control`   | Acados-based MPC and WB-MPC controllers                      |
+| `mm_plan`      | Task management and base/EE planners, including OMPL         |
+| `mm_run`       | Runtime configurations, launch files, nodes, and experiments |
+| `mm_simulator` | PyBullet simulation interface                                |
+| `mm_utils`     | Parsing, mathematics, logging, and plotting utilities        |
 
-```bash
-python3 mm_control/scripts/generate_acados_code.py --config $(ros2 pkg prefix mm_run)/share/mm_run/config/stretch_esdf_offline_ompl_wbmpc.yaml
-```
+## Common Workflows
 
-Run the offline OMPL WB-MPC PyBullet validation:
+### Simple Synchronous PyBullet Experiment
 
-```bash
-python3 mm_run/scripts/experiment.py --config $(ros2 pkg prefix mm_run)/share/mm_run/config/stretch_esdf_offline_ompl_wbmpc.yaml --GUI
-```
-
-### OMPL Base/EE Planner Online nvblox WB-MPC
-
-This config inherits the offline OMPL WB-MPC setup, replaces the static ESDF
-with an online nvblox map, and uses OMPL for the base and Cartesian EE paths.
-
-Compile the OMPL WB-MPC acados solver:
+Generate the Acados controller after changing its model, costs, constraints, or
+solver options:
 
 ```bash
-python3 mm_control/scripts/generate_acados_code.py --config $(ros2 pkg prefix mm_run)/share/mm_run/config/stretch_esdf_online_nvblox_ompl_wbmpc.yaml
+python3 mm_control/scripts/generate_acados_code.py \
+  --config "$(ros2 pkg prefix mm_run)/share/mm_run/config/simple_experiment.yaml"
 ```
 
-Run the OMPL WB-MPC online nvblox validation:
+Run the experiment:
 
 ```bash
-python3 mm_run/scripts/experiment_online_nvblox.py --config $(ros2 pkg prefix mm_run)/share/mm_run/config/stretch_esdf_online_nvblox_ompl_wbmpc.yaml --GUI
+python3 mm_run/scripts/experiment.py \
+  --config "$(ros2 pkg prefix mm_run)/share/mm_run/config/simple_experiment.yaml" \
+  --GUI
 ```
 
-If you edit the ESDF MPC model structure or solver options such as
-`nlp_solver_max_iter`, rebuild `mm_run` and run the matching compile command
-again before running the experiment.
+### Stretch Offline-ESDF OMPL + WB-MPC
 
-### UR10 OMPL Base/EE Planner Offline ESDF WB-MPC
-
-This config uses the UR10 mounted on a holonomic planar base, OMPL for the base
-and Cartesian EE paths, and whole-body MPC with offline ESDF collision avoidance.
-
-Compile the UR10 offline OMPL WB-MPC acados solver:
+This is the canonical static-ESDF configuration shared by simulation and the
+current real-state deployment profiles.
 
 ```bash
-python3 mm_control/scripts/generate_acados_code.py --config $(ros2 pkg prefix mm_run)/share/mm_run/config/ur10_esdf_offline_ompl_wbmpc.yaml
+python3 mm_control/scripts/generate_acados_code.py \
+  --config "$(ros2 pkg prefix mm_run)/share/mm_run/config/stretch_esdf_offline_ompl_wbmpc.yaml"
+
+python3 mm_run/scripts/experiment.py \
+  --config "$(ros2 pkg prefix mm_run)/share/mm_run/config/stretch_esdf_offline_ompl_wbmpc.yaml" \
+  --GUI
 ```
 
-Run the UR10 offline OMPL WB-MPC PyBullet validation:
+### Stretch Online-nvblox OMPL + WB-MPC
+
+This profile inherits the offline setup, replaces the static ESDF with online
+nvblox queries, and uses OMPL for base and Cartesian end-effector paths.
 
 ```bash
-python3 mm_run/scripts/experiment.py --config $(ros2 pkg prefix mm_run)/share/mm_run/config/ur10_esdf_offline_ompl_wbmpc.yaml --GUI
+python3 mm_control/scripts/generate_acados_code.py \
+  --config "$(ros2 pkg prefix mm_run)/share/mm_run/config/stretch_esdf_online_nvblox_ompl_wbmpc.yaml"
+
+python3 mm_run/scripts/experiment_online_nvblox.py \
+  --config "$(ros2 pkg prefix mm_run)/share/mm_run/config/stretch_esdf_online_nvblox_ompl_wbmpc.yaml" \
+  --GUI
 ```
 
-### Stretch Keyboard Teleoperation ESDF Capture and Replay
+### Mobile UR10 Offline-ESDF OMPL + WB-MPC
 
-The commands below use the current source-tree configs and assume they are run
-from the repository root. `nvblox-torch` requires a CUDA GPU for capture and
-export; viewing an exported NPZ does not require CUDA.
+```bash
+python3 mm_control/scripts/generate_acados_code.py \
+  --config "$(ros2 pkg prefix mm_run)/share/mm_run/config/ur10_esdf_offline_ompl_wbmpc.yaml"
 
-Capture an ESDF by teleoperating the simulated Stretch with its onboard depth
-camera:
+python3 mm_run/scripts/experiment.py \
+  --config "$(ros2 pkg prefix mm_run)/share/mm_run/config/ur10_esdf_offline_ompl_wbmpc.yaml" \
+  --GUI
+```
+
+### Simulated Stretch ESDF Capture
+
+`nvblox-torch` requires a CUDA GPU for capture/export. Viewing an exported NPZ
+does not require CUDA.
 
 ```bash
 pixi run python mm_run/scripts/teleop_export_esdf.py \
   --config mm_run/config/stretch_esdf_teleop_export.yaml
 ```
 
-Keyboard controls in the PyBullet window:
+PyBullet keyboard controls:
 
-- `I` / `K`: move forward / backward.
-- `J` / `L`: turn left / right.
-- `Space`: stop.
-- `X`: stop mapping, update the final ESDF, and export it.
+- `I` / `K`: forward / backward
+- `J` / `L`: turn left / right
+- `Space`: stop
+- `X`: stop mapping and export the final ESDF
+- `Q`: close only the secondary reconstruction viewer
 
-A second, empty PyBullet window displays a live low-resolution reconstruction.
-It does not load or overlay the ground-truth URDF scene:
-
-- Height-colored points: valid samples close to the reconstructed ESDF zero
-  surface.
-
-The live reconstruction queries a 10 cm grid every 30 simulation steps. The
-viewer runs in a separate process, and only downsampled NumPy point clouds are
-sent to it, so it never participates in camera rendering. Close only the viewer
-with `Q`; keep focus on the main simulation window for teleoperation. The final
-NPZ is still exported at 2 cm resolution.
-
-Ground handling uses two nvblox maps. In PyBullet, segmentation IDs remove only
-the `plane.urdf` endpoints from the obstacle TSDF, so low obstacle geometry is
-preserved; the world-Z threshold is a fallback when segmentation is unavailable.
-A secondary occupancy map integrates the unfiltered depth and retains
-negative-log-odds free-space evidence along camera rays. During export,
-non-ground obstacle distances are propagated only into those observed-free
-voxels. This keeps the ground out of the navigation ESDF without turning the
-space above the observed floor into unknown. Unobserved voxels remain invalid.
-
-After export, the script evaluates the map with the offline base planner's
-actual `query_z`, `base_radius`, and `d_safe` settings. It reports the known and
-planner-valid lattice ratios, labels connected free-space components, and
-prints an explicit warning when a start/goal is invalid or a valid goal is not
-reachable from the start through observed free space.
-
-The default output is a timestamped directory:
+The default output is:
 
 ```text
 mm_run/results/nvblox_esdf/stretch_teleop/<TIMESTAMP>/
@@ -301,30 +146,11 @@ mm_run/results/nvblox_esdf/stretch_teleop/<TIMESTAMP>/
 └── metadata.json
 ```
 
-Before pressing `X`, observe the intended navigation start from several
-viewpoints. OMPL treats unknown space as invalid and will reject a start pose
-whose base collision query points were not observed.
+OMPL treats unknown space as invalid. Before exporting, observe the intended
+start region from several viewpoints so the base collision samples lie in
+known free space.
 
-Convert a real Spectacular-AI ROS 2 bag offline with the same two-map ground
-semantics:
-
-```bash
-pixi run python mm_run/scripts/export_real_rosbag_esdf.py \
-  /ABSOLUTE/PATH/TO/ROSBAG_DIRECTORY \
-  -o mm_run/results/nvblox_esdf/real_bag/MAP_NAME \
-  --bounds -4.2 -4.2 -0.2 4.2 4.2 2.2 \
-  --voxel-size 0.05 --grid-resolution 0.05 --ground-min-z 0.08
-```
-
-The primary TSDF receives ground-filtered depth, while `observed_space.nvblox`
-receives unfiltered depth and supplies observed-free ray evidence. The final
-NPZ keeps genuinely unobserved voxels invalid and records fusion and base
-planner quality statistics in `metadata.json`. The converter defaults to the
-canonical offline base checks (`query_z=[0.15, 0.35]`, required clearance
-0.4 m, XY bounds ±4 m); matching CLI options can override them for another
-planner profile.
-
-Reconstruct and inspect the approximate ESDF zero surface in PyBullet:
+### Inspect an Exported ESDF
 
 ```bash
 pixi run python mm_run/scripts/visualize_esdf_npz.py \
@@ -332,39 +158,50 @@ pixi run python mm_run/scripts/visualize_esdf_npz.py \
   --color-mode height
 ```
 
-Use signed-distance coloring when checking the two sides of the surface:
+Use `--color-mode distance` to inspect negative, zero, and positive signed
+distance regions.
+
+### Real Stretch
+
+The real workflow includes robot/Zenoh/SLAM bringup, PS4 teleoperation, rosbag
+capture, offline ESDF export, a read-only preflight, shadow WB-MPC validation,
+and an explicitly enabled hardware test. All commands and safety gates are in
+[REAL_DEPLOY.md](./REAL_DEPLOY.md).
+
+The real-state shadow pipeline can be launched without creating hardware
+command publishers:
 
 ```bash
-pixi run python mm_run/scripts/visualize_esdf_npz.py \
-  /ABSOLUTE/PATH/TO/esdf_grid.npz \
-  --color-mode distance
+ros2 launch mm_run stretch_wbmpc_shadow.launch.py \
+  adapter_log:=/tmp/stretch_adapter_wbmpc_shadow.jsonl \
+  wbmpc_log:=/tmp/stretch_wbmpc_shadow.jsonl
 ```
 
-In `height` mode, low points are blue and high points are red. In `distance`
-mode, negative/zero/positive distances are red/white/blue. Press `Q` in the
-PyBullet window to close the viewer.
+The adapter publishes validated state on `/wbmpc/state`; the runner publishes
+an 11-D velocity envelope on `/wbmpc/velocity_command`. This launch never
+passes `--execute`.
 
-To replay the existing offline OMPL + WB-MPC pipeline with the captured map,
-set `controller.esdf_collision.map_path` in
-`mm_run/config/stretch_esdf_offline_ompl_wbmpc.yaml` to an absolute path:
+## Configuration and Generated Controllers
 
-```yaml
-controller:
-  esdf_collision:
-    source: "offline"
-    map_path: "/ABSOLUTE/PATH/TO/esdf_grid.npz"
-```
+Configurations live under `mm_run/config/` and can include other YAML files.
+The main groups are:
 
-Do not use a `{package: "mm_run", path: ...}` mapping for a runtime-generated
-file: package paths resolve under `install/mm_run/share/mm_run`, while capture
-outputs are written under the source tree by default.
+- `robot/`: kinematics, dimensions, bounds, and collision geometry
+- `controller/`: horizons, rates, costs, and solver settings
+- `scene/`: environment assets
+- `sim/`: simulator settings
+- top-level experiment profiles: planner tasks and composed overrides
 
-Run the offline replay using the edited source config:
+Regenerate Acados code after changing model dimensions, dynamics, costs,
+constraints, or solver structure. Changing only an ESDF NPZ path does not
+require regeneration.
 
-```bash
-pixi run python mm_run/scripts/experiment.py \
-  --config mm_run/config/stretch_esdf_offline_ompl_wbmpc.yaml \
-  --GUI
-```
+Runtime-generated maps should use an absolute `map_path`. A package/path
+mapping resolves under `install/mm_run/share/mm_run`, while capture output is
+normally written into the source tree.
 
-Changing only the NPZ path does not require regenerating the acados solver.
+## Results
+
+Experiments write timestamped results under `mm_run/results/`, commonly with
+`sim/` and `control/` subdirectories. The real deployment runbook documents
+its JSONL diagnostics and comparison plotting commands.

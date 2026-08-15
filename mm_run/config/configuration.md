@@ -1,408 +1,391 @@
-# Experiment Configuration
-Configuration files are YAML files typically stored in `mm_run/config/`.
+# Configuration Reference
 
-## Including Other YAML Files
-Use the `include` key to extend shared configuration files:
+Runtime configuration is YAML, normally under `mm_run/config/`. This document
+is a module map and field guide, not a frozen schema. The referenced profile
+YAML and the consuming Python class remain authoritative.
+
+## Loading and Composition
+
+`mm_utils.parsing.load_config()` recursively merges `include` files, then
+applies the current file as the final override. Nested dictionaries merge;
+later/scalar/list values replace earlier values. Inclusion depth is limited to
+five by default.
 
 ```yaml
 include:
-  - package: "mm_run"
-    path: "config/shared.yaml"
+  - package: mm_run
+    path: config/controller/MPC.yaml
+  - package: mm_run
+    path: config/robot/stretch.yaml
+  - package: mm_run
+    path: config/shared.yaml
+    key: optional_parent_key
 ```
 
-Included values are overwritten by values in the including file. Multiple includes are supported.
+Package/path mappings resolve through the ROS package index. String paths also
+support environment-variable and user expansion. Numeric arrays may use parser
+expressions already present in the profiles, such as `2.pi`.
 
-## Top-Level Structure
+After editing installed runtime YAML, rebuild and source the workspace:
+
+```bash
+colcon build --packages-select mm_run
+source install/setup.bash
+```
+
+## Canonical Profiles
+
+| Profile | Purpose |
+|---|---|
+| `simple_experiment.yaml` | Minimal synchronous/asynchronous simulation |
+| `stretch_esdf_offline_ompl_wbmpc.yaml` | Canonical Stretch OMPL + offline ESDF + WB-MPC |
+| `stretch_esdf_online_nvblox_ompl_wbmpc.yaml` | Online simulated-depth nvblox overlay |
+| `stretch_esdf_teleop_export.yaml` | Keyboard capture and offline NPZ export overlay |
+| `stretch_esdf_sim_real_commissioning.yaml` | Simulated-room ESDF with real Stretch state/output |
+| `ur10_esdf_offline_ompl_wbmpc.yaml` | Mobile UR10 offline-ESDF profile |
+| `stretch_command_adapter_real.yaml` | Real Stretch feedback/command safety adapter |
+| `stretch_wbmpc_shadow_real.yaml` | Real-state WB-MPC runner |
+| `stretch_wbmpc_sim_esdf_real_test.yaml` | Hardware-in-the-loop commissioning runner |
+| `stretch_*_state_probe_real.yaml` | Read-only base, joint, and full-state validation |
+
+## Experiment Top-Level Modules
+
 ```yaml
-planner    # Task planning (Stack of Tasks)
-controller # MPC controller parameters
-simulation # Simulation parameters
-logging    # Data logging configuration
-robot      # Robot model (typically included from config/robot/)
-scene      # Environment/scene (typically included from config/scene/)
+include: []
+planner: {}
+controller: {}
+simulation: {}
+online_nvblox_sim: {}
+teleop_esdf_export: {}
+logging: {}
 ```
+
+Robot and scene fragments normally merge into both `controller` and
+`simulation`. Sensor and teleop YAML files can also be standalone inputs to
+their own nodes rather than full experiment profiles.
 
 ## Planner
-The planner section defines tasks executed sequentially by the TaskManager.
 
-### Tasks
-Each task in the `tasks` list can specify base and/or end-effector targets. This allows:
-- **Simultaneous execution**: Specify both `base_pose` and `ee_pose` in one task
-- **Sequential execution**: Specify only `base_pose` or only `ee_pose` in separate tasks
+`mm_plan.TaskManager` expands `planner.task_defaults` into `planner.tasks`.
+A task selects defaults with `defaults: base` or `defaults: ee`, then overrides
+individual fields.
 
-**Common Parameters:**
 ```yaml
 planner:
+  task_defaults:
+    base:
+      planner_type: OMPLBasePlanner
+      base_mask: [true, true, true]
+      tracking_pos_err_tol: 0.1
+      tracking_ori_err_tol: 0.25
+      hold_period: 1.0
+      end_stop: false
+    ee:
+      planner_type: OMPLEEPlanner
+      ee_mask: [true, true, true, false, false, false]
+
   tasks:
-    - name: str                    # Task identifier
-      planner_type: "WaypointPlanner" | "PathPlanner"
-      tracking_pos_err_tol: float      # Position error tolerance [m]
-      tracking_ori_err_tol: float  # Optional: orientation error tolerance [rad] (default: 0.1)
+    - defaults: base
+      name: Base Goal
+      base_pose: [2.0, 0.0, 0.0]
+    - defaults: ee
+      name: EE Goal
+      ee_pose: [3.0, -0.5, 0.9, 0.0, 0.0, -0.0708]
 ```
 
-**WaypointPlanner**: Move to target pose(s)
+Supported `planner_type` values are:
+
+- `WaypointPlanner`: `base_pose` and/or `ee_pose`;
+- `PathPlanner`: `base_path` and/or `ee_path`, plus `dt`;
+- `OMPLBasePlanner`: plans an SE(2) base path;
+- `OMPLEEPlanner`: plans a Cartesian end-effector path.
+
+Common completion fields are `tracking_pos_err_tol`,
+`tracking_ori_err_tol`, `hold_period`, and `end_stop`.
+
+### OMPL Base and EE Options
+
+The current OMPL planners consume planner-specific bounds, path generation,
+ESDF validity, and replanning policies:
+
 ```yaml
-# Simultaneous: Move base and EE together
-- name: "Approach Target"
-  planner_type: "WaypointPlanner"
-  base_pose: [x, y, yaw]                    # Optional: SE2 [m, m, rad] in world frame
-  ee_pose: [x, y, z, roll, pitch, yaw]      # Optional: SE3 [m, m, m, rad, rad, rad] in world frame
-  tracking_pos_err_tol: 0.1
-  hold_period: 1.0                          # Optional: hold time at target [s]
-
-# Sequential: Only base moves
-- name: "Move Base"
-  planner_type: "WaypointPlanner"
-  base_pose: [2.0, 1.0, 0.0]
-  tracking_pos_err_tol: 0.2
-
-# Sequential: Only EE moves
-- name: "Reach Down"
-  planner_type: "WaypointPlanner"
-  ee_pose: [2.2, 1.2, 0.5, 1.57, 0, 0]
-  tracking_pos_err_tol: 0.05
-  hold_period: 1.0
+planner:
+  task_defaults:
+    base:
+      bounds_xy: [[-4.0, 4.0], [-4.0, 4.0]]
+      bounds_margin: 0.75
+      ompl:
+        planner: RRTstar
+        solve_time: 3.0
+        solve_attempts: 5
+        simplify: true
+        simplify_time: 0.05
+        range: 0.1
+        goal_tolerance: 0.08
+        state_validity_resolution: 0.01
+      path:
+        dt: 0.1
+        linear_speed: 0.25
+        angular_speed: 0.8
+        interpolation_resolution: 0.05
+        yaw_mode: tangent
+      esdf:
+        enabled: true
+        base_radius: 0.2
+        d_safe: 0.2
+        query_z: [0.15, 0.35]
+        unknown_is_valid: false
+        allow_straight_line_fallback: false
+      replan:
+        enabled: true
+        min_interval: 1.0
+        check_horizon: 2.0
+        check_dt: 0.2
+        min_clearance: 0.0
+        deviation_threshold: 0.4
+        force_periodic: false
+        keep_previous_on_failure: true
 ```
 
-**PathPlanner**: Follow a pre-computed path
-```yaml
-# Simultaneous: Follow base and EE paths together
-- name: "Coordinated Motion"
-  planner_type: "PathPlanner"
-  base_path: [[x1, y1, yaw1], [x2, y2, yaw2], ...]  # Optional: Array of SE2 poses
-  ee_path: [[x1, y1, z1, r1, p1, y1], [x2, y2, z2, r2, p2, y2], ...]  # Optional: Array of SE3 poses
-  dt: 0.1                         # Time step between path points [s]
-  tracking_pos_err_tol: 0.1
-  end_stop: false                 # Optional: require zero velocity at end (default: false)
-
-# Sequential: Only base path
-- name: "Base Path"
-  planner_type: "PathPlanner"
-  base_path: [[0, 0, 0], [1, 0, 0], [2, 1, 1.57]]
-  dt: 0.1
-  tracking_pos_err_tol: 0.2
-
-# Sequential: Only EE path
-- name: "EE Path"
-  planner_type: "PathPlanner"
-  ee_path: [[1, 0, 1, 0, 0, 0], [1.5, 0.2, 0.8, 0, 0, 0]]
-  dt: 0.1
-  tracking_pos_err_tol: 0.02
-```
-
-**Note**: At least one of `base_pose`/`base_path` or `ee_pose`/`ee_path` must be specified. Tasks execute sequentially, but each task can coordinate base and EE simultaneously.
+EE defaults use `bounds_xyz`, `tool_radius`, and Cartesian path speeds. See
+`stretch_esdf_offline_ompl_wbmpc.yaml` for the complete base and EE examples.
 
 ## Controller
 
-### Basic Settings
+### Timing and Behavior
 
 ```yaml
 controller:
-  type: "MPC"                     # Controller type
-  dt: 0.1                         # MPC time step [s]
-  prediction_horizon: 1.0         # Prediction horizon [s]
-  ctrl_rate: 10                   # Controller update rate [Hz]
-  cmd_vel_pub_rate: 100           # Command velocity publish rate [Hz]
-  cmd_vel_type: "interpolation"   # "integration" or "interpolation"
+  type: MPC
+  dt: 0.1
+  prediction_horizon: 2.0
+  ctrl_rate: 7
+  cmd_vel_pub_rate: 20
+  cmd_vel_type: interpolation   # integration | interpolation
+  soft_cst: true
+  cst_tol_schedule_enabled: false
+  ee_pose_tracking_enabled: true
 ```
 
-### Collision Avoidance
+`cmd_vel_type: interpolation` sends the optimized velocity trajectory. The
+real command adapter expects this mode and applies hardware slew limits itself.
+
+### Robot Model
+
+Robot fragments under `config/robot/` populate both `simulation.robot` and
+`controller.robot` where appropriate.
 
 ```yaml
 controller:
-  # Enable collision avoidance
-  self_collision_avoidance_enabled: bool
-  static_obstacles_collision_avoidance_enabled: bool
-  self_collision_emergency_stop: bool
+  robot:
+    mimic: false
+    dims: {q: 11, v: 11, x: 22, u: 11}
+    joint_names: []
+    x0: []
+    time_discretization_dt: 0.1
+    base_type: nonholonomic     # omnidirectional | fixed | nonholonomic | floating
+    nonholonomic_mode: dynamics
+    tool_link_name: link_grasp_center
+    base_link_name: base_link
+    limits:
+      input: {lower: [], upper: []}
+      state: {lower: [], upper: []}
+    urdf:
+      package: mm_assets
+      path: stretch/stretch_sim.urdf
+      includes: []
+      args: {}
+    collision_model:
+      groups: {}
+      objects: {}
+      self_collision_pairs: false
+      static_obstacle_pairs: {}
+      pinocchio_self_collision_pairs: false
+      pinocchio_static_obstacle_pairs: {}
+```
 
-  # Constraint types
+`collision_model.groups` is the current grouping format. Legacy
+`collision_link_names` and `collision_pairs` are still accepted by parts of the
+collision stack.
+
+### FCL Collision Avoidance
+
+```yaml
+controller:
+  self_collision_avoidance_enabled: true
+  static_obstacles_collision_avoidance_enabled: true
+  self_collision_emergency_stop: true
   collision_constraint_type:
-    self: "SignedDistanceConstraint"
-    static_obstacles: "SignedDistanceConstraint"
-
-  # Safety margins [m]
-  collision_safety_margin:
-    self: 0.25
-    static_obstacles: 0.15
-
-  # Soft constraints
-  collision_constraints_softened:
-    self: bool
-    static_obstacles: bool
-```
-
-### Soft Constraints
-
-```yaml
-controller:
-  soft_cst: bool                  # Enable soft constraints globally
-  xu_soft:
-    mu: 0.001                     # Penalty weight
-    zeta: 0.005                   # Penalty scaling
+    self: SignedDistanceConstraint
+    static_obstacles: SignedDistanceConstraint
+  collision_constraints_softened: {self: true, static_obstacles: true}
+  collision_safety_margin: {self: 0.25, static_obstacles: 0.15}
+  xu_soft: {mu: 0.001, zeta: 0.005}
   collision_soft:
     self: {mu: 0.0001, zeta: 0.005}
     static_obstacles: {mu: 0.0001, zeta: 0.005}
 ```
 
-### Cost Function Weights
+### ESDF Collision Module
 
-The MPC uses a cost function registry. Available cost functions: `BasePose`, `BaseVel`, `EEPose`, `EEVel`, `ControlEffort`, `Regularization`.
+ESDF collision is independent of the legacy static-obstacle flag and changes
+the Acados model when enabled.
 
-Each cost function uses weights `Qk` (running cost) and `P` (terminal cost):
+```yaml
+controller:
+  esdf_collision:
+    enabled: true
+    source: offline             # offline | online_nvblox
+    mode: constraint            # constraint | squared_hinge_cost
+    map_path:
+      package: mm_run
+      path: results/.../esdf_grid.npz
+    spheres: [base_body_collision]
+    d_safe: 0.10
+    require_all_corners_valid: true
+    invalid_distance: -1.0
+    accept_status2_min_margin: 0.0
+    initialize_map: true
+    name: esdf
+    soft_cost: {p: 1.0, mu: 1000.0, smoothing: 0.005}
+```
+
+For `source: online_nvblox`, add `online_nvblox` with `voxel_size`,
+`integrator_type`, query/update policy, unknown-distance policy, optional
+`initial_map_path`, and camera intrinsics (`fx/fy/cx/cy/width/height`).
+
+### Costs and Acados
+
+Current cost keys are `BasePose`, `BaseVel`, `EEPose`, `EEVel`, `Effort`,
+optional `ArmExtension`, `Regularization`, and `slack`. Pose/velocity entries use
+running `Qk` and terminal `P` weights. `Effort` uses `Qqa/Qqb/Qva/Qvb/Qua/Qub`.
 
 ```yaml
 controller:
   cost_params:
-    # Base pose (SE2 only: x, y, yaw)
-    BasePose:
-      Qk: [wx, wy, wyaw]
-      P: [px, py, pyaw]
-
-    # Base velocity (2D or 3D)
-    BaseVel:
-      Qk: [wx, wy] | [wx, wy, wyaw]  # 2D or 3D
-      P: [px, py] | [px, py, pyaw]
-
-    # End-effector pose (SE3 only: position + orientation)
-    # Set orientation weights to 0 for position-only tracking
-    EEPose:
-      Qk: [wx, wy, wz, wr, wp, wy]  # [x, y, z, roll, pitch, yaw]
-      P: [px, py, pz, pr, pp, py]
-    # For base frame tracking, use EEPose with frame="base" (handled internally)
-
-    # End-effector velocity (6D: 3D linear + 3D angular)
-    EEVel:
-      Qk: [wx, wy, wz, wwx, wwy, wwz]  # [vx, vy, vz, wx, wy, wz]
-      P: [px, py, pz, pwx, pwy, pwz]
-
-    # Control effort
-    ControlEffort:
-      Qqa: [q1, ..., q6]          # Arm joint position weights
-      Qqb: [q1, q2, q3]           # Base position weights
-      Qva: [v1, ..., v6]          # Arm joint velocity weights
-      Qvb: [v1, v2, v3]           # Base velocity weights
-      Qua: [u1, ..., u6]          # Arm input weights
-      Qub: [u1, u2, u3]           # Base input weights
-
-    # Regularization
-    Regularization:
-      eps: 1.0e-06
-
-    # Slack variables (for soft constraints)
-    slack:
-      z: 10                       # Linear penalty
-      Z: 1                        # Quadratic penalty
-```
-
-### Acados Solver Options
-
-```yaml
-controller:
+    BasePose: {Qk: [2, 2, 0], P: [40, 40, 0]}
+    EEPose: {Qk: [5, 5, 5, 0, 0, 0], P: [50, 50, 50, 0, 0, 0]}
+    Effort: {Qqa: [], Qqb: [], Qva: [], Qvb: [], Qua: [], Qub: []}
+    ArmExtension:
+      enabled: false
+      joint_names: []
+      upper: []
+      base_task_upper: []
+      weight: []
+      smoothing: 0.001
+    Regularization: {eps: 1.0e-6}
+    slack: {z: 500, Z: 500000}
+  beta: 0.5
+  alpha: 0.05
   acados:
-    name: "MM"                    # Solver identifier
-    cython:
-      enabled: bool
-      recompile: bool
-    raise_exception_on_failure: bool
-    use_custom_hess: bool
-    use_terminal_cost: bool
-
-    ocp_solver_options:
-      qp_solver: "FULL_CONDENSING_HPIPM"  # QP solver type
-      nlp_solver_type: "SQP_RTI" | "SQP"
-      nlp_solver_max_iter: 100
-      nlp_solver_tol_comp: 1.e-06
-      nlp_solver_tol_stat: 1.0e-03
-      nlp_solver_tol_eq: 1.0e-02
-      nlp_solver_tol_ineq: 1.0e-02
-      qp_solver_iter_max: 100
-      qp_solver_warm_start: 2
-      integrator_type: "IRK"
-      hessian_approx: "GAUSS_NEWTON"
-      globalization: "MERIT_BACKTRACKING"
-      print_level: 0
-      nlp_solver_ext_qp_res: 0
-
-    slack_enabled:
-      x: bool          # State constraints
-      x_e: bool        # Terminal state constraints
-      u: bool          # Input constraints
-      h_0: bool        # Initial path constraints
-      h: bool          # Path constraints
-      h_e: bool        # Terminal path constraints
+    name: MM
+    cython: {enabled: true, recompile: false}
+    raise_exception_on_failure: false
+    use_custom_hess: true
+    use_terminal_cost: true
+    ocp_solver_options: {}
+    slack_enabled: {x: true, x_e: true, u: false, h_0: true, h: true, h_e: true}
 ```
 
-### Line Search Parameters
+Regenerate Acados code after changing dimensions, dynamics, costs, constraints,
+ESDF enablement/mode, or solver structure. A map-path-only change does not
+require regeneration.
 
-```yaml
-controller:
-  beta: 0.5              # Line search reduction factor
-  alpha: 0.05            # Line search step size
-```
-
-### Robot Parameters
-
-```yaml
-controller:
-  robot:
-    dims:
-      q: int              # Position dimension
-      v: int              # Velocity dimension
-      x: int              # State dimension (q + v)
-      u: int              # Input dimension
-    time_discretization_dt: 0.1
-    x0: [q1, ..., qn, v1, ..., vn]
-
-    limits:
-      input: {lower: [...], upper: [...]}
-      state: {lower: [...], upper: [...]}
-
-    link_names: [str, ...]
-    tool_link_name: str
-    base_link_name: str
-    base_type: "omnidirectional" | "fixed" | "nonholonomic" | "floating"
-    tool_vicon_name: str
-
-    collision_link_names:
-      base: [str, ...]
-      rack: [str, ...]
-      upper_arm: [str, ...]
-      forearm: [str, ...]
-      wrist: [str, ...]
-      tool: [str, ...]
-
-    urdf:
-      package: str
-      path: str
-      includes: [str, ...]
-      args: {key: value}
-```
-
-
-## Simulation
-
-### Basic Settings
+## Simulation and Scene
 
 ```yaml
 simulation:
-  timestep: 0.03                  # Simulation timestep [s]
-  duration: 25.0                  # Duration [s]
-  gravity: [0, 0, -9.81]          # Gravity [m/s²]
-  gui: bool                       # Show PyBullet GUI
-```
-
-### Robot Configuration
-
-```yaml
-simulation:
-  robot:
-    home: [q1, ..., qn]           # Home joint configuration
-    tool_vicon_name: str
-
-    dims:
-      q: int
-      v: int
-      x: int
-      u: int
-
-    noise:
-      measurement:
-        q_std_dev: float
-        v_std_dev: float
-      process:
-        v_std_dev: float
-
-    joint_names: [str, ...]
-    link_names: [str, ...]
-    tool_joint_name: str
-    base_joint_name: str
-    tool_link_name: str
-    base_link_name: str
-    base_type: "omnidirectional" | "fixed" | "nonholonomic" | "floating"
-
-    urdf:
-      package: str
-      path: str
-      includes: [str, ...]
-      args: {key: value}
-```
-
-### Static Obstacles
-
-```yaml
-simulation:
+  timestep: 0.01
+  duration: 25.0
+  gravity: [0, 0, -9.81]
+  gui: true
+  robot: {}
   static_obstacles:
-    enabled: bool
-    urdf:
-      package: str
-      path: str
-      includes: [str, ...]
-      args:
-        obstacle_params_file: str
-```
-
-### Dynamic Obstacles
-
-```yaml
-simulation:
+    enabled: false
+    collision_enabled: true
+    urdf: {}
   dynamic_obstacles:
-    enabled: bool
-```
-
-### Cameras (Isaac Sim)
-
-```yaml
-simulation:
-  cameras:
-    - name: str
-      type: "RGBCamera" | "ToFCamera"
-      prim_path: str
-      params:
-        package: str
-        path: str
-      translation: [x, y, z]
-      orientation: [w, x, y, z]
-      ros_topic_name_space: str
-```
-
-## Scene
-
-Scene configuration for static obstacles (typically included from `config/scene/`):
-
-```yaml
-simulation:
-  static_obstacles:
-    enabled: bool
-    urdf:
-      package: str
-      path: str
-      includes: [str, ...]
-      args:
-        obstacle_params_file: str
+    enabled: false
+    obstacles: []
+  collision_sphere_markers:
+    enabled: false
+    alpha: 0.25
+    color: [0.0, 0.7, 1.0]
+    object_colors: {}
 
 controller:
   scene:
-    enabled: bool
-    collision_link_names:
-      static_obstacles: [str, ...]
-    urdf:
-      package: str
-      path: str
-      includes: [str, ...]
-      args:
-        obstacle_params_file: str
+    enabled: false
+    collision_link_names: {static_obstacles: []}
+    urdf: {}
 ```
 
+Isaac-specific camera and video definitions live in `config/sensor/cameras.yaml`
+and `config/sim/isaac_sim.yaml`.
+
+## Online nvblox Simulation
+
+`online_nvblox_sim` drives rendered-depth integration for
+`experiment_online_nvblox.py`. Major submodules are:
+
+- renderer/image geometry: `renderer`, `width`, `height`, `fov_y_deg`,
+  `near`, `far`;
+- filtering: `ground_filter_min_z`, `ground_filter_use_segmentation`,
+  `exclude_robot`, `exclude_collision_sphere_markers`;
+- lifecycle: `initial_scan`, `realtime_scan`, `decay`;
+- inspection: `diagnostics`, `preview`.
+
+Realtime cameras support `pose_source: camera_link` or synthetic spin poses,
+frame conventions, and RPY pose correction. Use
+`stretch_esdf_online_nvblox_ompl_wbmpc.yaml` as the reference profile.
+
+## Teleop ESDF Export
+
+`teleop_esdf_export` configures `teleop_export_esdf.py`:
+
+```yaml
+teleop_esdf_export:
+  output: mm_run/results/nvblox_esdf/stretch_teleop
+  bounds: [-4.2, -4.2, 0.0, 4.2, 4.2, 2.0]
+  grid_resolution: 0.02
+  query_chunk_size: 131072
+  linear_speed: 0.25
+  angular_speed: 0.6
+  status_interval: 2.0
+  ground_aware_free_space: {}
+  live_reconstruction: {}
+```
+
+The ground-aware module combines a ground-filtered obstacle TSDF with a second
+observed-space map. The live reconstruction is a downsampled viewer and does
+not set final NPZ resolution.
+
+## Real Stretch Runtime Modules
+
+These are node-specific configs rather than general experiment sections:
+
+- `stretch_base_state_probe`, `stretch_state_probe`, and
+  `stretch_full_state_probe`: frame, timestamp, joint mapping, synchronization,
+  and freshness validation;
+- `stretch_command_adapter`: ROS topics/services, state mapping, watchdogs,
+  layered driver/adapter limits, following-error thresholds, and execute gates;
+- `stretch_wbmpc_shadow`: controller profile, topics, control/publish rates,
+  solver deadline, plan timeout, late-result policy, and optional forward
+  prediction.
+
+The complete command adapter contract is in
+[`real_command_adapter.md`](./real_command_adapter.md); the deployed values and
+ROS graph are in the repository-level [`REAL_DEPLOY.md`](../../REAL_DEPLOY.md).
 
 ## Logging
 
 ```yaml
 logging:
-  log_dir: str                    # Directory name (relative to results/)
-  log_level: int                  # 0=not set, 10=debug, 20=info, 30=warning, 40=error
+  log_dir: experiment_name
+  log_level: 20
 ```
 
-Logs are saved to `mm_run/results/[log_dir]/[TIMESTAMP]/`:
-- `combined/` - Synchronous experiments (sim + control in one process)
-- `sim/` - Simulation data (asynchronous)
-- `control/` - Controller data (asynchronous)
+Experiments normally write under `mm_run/results/<log_dir>/<timestamp>/` with
+`combined/`, `sim/`, or `control/` subdirectories. Real WB-MPC runner and
+adapter JSONL paths are command-line/config fields in their node-specific
+profiles.

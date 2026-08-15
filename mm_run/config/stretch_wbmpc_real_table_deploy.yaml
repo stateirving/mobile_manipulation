@@ -1,6 +1,7 @@
 stretch_wbmpc_shadow:
-  # Resolved relative to this file both in the source tree and after install.
-  controller_config: stretch_esdf_offline_ompl_wbmpc.yaml
+  # Real runner parameters mirror stretch_wbmpc_shadow_real.yaml.  Only the
+  # controller profile changes to the captured-table offline ESDF deployment.
+  controller_config: stretch_esdf_offline_ompl_wbmpc_deploy.yaml
 
   state_topic: /wbmpc/state
   velocity_command_topic: /wbmpc/velocity_command
@@ -16,7 +17,7 @@ stretch_wbmpc_shadow:
   accept_late_results: true
   plan_timeout: 0.20
   forward_prediction:
-    enabled: true
+    enabled: false
     expected_solver_time: 0.06
     adaptation_alpha: 0.10
     min_solver_time: 0.02

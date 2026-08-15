@@ -20,7 +20,7 @@ planner:
       bounds_xy: [[-4.0, 4.0], [-4.0, 4.0]]
       bounds_margin: 0.75
       # tracking_pos_err_tol: 0.25
-      tracking_pos_err_tol: 0.1 # for real robot, we want to be more conservative with the base tracking error
+      tracking_pos_err_tol: 0.2 # for real robot, we want to be more conservative with the base tracking error
       tracking_ori_err_tol: 0.25
       hold_period: 1.0
       end_stop: false
@@ -54,7 +54,7 @@ planner:
         check_horizon: 2.0
         check_dt: 0.2
         min_clearance: 0.0
-        deviation_threshold: 0.4
+        deviation_threshold: 0.40
         force_periodic: false
         keep_previous_on_failure: true
 
@@ -167,8 +167,8 @@ controller:
     x0: [0, 0, 0, 0.8, 0.025, 1.5, 0.0, 0.0]
     limits:
       input:
-        lower: [-0.2, -0.2, -0.2, -0.3, -0.2, -1.5, -1.5, -1.5]
-        upper: [0.2, 0.2, 0.2, 0.3, 0.2, 1.5, 1.5, 1.5]
+        lower: [-0.08, -0.08, -0.08, -0.3, -0.2, -1.5, -1.5, -1.5]
+        upper: [0.08, 0.08, 0.08, 0.3, 0.2, 1.5, 1.5, 1.5]
       state:
         lower: [-10, -10, -2.pi, 0.0, 0.0, -1.75, -1.57, -3.14,
                 -1.0, -1.0, -0.75, -0.5, -0.25, -2.0, -2.0, -2.0]
@@ -268,8 +268,8 @@ controller:
       Qk: [0.0, 0.0, 0.0, 0.0, 0.0, 0.0]
       P: [10.0, 10.0, 10.0, 0.0, 0.0, 0.0]
     BasePose:
-      Qk: [10.0, 10.0, 15.0]
-      P: [10.0, 10.0, 15.0]
+      Qk: [10.0, 10.0, 20.0]
+      P: [10.0, 10.0, 20.0]
     BaseVel:
       Qk: [0.0, 0.0, 0.0]
       P: [0.0, 0.0, 0.0]

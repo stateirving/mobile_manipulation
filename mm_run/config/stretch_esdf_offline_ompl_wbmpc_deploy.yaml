@@ -1,0 +1,49 @@
+# Real-table offline ESDF deployment profile.
+#
+# Keep the canonical Stretch offline-ESDF OMPL + WB-MPC setup unchanged and
+# override only the exported ESDF and the absolute map-frame task targets.
+
+include:
+  - package: "mm_run"
+    path: "config/stretch_esdf_offline_ompl_wbmpc.yaml"
+
+planner:
+  # A 0.001 OMPL validity fraction gives roughly centimetre-scale collision
+  # checks over these bounds.  The inherited 0.01 value can simplify across
+  # small unobserved holes in this 1 cm ESDF.
+  task_defaults:
+    base:
+      ompl:
+        state_validity_resolution: 0.001
+    ee:
+      ompl:
+        state_validity_resolution: 0.001
+      # Inflate the Cartesian tool path to 0.13 m total clearance
+      # (0.05 m tool radius + 0.08 m safety distance) around the table edge.
+      esdf:
+        d_safe: 0.08
+
+  tasks:
+    # The reconstructed tabletop begins near x=1.98 m.  This leaves about
+    # 0.53 m to the front edge with yaw=0, facing the table along map +x.
+    - defaults: base
+      name: "Base Approach Table"
+      base_pose: [1.5, 0.0, 0.0]
+
+    # The tabletop zero surface is around z=0.745 m.
+    - defaults: ee
+      name: "EE Above Table"
+      ee_pose: [2.5, 0.0, 0.95, 0.0, 0.0, -0.0708]
+
+    - defaults: ee
+      name: "EE Below Table"
+      # Verified from the measured EE-above configuration with the deployed
+      # RRTConnect + whole-body MPC loop.  This point is about 0.38 m below
+      # the reconstructed tabletop at the same XY location.
+      # ee_pose: [2.0, -0.32, 0.20, 0.0, 0.0, -0.0708]
+      ee_pose: [2.3, 0.0, 0.20, 0.0, 0.0, -0.0708]
+
+controller:
+  esdf_collision:
+    source: "offline"
+    map_path: "/home/miao/repo/mobile_manipulation/mm_run/results/nvblox_esdf/real_bag/2026-08-15_16-49-24_new_table_esdf_scan_v2_dedup_depth2m_1cm_ground008/esdf_grid_straight_base_corridor_top_mast_valid_denoised_under_table.npz"

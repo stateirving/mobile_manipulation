@@ -1,0 +1,1019 @@
+controller:
+  acados:
+    cython:
+      enabled: true
+      recompile: false
+    name: StretchESDFMimic
+    ocp_solver_options:
+      globalization: MERIT_BACKTRACKING
+      hessian_approx: GAUSS_NEWTON
+      integrator_type: DISCRETE
+      nlp_solver_ext_qp_res: 0
+      nlp_solver_max_iter: 500
+      nlp_solver_tol_comp: 0.001
+      nlp_solver_tol_eq: 0.01
+      nlp_solver_tol_ineq: 0.01
+      nlp_solver_tol_stat: 0.001
+      nlp_solver_type: SQP
+      print_level: 0
+      qp_solver: PARTIAL_CONDENSING_HPIPM
+      qp_solver_iter_max: 100
+      qp_solver_warm_start: 0
+      regularize_method: PROJECT
+    raise_exception_on_failure: false
+    slack_enabled:
+      h: false
+      h_0: false
+      h_e: false
+      u: false
+      x: false
+      x_e: false
+    use_custom_hess: true
+    use_terminal_cost: true
+  alpha: 0.05
+  beta: 0.5
+  cmd_vel_pub_rate: 20
+  cmd_vel_type: interpolation
+  collision_constraint_type:
+    self: SignedDistanceConstraint
+    static_obstacles: SignedDistanceConstraint
+  collision_constraints_softened:
+    self: true
+    static_obstacles: true
+  collision_emergency_stop_margin:
+    self: 0.0
+    static_obstacles: 0.0
+  collision_safety_margin:
+    self: 0.25
+    static_obstacles: 0.15
+  collision_soft:
+    self:
+      mu: 0.0001
+      zeta: 0.005
+    static_obstacles:
+      mu: 0.0001
+      zeta: 0.005
+  cost_params:
+    ArmExtension:
+      base_task_upper:
+      - 0.0
+      enabled: true
+      joint_names:
+      - joint_arm_l3
+      smoothing: 0.005
+      upper:
+      - 0.08
+      weight:
+      - 40.0
+    BasePose:
+      P:
+      - 10.0
+      - 10.0
+      - 15.0
+      Qk:
+      - 10.0
+      - 10.0
+      - 15.0
+    BaseVel:
+      P:
+      - 0.0
+      - 0.0
+      - 0.0
+      Qk:
+      - 0.0
+      - 0.0
+      - 0.0
+      Qub:
+      - 0.01
+      - 0.01
+      - 0.01
+      Qvb:
+      - 0.0
+      - 0.0
+      - 0.0
+    EEPose:
+      P:
+      - 10.0
+      - 10.0
+      - 10.0
+      - 0.0
+      - 0.0
+      - 0.0
+      Qk:
+      - 1.0
+      - 1.0
+      - 1.0
+      - 0.0
+      - 0.0
+      - 0.0
+    EEVel:
+      P:
+      - 10.0
+      - 10.0
+      - 10.0
+      - 0.0
+      - 0.0
+      - 0.0
+      Qk:
+      - 0.0
+      - 0.0
+      - 0.0
+      - 0.0
+      - 0.0
+      - 0.0
+    Effort:
+      Qqa:
+      - 0.0
+      - 0.0
+      - 0.0
+      - 0.0
+      - 0.0
+      Qqb:
+      - 0.0
+      - 0.0
+      - 0.0
+      Qua:
+      - 0.01
+      - 0.04
+      - 0.01
+      - 0.02
+      - 0.02
+      Qub:
+      - 0.05
+      - 0.05
+      - 0.001
+      Qva:
+      - 0.01
+      - 0.04
+      - 0.01
+      - 0.02
+      - 0.02
+      Qvb:
+      - 0.0
+      - 0.0
+      - 0.0
+    Regularization:
+      eps: 1.0e-06
+    slack:
+      Z: 1000000
+      z: 1000
+  cst_tol_schedule_enabled: false
+  ctrl_rate: 7
+  dt: 0.1
+  ee_pose_tracking_enabled: true
+  esdf_collision:
+    d_safe: 0.07
+    enabled: true
+    invalid_distance: -1.0
+    map_path:
+      package: mm_run
+      path: results/nvblox_esdf/esdf_test_room_full_2cm_dense/2026-06-15_12-32-10/esdf_grid.npz
+    mode: squared_hinge_cost
+    name: esdf
+    require_all_corners_valid: true
+    soft_cost:
+      mu: 1000.0
+      p: 1.0
+      smoothing: 0.005
+    source: offline
+    spheres:
+    - base_body_collision
+    - lift_mast_collision_00
+    - lift_mast_collision_01
+    - lift_mast_collision_02
+    - lift_mast_collision_03
+    - lift_mast_collision_04
+    - lift_mast_collision_05
+    - lift_mast_collision_06
+    - lift_mast_collision_07
+    - lift_mast_collision_08
+    - lift_mast_collision_09
+    - lift_mast_collision_10
+    - lift_mast_collision_11
+    - lift_mast_collision_12
+    - lift_mast_collision_13
+    - lift_mast_collision_14
+    - lift_mast_collision_15
+    - lift_mast_collision_16
+    - lift_mast_collision_17
+    - lift_mast_collision_18
+    - lift_mast_collision_19
+    - lift_mast_collision_20
+    - lift_mast_collision_21
+    - lift_mast_collision_22
+    - lift_mast_collision_23
+    - lift_mast_collision_24
+    - lift_mast_collision_25
+    - arm_l4_collision
+    - arm_l2_collision
+    - arm_l0_collision
+    - wrist_yaw_collision
+    - gripper_body_collision
+    - gripper_bridge_collision
+    - gripper_tip_collision
+  prediction_horizon: 2.0
+  robot:
+    base_link_name: base_link
+    base_type: nonholonomic
+    collision_model: &id001
+      groups:
+        base:
+        - base_body_collision
+        forearm:
+        - arm_l2_collision
+        - arm_l1_collision
+        - arm_l0_collision
+        rack:
+        - lift_mast_collision_00
+        - lift_mast_collision_01
+        - lift_mast_collision_02
+        - lift_mast_collision_03
+        - lift_mast_collision_04
+        - lift_mast_collision_05
+        - lift_mast_collision_06
+        - lift_mast_collision_07
+        - lift_mast_collision_08
+        - lift_mast_collision_09
+        - lift_mast_collision_10
+        - lift_mast_collision_11
+        - lift_mast_collision_12
+        - lift_mast_collision_13
+        - lift_mast_collision_14
+        - lift_mast_collision_15
+        - lift_mast_collision_16
+        - lift_mast_collision_17
+        - lift_mast_collision_18
+        - lift_mast_collision_19
+        - lift_mast_collision_20
+        - lift_mast_collision_21
+        - lift_mast_collision_22
+        - lift_mast_collision_23
+        - lift_mast_collision_24
+        - lift_mast_collision_25
+        tool:
+        - gripper_body_collision
+        - gripper_bridge_collision
+        - gripper_tip_collision
+        upper_arm:
+        - arm_l4_collision
+        - arm_l3_collision
+        wrist:
+        - wrist_yaw_collision
+        - wrist_pitch_collision
+        - wrist_roll_collision
+      objects:
+        arm_l0_collision:
+          parent_link: link_arm_l0
+          radius: 0.065
+          translation:
+          - 0.0
+          - 0.0
+          - 0.0
+          type: sphere
+        arm_l1_collision:
+          parent_link: link_arm_l1
+          radius: 0.065
+          translation:
+          - 0.0
+          - 0.0
+          - 0.0
+          type: sphere
+        arm_l2_collision:
+          parent_link: link_arm_l2
+          radius: 0.065
+          translation:
+          - 0.0
+          - 0.0
+          - 0.0
+          type: sphere
+        arm_l3_collision:
+          parent_link: link_arm_l3
+          radius: 0.07
+          translation:
+          - 0.0
+          - 0.0
+          - 0.0
+          type: sphere
+        arm_l4_collision:
+          parent_link: link_arm_l4
+          radius: 0.07
+          translation:
+          - 0.0
+          - 0.0
+          - 0.0
+          type: sphere
+        base_body_collision:
+          parent_link: base_link
+          radius: 0.2
+          translation:
+          - -0.1
+          - 0.0
+          - 0.12
+          type: sphere
+        gripper_body_collision:
+          parent_link: link_gripper_s3_body
+          radius: 0.08
+          translation:
+          - 0.0
+          - 0.0
+          - 0.0
+          type: sphere
+        gripper_bridge_collision:
+          parent_link: link_gripper_s3_body
+          radius: 0.06
+          translation:
+          - 0.0
+          - 0.0
+          - 0.135
+          type: sphere
+        gripper_tip_collision:
+          parent_link: link_grasp_center
+          radius: 0.045
+          translation:
+          - 0.0
+          - 0.0
+          - 0.0
+          type: sphere
+        lift_mast_collision_00:
+          parent_link: link_mast
+          radius: 0.03
+          translation:
+          - 0.0
+          - 0.075
+          - 0.0
+          type: sphere
+        lift_mast_collision_01:
+          parent_link: link_mast
+          radius: 0.03
+          translation:
+          - 0.0
+          - 0.125
+          - 0.0
+          type: sphere
+        lift_mast_collision_02:
+          parent_link: link_mast
+          radius: 0.03
+          translation:
+          - 0.0
+          - 0.175
+          - 0.0
+          type: sphere
+        lift_mast_collision_03:
+          parent_link: link_mast
+          radius: 0.03
+          translation:
+          - 0.0
+          - 0.225
+          - 0.0
+          type: sphere
+        lift_mast_collision_04:
+          parent_link: link_mast
+          radius: 0.03
+          translation:
+          - 0.0
+          - 0.275
+          - 0.0
+          type: sphere
+        lift_mast_collision_05:
+          parent_link: link_mast
+          radius: 0.03
+          translation:
+          - 0.0
+          - 0.325
+          - 0.0
+          type: sphere
+        lift_mast_collision_06:
+          parent_link: link_mast
+          radius: 0.03
+          translation:
+          - 0.0
+          - 0.375
+          - 0.0
+          type: sphere
+        lift_mast_collision_07:
+          parent_link: link_mast
+          radius: 0.03
+          translation:
+          - 0.0
+          - 0.425
+          - 0.0
+          type: sphere
+        lift_mast_collision_08:
+          parent_link: link_mast
+          radius: 0.03
+          translation:
+          - 0.0
+          - 0.475
+          - 0.0
+          type: sphere
+        lift_mast_collision_09:
+          parent_link: link_mast
+          radius: 0.03
+          translation:
+          - 0.0
+          - 0.525
+          - 0.0
+          type: sphere
+        lift_mast_collision_10:
+          parent_link: link_mast
+          radius: 0.03
+          translation:
+          - 0.0
+          - 0.575
+          - 0.0
+          type: sphere
+        lift_mast_collision_11:
+          parent_link: link_mast
+          radius: 0.03
+          translation:
+          - 0.0
+          - 0.625
+          - 0.0
+          type: sphere
+        lift_mast_collision_12:
+          parent_link: link_mast
+          radius: 0.03
+          translation:
+          - 0.0
+          - 0.675
+          - 0.0
+          type: sphere
+        lift_mast_collision_13:
+          parent_link: link_mast
+          radius: 0.03
+          translation:
+          - 0.0
+          - 0.725
+          - 0.0
+          type: sphere
+        lift_mast_collision_14:
+          parent_link: link_mast
+          radius: 0.03
+          translation:
+          - 0.0
+          - 0.775
+          - 0.0
+          type: sphere
+        lift_mast_collision_15:
+          parent_link: link_mast
+          radius: 0.03
+          translation:
+          - 0.0
+          - 0.825
+          - 0.0
+          type: sphere
+        lift_mast_collision_16:
+          parent_link: link_mast
+          radius: 0.03
+          translation:
+          - 0.0
+          - 0.875
+          - 0.0
+          type: sphere
+        lift_mast_collision_17:
+          parent_link: link_mast
+          radius: 0.03
+          translation:
+          - 0.0
+          - 0.925
+          - 0.0
+          type: sphere
+        lift_mast_collision_18:
+          parent_link: link_mast
+          radius: 0.03
+          translation:
+          - 0.0
+          - 0.975
+          - 0.0
+          type: sphere
+        lift_mast_collision_19:
+          parent_link: link_mast
+          radius: 0.03
+          translation:
+          - 0.0
+          - 1.025
+          - 0.0
+          type: sphere
+        lift_mast_collision_20:
+          parent_link: link_mast
+          radius: 0.03
+          translation:
+          - 0.0
+          - 1.075
+          - 0.0
+          type: sphere
+        lift_mast_collision_21:
+          parent_link: link_mast
+          radius: 0.03
+          translation:
+          - 0.0
+          - 1.125
+          - 0.0
+          type: sphere
+        lift_mast_collision_22:
+          parent_link: link_mast
+          radius: 0.03
+          translation:
+          - 0.0
+          - 1.175
+          - 0.0
+          type: sphere
+        lift_mast_collision_23:
+          parent_link: link_mast
+          radius: 0.03
+          translation:
+          - 0.0
+          - 1.225
+          - 0.0
+          type: sphere
+        lift_mast_collision_24:
+          parent_link: link_mast
+          radius: 0.03
+          translation:
+          - 0.0
+          - 1.275
+          - 0.0
+          type: sphere
+        lift_mast_collision_25:
+          parent_link: link_mast
+          radius: 0.03
+          translation:
+          - 0.0
+          - 1.325
+          - 0.0
+          type: sphere
+        wrist_pitch_collision:
+          parent_link: link_wrist_pitch
+          radius: 0.06
+          translation:
+          - 0.0
+          - 0.0
+          - 0.0
+          type: sphere
+        wrist_roll_collision:
+          parent_link: link_wrist_roll
+          radius: 0.055
+          translation:
+          - 0.0
+          - 0.0
+          - 0.0
+          type: sphere
+        wrist_yaw_collision:
+          parent_link: link_wrist_yaw
+          radius: 0.06
+          translation:
+          - 0.0
+          - 0.0
+          - 0.0
+          type: sphere
+      pinocchio_self_collision_pairs:
+      - - base
+        - wrist
+      - - base
+        - tool
+      - - upper_arm
+        - tool
+      - - forearm
+        - rack
+      pinocchio_static_obstacle_pairs:
+        ground:
+        - forearm
+        - wrist
+        - tool
+      self_collision_pairs:
+      - - base
+        - wrist
+      - - base
+        - tool
+      - - upper_arm
+        - tool
+      - - forearm
+        - rack
+      static_obstacle_pairs:
+        ground:
+        - tool
+    dims:
+      q: 8
+      u: 8
+      v: 8
+      x: 16
+    joint_names:
+    - x_to_world_joint
+    - y_to_x_joint
+    - base_to_y_joint
+    - joint_lift
+    - joint_arm_l3
+    - joint_wrist_yaw
+    - joint_wrist_pitch
+    - joint_wrist_roll
+    limits:
+      input:
+        lower:
+        - -0.2
+        - -0.2
+        - -0.2
+        - -0.3
+        - -0.2
+        - -1.5
+        - -1.5
+        - -1.5
+        upper:
+        - 0.2
+        - 0.2
+        - 0.2
+        - 0.3
+        - 0.2
+        - 1.5
+        - 1.5
+        - 1.5
+      state:
+        lower:
+        - -10
+        - -10
+        - -2.pi
+        - 0.0
+        - 0.0
+        - -1.75
+        - -1.57
+        - -3.14
+        - -1.0
+        - -1.0
+        - -0.75
+        - -0.5
+        - -0.25
+        - -2.0
+        - -2.0
+        - -2.0
+        upper:
+        - 10
+        - 10
+        - 2.pi
+        - 1.1
+        - 0.13
+        - 4.0
+        - 0.56
+        - 3.14
+        - 1.0
+        - 1.0
+        - 0.75
+        - 0.5
+        - 0.25
+        - 2.0
+        - 2.0
+        - 2.0
+    link_names:
+    - base_link
+    - link_mast
+    - link_lift
+    - link_arm_l4
+    - link_arm_l3
+    - link_arm_l2
+    - link_arm_l1
+    - link_arm_l0
+    - link_wrist_yaw
+    - link_wrist_yaw_bottom
+    - link_wrist_pitch
+    - link_wrist_roll
+    - link_gripper_s3_body
+    - link_grasp_center
+    mimic: true
+    nonholonomic_mode: dynamics
+    time_discretization_dt: 0.1
+    tool_link_name: link_grasp_center
+    tool_vicon_name: StretchTool
+    urdf:
+      args:
+        transform_params: $(find mm_run)/config/robot/robot_transforms_real.yaml
+        use_collision: 'True'
+      includes: []
+      package: mm_assets
+      path: stretch/stretch_ctrl.urdf
+    x0:
+    - 0
+    - 0
+    - 0
+    - 0.8
+    - 0.025
+    - 1.5
+    - 0.0
+    - 0.0
+  scene:
+    collision_link_names:
+      static_obstacles: []
+    enabled: true
+    urdf:
+      includes:
+      - $(find mm_assets)/scenes/xacro/esdf_test_room.urdf.xacro
+      package: mm_assets
+      path: scenes/urdf/esdf_test_room.urdf
+  self_collision_avoidance_enabled: false
+  self_collision_emergency_stop: false
+  soft_cst: true
+  static_obstacles_collision_avoidance_enabled: false
+  type: MPC
+  xu_soft:
+    mu: 0.001
+    zeta: 0.005
+logging:
+  log_dir: stretch_esdf_offline_ompl_wbmpc/report_baseline
+  log_level: 20
+planner:
+  task_defaults:
+    base:
+      base_mask:
+      - true
+      - true
+      - true
+      bounds_margin: 0.75
+      bounds_xy:
+      - - -4.0
+        - 4.0
+      - - -4.0
+        - 4.0
+      end_stop: false
+      esdf:
+        allow_straight_line_fallback: false
+        base_radius: 0.2
+        d_safe: 0.2
+        enabled: true
+        query_z:
+        - 0.15
+        - 0.35
+        unknown_is_valid: false
+      hold_period: 1.0
+      ompl:
+        goal_tolerance: 0.08
+        planner: RRTstar
+        range: 0.1
+        simplify: true
+        simplify_time: 0.05
+        solve_attempts: 5
+        solve_time: 3
+        state_validity_resolution: 0.01
+      path:
+        angular_speed: 0.8
+        dt: 0.1
+        interpolation_resolution: 0.05
+        linear_speed: 0.25
+        yaw_mode: tangent
+      planner_type: OMPLBasePlanner
+      replan:
+        check_dt: 0.2
+        check_horizon: 2.0
+        deviation_threshold: 0.4
+        enabled: true
+        force_periodic: false
+        keep_previous_on_failure: true
+        min_clearance: 0.0
+        min_interval: 1.0
+        validate_every_step: false
+        validate_remaining_path: false
+      tracking_ori_err_tol: 0.25
+      tracking_pos_err_tol: 0.1
+    ee:
+      bounds_margin: 0.25
+      bounds_xyz:
+      - - 0.0
+        - 3.5
+      - - -2.5
+        - 1.0
+      - - 0.25
+        - 1.3
+      ee_mask:
+      - true
+      - true
+      - true
+      - false
+      - false
+      - false
+      end_stop: false
+      esdf:
+        allow_straight_line_fallback: false
+        d_safe: 0.05
+        enabled: true
+        tool_radius: 0.05
+        unknown_is_valid: false
+      hold_period: 1.0
+      ompl:
+        goal_tolerance: 0.04
+        planner: RRTConnect
+        range: 0.12
+        simplify: true
+        simplify_time: 0.05
+        solve_attempts: 3
+        solve_time: 5
+        state_validity_resolution: 0.01
+      path:
+        angular_speed: 0.8
+        dt: 0.1
+        interpolation_resolution: 0.04
+        linear_speed: 0.12
+      planner_type: OMPLEEPlanner
+      replan:
+        check_dt: 0.2
+        check_horizon: 2.0
+        deviation_threshold: 0.25
+        enabled: true
+        force_periodic: true
+        keep_previous_on_failure: true
+        min_clearance: 0.0
+        min_interval: 2.0
+        validate_every_step: false
+        validate_remaining_path: false
+      tracking_ori_err_tol: 0.25
+      tracking_pos_err_tol: 0.1
+  tasks:
+  - base_pose:
+    - 2.0
+    - 0.0
+    - 0.0
+    defaults: base
+    name: OMPL Base Work Area
+  - defaults: ee
+    ee_pose:
+    - 3.0
+    - -0.5
+    - 0.9
+    - 0.0
+    - 0.0
+    - -0.0708
+    name: EE Approach
+  - defaults: ee
+    ee_pose:
+    - 3.0
+    - -0.5
+    - 0.4
+    - 0.0
+    - 0.0
+    - -0.0708
+    name: EE Reach Low
+  - defaults: ee
+    ee_pose:
+    - 3.0
+    - 0.5
+    - 0.4
+    - 0.0
+    - 0.0
+    - -0.0708
+    name: EE Reach Side
+simulation:
+  collision_sphere_markers:
+    alpha: 0.25
+    color:
+    - 0.0
+    - 0.7
+    - 1.0
+    enabled: true
+    object_colors: {}
+  duration: 40.0
+  dynamic_obstacles:
+    enabled: false
+  gravity:
+  - 0
+  - 0
+  - 0
+  gui: false
+  robot:
+    aggregate_actuators:
+      enabled: true
+      groups:
+      - command_delay: 0.12
+        geometry_distribution:
+        - 0.25
+        - 0.25
+        - 0.25
+        - 0.25
+        joints:
+        - joint_arm_l3
+        - joint_arm_l2
+        - joint_arm_l1
+        - joint_arm_l0
+        name: wrist_extension
+        position_limits:
+        - 0.0
+        - 0.52
+        velocity_limits:
+        - -1.0
+        - 1.0
+    base_joint_name: base_to_y_joint
+    base_link_name: base_link
+    base_type: nonholonomic
+    collision_model: *id001
+    dims:
+      q: 11
+      u: 11
+      v: 11
+      x: 22
+    home:
+    - 0
+    - 0
+    - 0
+    - 0.8
+    - 0.025
+    - 0.025
+    - 0.025
+    - 0.025
+    - 1.5
+    - 0.0
+    - 0.0
+    joint_names:
+    - x_to_world_joint
+    - y_to_x_joint
+    - base_to_y_joint
+    - joint_lift
+    - joint_arm_l3
+    - joint_arm_l2
+    - joint_arm_l1
+    - joint_arm_l0
+    - joint_wrist_yaw
+    - joint_wrist_pitch
+    - joint_wrist_roll
+    limits:
+      state:
+        lower:
+        - -10.0
+        - -10.0
+        - -6.283185307179586
+        - 0.0
+        - 0.0
+        - 0.0
+        - 0.0
+        - 0.0
+        - -1.75
+        - -1.57
+        - -3.14
+        - -1.0
+        - -1.0
+        - -0.75
+        - -0.5
+        - -0.25
+        - -0.25
+        - -0.25
+        - -0.25
+        - -2.0
+        - -2.0
+        - -2.0
+        upper:
+        - 10.0
+        - 10.0
+        - 6.283185307179586
+        - 1.1
+        - 0.13
+        - 0.13
+        - 0.13
+        - 0.13
+        - 4.0
+        - 0.56
+        - 3.14
+        - 1.0
+        - 1.0
+        - 0.75
+        - 0.5
+        - 0.25
+        - 0.25
+        - 0.25
+        - 0.25
+        - 2.0
+        - 2.0
+        - 2.0
+    link_names:
+    - base_link
+    - link_mast
+    - link_lift
+    - link_arm_l4
+    - link_arm_l3
+    - link_arm_l2
+    - link_arm_l1
+    - link_arm_l0
+    - link_wrist_yaw
+    - link_wrist_yaw_bottom
+    - link_wrist_pitch
+    - link_wrist_roll
+    - link_gripper_s3_body
+    - link_grasp_center
+    noise:
+      measurement:
+        q_std_dev: 0
+        v_std_dev: 0
+      process:
+        v_std_dev: 0
+    nonholonomic_mode: dynamics
+    tool_joint_name: joint_grasp_center
+    tool_link_name: link_grasp_center
+    tool_vicon_name: ThingContainer
+    urdf:
+      args:
+        transform_params: $(find mm_run)/config/robot/urdf_transforms.yaml
+        use_collision: 'false'
+      includes: []
+      package: mm_assets
+      path: stretch/stretch_sim.urdf
+  static_obstacles:
+    collision_enabled: false
+    enabled: true
+    urdf:
+      includes:
+      - $(find mm_assets)/scenes/xacro/esdf_test_room.urdf.xacro
+      package: mm_assets
+      path: scenes/urdf/esdf_test_room.urdf
+  timestep: 0.03

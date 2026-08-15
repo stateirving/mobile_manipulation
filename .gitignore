@@ -21,6 +21,15 @@ __pycache__/
 # Results/output data
 results/
 
+# Keep the report's reproducibility archive in the repository.  Other
+# root-level diagnostics remain ignored below.
+!results/
+results/*
+!results/report_experiments/
+!results/report_experiments/**
+# Raw experiment arrays exceed GitHub's per-file limit and remain local.
+results/report_experiments/**/raw/data.npz
+
 # Keep only compact ESDF grids needed by checked-in ESDF MPC demos.
 !mm_run/results/
 mm_run/results/**
