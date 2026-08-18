@@ -1,13 +1,13 @@
 # Fdb version 4
-["bibtex report"] 1786722911.29658 "report.aux" "report.bbl" "report" 1786722911.85266 0
-  "./references.bib" 1786714173.31752 7748 c683f657ce90e9370a3b6ea64ca38954 ""
+["bibtex report"] 1787062823.53575 "report.aux" "report.bbl" "report" 1787062824.00978 0
+  "./references.bib" 1787050468.61498 7748 c683f657ce90e9370a3b6ea64ca38954 ""
   "/usr/share/texlive/texmf-dist/bibtex/bst/ieeetran/IEEEtran.bst" 1440712899 57748 7c8250ecf02814ce6ddc0cdbb63df1dd ""
-  "report.aux" 1786722911.75956 9805 9f57ed64ec3fc8b4d9b43bc710ef1cda "pdflatex"
+  "report.aux" 1787062823.93601 10670 88a73951566dbf7371e5c0ddda060a8a "pdflatex"
   (generated)
   "report.bbl"
   "report.blg"
   (rewritten before read)
-["pdflatex"] 1786722911.32048 "report.tex" "report.pdf" "report" 1786722911.85304 0
+["pdflatex"] 1787062823.55183 "report.tex" "report.pdf" "report" 1787062824.00997 0
   "/etc/texmf/web2c/texmf.cnf" 1783277313.14133 475 c0e671620eb5563b2130f56340a5fde8 ""
   "/usr/share/texlive/texmf-dist/fonts/enc/dvips/base/8r.enc" 1165713224 4850 80dc9bab7f31fb78a000ccfed0e27cab ""
   "/usr/share/texlive/texmf-dist/fonts/map/fontname/texfonts.map" 1577235249 3524 cb3e574dea2d1052e39280babc910dc8 ""
@@ -46,6 +46,9 @@
   "/usr/share/texlive/texmf-dist/fonts/tfm/public/cm/cmr6.tfm" 1136768653 1300 b62933e007d01cfd073f79b963c01526 ""
   "/usr/share/texlive/texmf-dist/fonts/tfm/public/cm/cmr8.tfm" 1136768653 1292 21c1c5bfeaebccffdb478fd231a0997d ""
   "/usr/share/texlive/texmf-dist/fonts/tfm/public/cm/cmr9.tfm" 1136768653 1292 6b21b9c2c7bebb38aa2273f7ca0fb3af ""
+  "/usr/share/texlive/texmf-dist/fonts/tfm/public/cm/cmss10.tfm" 1136768653 1316 b636689f1933f24d1294acdf6041daaa ""
+  "/usr/share/texlive/texmf-dist/fonts/tfm/public/cm/cmss8.tfm" 1136768653 1296 d77f431d10d47c8ea2cc18cf45346274 ""
+  "/usr/share/texlive/texmf-dist/fonts/tfm/public/cm/cmss9.tfm" 1136768653 1320 49357c421c0d469f88b867dd0c3d10e8 ""
   "/usr/share/texlive/texmf-dist/fonts/tfm/public/cm/cmsy6.tfm" 1136768653 1116 933a60c408fc0a863a92debe84b2d294 ""
   "/usr/share/texlive/texmf-dist/fonts/tfm/public/cm/cmsy8.tfm" 1136768653 1120 8b7d695260f3cff42e636090a8002094 ""
   "/usr/share/texlive/texmf-dist/fonts/tfm/public/cm/cmsy9.tfm" 1136768653 1116 25a7bf822c58caf309a702ef79f4afbb ""
@@ -59,6 +62,7 @@
   "/usr/share/texlive/texmf-dist/fonts/type1/public/amsfonts/cm/cmr10.pfb" 1248133631 35752 024fb6c41858982481f6968b5fc26508 ""
   "/usr/share/texlive/texmf-dist/fonts/type1/public/amsfonts/cm/cmr5.pfb" 1248133631 31809 8670ca339bf94e56da1fc21c80635e2a ""
   "/usr/share/texlive/texmf-dist/fonts/type1/public/amsfonts/cm/cmr7.pfb" 1248133631 32762 224316ccc9ad3ca0423a14971cfa7fc1 ""
+  "/usr/share/texlive/texmf-dist/fonts/type1/public/amsfonts/cm/cmss8.pfb" 1248133631 24420 52dbb8e8aa0069a1b987309557f8d303 ""
   "/usr/share/texlive/texmf-dist/fonts/type1/public/amsfonts/cm/cmsy10.pfb" 1248133631 32569 5e5ddc8df908dea60932f3c484a54c0d ""
   "/usr/share/texlive/texmf-dist/fonts/type1/public/amsfonts/cm/cmsy5.pfb" 1248133631 32915 7bf7720c61a5b3a7ff25b0964421c9b6 ""
   "/usr/share/texlive/texmf-dist/fonts/type1/public/amsfonts/cm/cmsy7.pfb" 1248133631 32716 08e384dc442464e7285e891af9f45947 ""
@@ -142,16 +146,16 @@
   "/usr/share/texmf/web2c/texmf.cnf" 1707919699 40399 f2c302f7d2af602abb742093540a5834 ""
   "/var/lib/texmf/fonts/map/pdftex/updmap/pdftex.map" 1783277373.86644 128028 f533b797fba58d231669ea19e894e23e ""
   "/var/lib/texmf/web2c/pdftex/pdflatex.fmt" 1783277394 6800788 19f92e3a2217e64f3fed0828d7a906a5 ""
-  "figures/coordinate_mapping.pdf" 1786705688.81691 14256 69dd68eb9d402af1d46feab05bcad219 ""
-  "figures/platform_comparison.pdf" 1786705688.10989 12497 f9eddcfdad18c1b12c6dcfb911be79ad ""
-  "figures/platform_timing_clearance.pdf" 1786705688.70091 20263 44b4465ee55fa181d4bffc955c975d25 ""
-  "figures/platform_tracking.pdf" 1786705688.4019 23919 c73608b4e5070acc2730ce376c138287 ""
-  "figures/safety_states.pdf" 1786705688.89448 12518 280a023eba8889b0d9d2b7033e40fcbc ""
-  "figures/system_overview.pdf" 1786705688.76191 14163 7f4bb04715773c31b607ac6ed52c4f8a ""
-  "report.aux" 1786722911.75956 9805 9f57ed64ec3fc8b4d9b43bc710ef1cda "pdflatex"
-  "report.bbl" 1786722911.31655 4730 92de667b0532a8aa44ddf4dad593224a "bibtex report"
-  "report.out" 1786722911.76056 5296 aee17a960fd656034f82c78ac978c5d4 "pdflatex"
-  "report.tex" 1786722906.73947 47517 291c24c466b8d259b1790710b9aa2908 ""
+  "figures/coordinate_mapping.pdf" 1787050468.61398 14256 69dd68eb9d402af1d46feab05bcad219 ""
+  "figures/platform_comparison.pdf" 1787050468.61398 12497 f9eddcfdad18c1b12c6dcfb911be79ad ""
+  "figures/platform_timing_clearance.pdf" 1787050468.61398 20263 44b4465ee55fa181d4bffc955c975d25 ""
+  "figures/platform_tracking.pdf" 1787050468.61398 23919 c73608b4e5070acc2730ce376c138287 ""
+  "figures/safety_states.pdf" 1787050468.61398 12518 280a023eba8889b0d9d2b7033e40fcbc ""
+  "figures/system_overview.pdf" 1787062556.26502 22565 f25096c7c7e65e49bc378de66cddadcb ""
+  "report.aux" 1787062823.93601 10670 88a73951566dbf7371e5c0ddda060a8a "pdflatex"
+  "report.bbl" 1787062823.548 5136 976b5e2760b639067f289b7d1427bc73 "bibtex report"
+  "report.out" 1787062823.93601 6054 f9fa39993ecdbfb7834f662055ab283d "pdflatex"
+  "report.tex" 1787062818.39693 51172 954ae9e493c30550b3b48f097c39c042 ""
   (generated)
   "report.aux"
   "report.log"

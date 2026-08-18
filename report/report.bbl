@@ -94,6 +94,16 @@ J.-R. Chiu, J.-P. Sleiman, M.~Mittal, F.~Farshidian, and M.~Hutter, ``A
   \emph{2022 International Conference on Robotics and Automation (ICRA)}, 2022,
   pp. 4686--4693.
 
+\bibitem{sucan2012ompl}
+I.~A. {\c{S}}ucan, M.~Moll, and L.~E. Kavraki, ``The open motion planning
+  library,'' \emph{IEEE Robotics \& Automation Magazine}, vol.~19, no.~4, pp.
+  72--82, 2012.
+
+\bibitem{karaman2011sampling}
+S.~Karaman and E.~Frazzoli, ``Sampling-based algorithms for optimal motion
+  planning,'' \emph{The International Journal of Robotics Research}, vol.~30,
+  no.~7, pp. 846--894, 2011.
+
 \bibitem{verschueren2022acados}
 R.~Verschueren, G.~Frison, D.~Kouzoupis, J.~Frey, N.~van Duijkeren, A.~Zanelli,
   B.~Novoselnik, T.~Albin, R.~Quirynen, and M.~Diehl, ``acados---a modular

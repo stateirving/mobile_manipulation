@@ -1,4 +1,4 @@
-This is pdfTeX, Version 3.141592653-2.6-1.40.25 (TeX Live 2023/Debian) (preloaded format=pdflatex 2026.7.5)  14 AUG 2026 17:55
+This is pdfTeX, Version 3.141592653-2.6-1.40.25 (TeX Live 2023/Debian) (preloaded format=pdflatex 2026.7.5)  18 AUG 2026 16:20
 entering extended mode
  restricted \write18 enabled.
  %&-line parsing enabled.
@@ -527,160 +527,160 @@ File: umsb.fd 2013/01/14 v3.01 AMS symbols B
 )
 (/usr/share/texlive/texmf-dist/tex/latex/microtype/mt-msb.cfg
 File: mt-msb.cfg 2005/06/01 v1.0 microtype config. file: AMS symbols (b) (RS)
-)
-<figures/system_overview.pdf, id=117, 414.92014pt x 125.7498pt>
+) [1{/var/lib/texmf/fonts/map/pdftex/updmap/pdftex.map}{/usr/share/texlive/texm
+f-dist/fonts/enc/dvips/base/8r.enc}
+
+
+]
+<figures/system_overview.pdf, id=152, 414.92014pt x 139.66177pt>
 File: figures/system_overview.pdf Graphic file (type pdf)
 <use figures/system_overview.pdf>
-Package pdftex.def Info: figures/system_overview.pdf  used on input line 107.
-(pdftex.def)             Requested size: 252.0pt x 76.3753pt.
-
-Underfull \vbox (badness 1077) has occurred while \output is active []
-
- [1{/var/lib/texmf/fonts/map/pdftex/updmap/pdftex.map}{/usr/share/texlive/texmf
--dist/fonts/enc/dvips/base/8r.enc}
-
-
- <./figures/system_overview.pdf>] [2]
-Underfull \hbox (badness 1769) in paragraph at lines 286--295
+Package pdftex.def Info: figures/system_overview.pdf  used on input line 219.
+(pdftex.def)             Requested size: 516.0pt x 173.70302pt.
+ [2]
+Underfull \hbox (badness 1769) in paragraph at lines 303--313
 []\OT1/ptm/m/n/10 (+20) The ex-ported ESDF is sam-pled on a reg-u-lar three-
  []
 
-[3]
+[3 <./figures/system_overview.pdf>]
+Package microtype Info: Loading generic protrusion settings for font family
+(microtype)             `cmss' (encoding: OT1).
+(microtype)             For optimal results, create family-specific settings.
+(microtype)             See the microtype manual for details.
+ [4]
 LaTeX Font Info:    Trying to load font information for OT1+pcr on input line 4
-55.
- (/usr/share/texlive/texmf-dist/tex/latex/psnfss/ot1pcr.fd
+77.
+
+(/usr/share/texlive/texmf-dist/tex/latex/psnfss/ot1pcr.fd
 File: ot1pcr.fd 2001/06/04 font definitions for OT1/pcr.
 )
 Package microtype Info: Loading generic protrusion settings for font family
 (microtype)             `pcr' (encoding: OT1).
 (microtype)             For optimal results, create family-specific settings.
 (microtype)             See the microtype manual for details.
-<figures/coordinate_mapping.pdf, id=199, 414.92014pt x 125.7498pt>
-File: figures/coordinate_mapping.pdf Graphic file (type pdf)
-<use figures/coordinate_mapping.pdf>
-Package pdftex.def Info: figures/coordinate_mapping.pdf  used on input line 462
-.
-(pdftex.def)             Requested size: 252.0pt x 76.3753pt.
- [4 <./figures/coordinate_mapping.pdf>]
-Underfull \hbox (badness 10000) in paragraph at lines 509--509
+
+Underfull \hbox (badness 10000) in paragraph at lines 531--531
 []\OT1/ptm/m/n/7 (+20) Pinocchio/CasADi model
  []
 
+[5]
+<figures/coordinate_mapping.pdf, id=246, 414.92014pt x 125.7498pt>
+File: figures/coordinate_mapping.pdf Graphic file (type pdf)
+<use figures/coordinate_mapping.pdf>
+Package pdftex.def Info: figures/coordinate_mapping.pdf  used on input line 590
+.
+(pdftex.def)             Requested size: 252.0pt x 76.3753pt.
 
-Underfull \hbox (badness 10000) in paragraph at lines 527--534
+Underfull \hbox (badness 10000) in paragraph at lines 598--605
 []\OT1/ptm/m/n/10 (+20) The real state side fuses \OT1/pcr/m/n/10 /odom\OT1/ptm
 /m/n/10 (+20) , named
  []
 
-<figures/safety_states.pdf, id=224, 414.92014pt x 131.31459pt>
+<figures/safety_states.pdf, id=248, 414.92014pt x 131.31459pt>
 File: figures/safety_states.pdf Graphic file (type pdf)
 <use figures/safety_states.pdf>
-Package pdftex.def Info: figures/safety_states.pdf  used on input line 562.
+Package pdftex.def Info: figures/safety_states.pdf  used on input line 633.
 (pdftex.def)             Requested size: 252.0pt x 79.75513pt.
 
-Underfull \hbox (badness 10000) in paragraph at lines 572--584
+Underfull \hbox (badness 10000) in paragraph at lines 643--655
 \OT1/pcr/m/n/10 stretch_esdf_offline_ompl_wbmpc.yaml \OT1/ptm/m/n/10 (+20) and
  []
 
 
-Underfull \hbox (badness 10000) in paragraph at lines 572--584
+Underfull \hbox (badness 10000) in paragraph at lines 643--655
 \OT1/pcr/m/n/10 ur10_esdf_offline_ompl_wbmpc.yaml \OT1/ptm/m/n/10 (+20) pro-fil
 es.
  []
 
 
-Underfull \hbox (badness 3601) in paragraph at lines 572--584
+Underfull \hbox (badness 3601) in paragraph at lines 643--655
 \OT1/ptm/m/n/10 (+20) Both used the same ex-per-i-ment run-ner, task-manager
  []
 
 
-Underfull \hbox (badness 2005) in paragraph at lines 572--584
+Underfull \hbox (badness 2005) in paragraph at lines 643--655
 \OT1/ptm/m/n/10 (+20) classes, ESDF im-ple-men-ta-tion, MPC class, and 30-ms
  []
 
 
-Underfull \hbox (badness 2951) in paragraph at lines 572--584
+Underfull \hbox (badness 2951) in paragraph at lines 643--655
 \OT1/ptm/m/n/10 (+20) sim-u-la-tor step; se-lect-ing a dif-fer-ent com-posed YA
 ML
  []
 
 
-Underfull \hbox (badness 1577) in paragraph at lines 572--584
+Underfull \hbox (badness 1577) in paragraph at lines 643--655
 \OT1/ptm/m/n/10 (+20) UR10 solver ar-ti-fact was ab-sent, so \OT1/pcr/m/n/10 re
 compile \OT1/ptm/m/n/10 (+20) was
  []
 
 
-Underfull \hbox (badness 10000) in paragraph at lines 572--584
+Underfull \hbox (badness 10000) in paragraph at lines 643--655
 \OT1/pcr/m/n/10 58b32939cd4030ec9d2aec86003926bc575a4b59
  []
 
-[5 <./figures/safety_states.pdf>]
-<figures/platform_comparison.pdf, id=243, 508.73878pt x 168.7138pt>
+[6 <./figures/coordinate_mapping.pdf> <./figures/safety_states.pdf>]
+<figures/platform_comparison.pdf, id=278, 508.73878pt x 168.7138pt>
 File: figures/platform_comparison.pdf Graphic file (type pdf)
 <use figures/platform_comparison.pdf>
-Package pdftex.def Info: figures/platform_comparison.pdf  used on input line 65
-4.
+Package pdftex.def Info: figures/platform_comparison.pdf  used on input line 72
+5.
 (pdftex.def)             Requested size: 252.0pt x 83.5715pt.
-<figures/platform_tracking.pdf, id=246, 513.61386pt x 329.05121pt>
+<figures/platform_tracking.pdf, id=281, 513.61386pt x 329.05121pt>
 File: figures/platform_tracking.pdf Graphic file (type pdf)
 <use figures/platform_tracking.pdf>
-Package pdftex.def Info: figures/platform_tracking.pdf  used on input line 681.
+Package pdftex.def Info: figures/platform_tracking.pdf  used on input line 752.
 
 (pdftex.def)             Requested size: 474.71906pt x 304.14165pt.
- [6 <./figures/platform_comparison.pdf>]
-<figures/platform_timing_clearance.pdf, id=267, 525.07607pt x 331.3868pt>
+<figures/platform_timing_clearance.pdf, id=284, 525.07607pt x 331.3868pt>
 File: figures/platform_timing_clearance.pdf Graphic file (type pdf)
 <use figures/platform_timing_clearance.pdf>
 Package pdftex.def Info: figures/platform_timing_clearance.pdf  used on input l
-ine 752.
+ine 823.
 (pdftex.def)             Requested size: 474.71906pt x 299.61063pt.
+ [7 <./figures/platform_comparison.pdf>]
+Underfull \vbox (badness 1024) has occurred while \output is active []
 
+ [8 <./figures/platform_tracking.pdf>]
 Underfull \vbox (badness 10000) has occurred while \output is active []
 
- [7 <./figures/platform_tracking.pdf>] [8 <./figures/platform_timing_clearance.
-pdf>]
-Underfull \hbox (badness 10000) in paragraph at lines 866--870
+
+Underfull \hbox (badness 10000) in paragraph at lines 937--941
 []$\OT1/pcr/m/n/8 results / report _ experiments /
  []
 
 
-Underfull \hbox (badness 10000) in paragraph at lines 866--870
+Underfull \hbox (badness 10000) in paragraph at lines 937--941
 \OT1/pcr/m/n/8 stretch _ esdf _ offline _ ompl _ wbmpc/$
  []
 
 
-Underfull \hbox (badness 10000) in paragraph at lines 866--870
+Underfull \hbox (badness 10000) in paragraph at lines 937--941
 \OT1/pcr/m/n/8 2026-[]08-[]14 _ 12-[]25-[]30 / raw / data . npz$
  []
 
 
-Underfull \hbox (badness 10000) in paragraph at lines 866--870
+Underfull \hbox (badness 10000) in paragraph at lines 937--941
 \OT1/pcr/m/n/8 results / report _ experiments /
  []
 
 
-Underfull \hbox (badness 10000) in paragraph at lines 866--870
+Underfull \hbox (badness 10000) in paragraph at lines 937--941
 \OT1/pcr/m/n/8 ur10 _ esdf _ offline _ ompl _ wbmpc/$
  []
 
-
-Underfull \hbox (badness 10000) in paragraph at lines 881--884
+[9 <./figures/platform_timing_clearance.pdf>]
+Underfull \hbox (badness 10000) in paragraph at lines 952--955
 []\OT1/pcr/m/n/8 --ur10-data
  []
 
 
-Underfull \hbox (badness 1983) in paragraph at lines 885--889
+Underfull \hbox (badness 1983) in paragraph at lines 956--960
 \OT1/ptm/m/n/10 (+20) sep-a-rately un-der \OT1/pcr/m/n/10 mm_run/results/real_s
 tate \OT1/ptm/m/n/10 (+20) and
  []
 
-(./report.bbl
-
-Package balance Warning: You have called \balance in second column
-(balance)                Columns might not be balanced.
-
-[9])
+(./report.bbl)
 
 ** Conference Paper **
 Before submitting the final camera ready copy, remember to:
@@ -693,8 +693,8 @@ Before submitting the final camera ready copy, remember to:
  process uses the appropriate paper size.
 
 
-Overfull \vbox (1.73193pt too high) has occurred while \output is active []
-
+Package balance Warning: You have called \balance in second column
+(balance)                Columns might not be balanced.
 
 [10] (./report.aux)
  ***********
@@ -702,16 +702,16 @@ LaTeX2e <2023-11-01> patch level 1
 L3 programming layer <2024-01-22>
  ***********
 Package rerunfilecheck Info: File `report.out' has not changed.
-(rerunfilecheck)             Checksum: AEE17A960FD656034F82C78AC978C5D4;5296.
+(rerunfilecheck)             Checksum: F9FA39993ECDBFB7834F662055AB283D;6054.
  )
 Here is how much of TeX's memory you used:
- 13636 strings out of 476182
- 213813 string characters out of 5795596
- 1958975 words of memory out of 5000000
- 35037 multiletter control sequences out of 15000+600000
- 617155 words of font info for 337 fonts, out of 8000000 for 9000
+ 13672 strings out of 476182
+ 214379 string characters out of 5795596
+ 1957975 words of memory out of 5000000
+ 35060 multiletter control sequences out of 15000+600000
+ 619167 words of font info for 345 fonts, out of 8000000 for 9000
  14 hyphenation exceptions out of 8191
- 75i,13n,79p,1003b,606s stack positions out of 10000i,1000n,20000p,200000b,200000s
+ 75i,13n,79p,1003b,547s stack positions out of 10000i,1000n,20000p,200000b,200000s
 </usr/share/texlive/texmf-dist/fonts/type1/public/amsfonts/cm/cmex10.pfb></us
 r/share/texlive/texmf-dist/fonts/type1/public/amsfonts/cm/cmmi10.pfb></usr/shar
 e/texlive/texmf-dist/fonts/type1/public/amsfonts/cm/cmmi5.pfb></usr/share/texli
@@ -722,17 +722,18 @@ ype1/public/amsfonts/cm/cmmib10.pfb></usr/share/texlive/texmf-dist/fonts/type1/
 public/amsfonts/cmextra/cmmib7.pfb></usr/share/texlive/texmf-dist/fonts/type1/p
 ublic/amsfonts/cm/cmr10.pfb></usr/share/texlive/texmf-dist/fonts/type1/public/a
 msfonts/cm/cmr5.pfb></usr/share/texlive/texmf-dist/fonts/type1/public/amsfonts/
-cm/cmr7.pfb></usr/share/texlive/texmf-dist/fonts/type1/public/amsfonts/cm/cmsy1
-0.pfb></usr/share/texlive/texmf-dist/fonts/type1/public/amsfonts/cm/cmsy5.pfb><
-/usr/share/texlive/texmf-dist/fonts/type1/public/amsfonts/cm/cmsy7.pfb></usr/sh
-are/texlive/texmf-dist/fonts/type1/public/amsfonts/symbols/msam10.pfb></usr/sha
-re/texlive/texmf-dist/fonts/type1/urw/courier/ucrr8a.pfb></usr/share/texlive/te
-xmf-dist/fonts/type1/urw/times/utmb8a.pfb></usr/share/texlive/texmf-dist/fonts/
-type1/urw/times/utmbi8a.pfb></usr/share/texlive/texmf-dist/fonts/type1/urw/time
-s/utmr8a.pfb></usr/share/texlive/texmf-dist/fonts/type1/urw/times/utmri8a.pfb>
-Output written on report.pdf (10 pages, 367375 bytes).
+cm/cmr7.pfb></usr/share/texlive/texmf-dist/fonts/type1/public/amsfonts/cm/cmss8
+.pfb></usr/share/texlive/texmf-dist/fonts/type1/public/amsfonts/cm/cmsy10.pfb><
+/usr/share/texlive/texmf-dist/fonts/type1/public/amsfonts/cm/cmsy5.pfb></usr/sh
+are/texlive/texmf-dist/fonts/type1/public/amsfonts/cm/cmsy7.pfb></usr/share/tex
+live/texmf-dist/fonts/type1/public/amsfonts/symbols/msam10.pfb></usr/share/texl
+ive/texmf-dist/fonts/type1/urw/courier/ucrr8a.pfb></usr/share/texlive/texmf-dis
+t/fonts/type1/urw/times/utmb8a.pfb></usr/share/texlive/texmf-dist/fonts/type1/u
+rw/times/utmbi8a.pfb></usr/share/texlive/texmf-dist/fonts/type1/urw/times/utmr8
+a.pfb></usr/share/texlive/texmf-dist/fonts/type1/urw/times/utmri8a.pfb>
+Output written on report.pdf (10 pages, 395611 bytes).
 PDF statistics:
- 428 PDF objects out of 1000 (max. 8388607)
- 345 compressed objects within 4 object streams
- 91 named destinations out of 1000 (max. 500000)
- 53503 words of extra memory for PDF output out of 61914 (max. 10000000)
+ 461 PDF objects out of 1000 (max. 8388607)
+ 373 compressed objects within 4 object streams
+ 98 named destinations out of 1000 (max. 500000)
+ 56599 words of extra memory for PDF output out of 61914 (max. 10000000)

@@ -238,12 +238,12 @@ def plot_timing_clearance(data: np.lib.npyio.NpzFile, output: Path) -> None:
     _save(fig, output / "timing_clearance.pdf")
 
 
-def _box(ax, xy, width, height, text, color="#e9f2fb", fontsize=8):
+def _box(ax, xy, width, height, text, color="#e9f2fb", fontsize=8, pad=0.02):
     patch = FancyBboxPatch(
         xy,
         width,
         height,
-        boxstyle="round,pad=0.02,rounding_size=0.02",
+        boxstyle=f"round,pad={pad},rounding_size=0.02",
         facecolor=color,
         edgecolor="#29465b",
         linewidth=1,
@@ -266,6 +266,8 @@ def _arrow(ax, start, end, text=""):
             end,
             arrowstyle="-|>",
             mutation_scale=10,
+            shrinkA=0,
+            shrinkB=0,
             color="#29465b",
             linewidth=1,
         )
@@ -281,28 +283,104 @@ def _arrow(ax, start, end, text=""):
 
 
 def plot_architecture(output: Path) -> None:
-    fig, ax = plt.subplots(figsize=(7.15, 2.0))
-    ax.set(xlim=(0, 1), ylim=(0, 1))
+    fig, ax = plt.subplots(figsize=(7.15, 2.25))
+    ax.set(xlim=(0, 1), ylim=(-0.06, 1))
     ax.axis("off")
-    labels = [
-        (0.02, "Task targets\n+ ESDF"),
-        (0.22, "OMPL base /\nEE planner"),
-        (0.42, "WB-MPC\n(acados)"),
-        (0.62, "Robot-specific\nI/O adapter"),
-        (0.82, "Configured robot /\nPyBullet"),
+    box_pad = 0.01
+    ax.text(0.02, 0.94, "Offline robot specialization", fontsize=8.3, weight="bold")
+    _box(
+        ax,
+        (0.03, 0.67),
+        0.17,
+        0.17,
+        "URDF + YAML\nrobot profile",
+        fontsize=7.3,
+        pad=box_pad,
+    )
+    _box(
+        ax,
+        (0.28, 0.67),
+        0.20,
+        0.17,
+        "Pinocchio + CasADi\nmodel and OCP",
+        fontsize=7.3,
+        pad=box_pad,
+    )
+    _box(
+        ax,
+        (0.56, 0.67),
+        0.18,
+        0.17,
+        "acados\ncode generation",
+        fontsize=7.3,
+        pad=box_pad,
+    )
+    _box(
+        ax,
+        (0.83, 0.67),
+        0.14,
+        0.17,
+        "Robot-specific\nsolver",
+        fontsize=7.3,
+        color="#e8f4e5",
+        pad=box_pad,
+    )
+    offline = [(0.03, 0.17), (0.28, 0.20), (0.56, 0.18), (0.83, 0.14)]
+    for left, right in zip(offline[:-1], offline[1:], strict=True):
+        _arrow(
+            ax,
+            (left[0] + left[1] + box_pad, 0.755),
+            (right[0] - box_pad, 0.755),
+        )
+
+    ax.text(0.02, 0.54, "Online feedback control", fontsize=8.3, weight="bold")
+    runtime = [
+        (0.03, 0.12, "Control\ntarget"),
+        (0.20, 0.19, "Task manager + OMPL\nreference horizon"),
+        (0.45, 0.17, "ESDF-aware\nWB-MPC"),
+        (0.68, 0.14, "Platform\nadapter"),
+        (0.87, 0.10, "Robot /\nSimulator"),
     ]
-    for x, label in labels:
-        _box(ax, (x, 0.43), 0.15, 0.28, label)
-    for left, right in zip(labels[:-1], labels[1:], strict=True):
-        _arrow(ax, (left[0] + 0.15, 0.57), (right[0], 0.57))
-    _arrow(ax, (0.90, 0.39), (0.69, 0.22), "state feedback")
-    _arrow(ax, (0.62, 0.22), (0.50, 0.39))
+    for x, width, label in runtime:
+        _box(ax, (x, 0.15), width, 0.20, label, fontsize=7.3, pad=box_pad)
+    for left, right in zip(runtime[:-1], runtime[1:], strict=True):
+        _arrow(
+            ax,
+            (left[0] + left[1] + box_pad, 0.25),
+            (right[0] - box_pad, 0.25),
+        )
+
+    _box(
+        ax,
+        (0.42, 0.49),
+        0.12,
+        0.08,
+        "ESDF",
+        fontsize=7.1,
+        color="#fff1cf",
+        pad=box_pad,
+    )
+    _arrow(ax, (0.48, 0.48), (0.48, 0.36))
+    _arrow(ax, (0.90, 0.66), (0.59, 0.36))
+    ax.add_patch(
+        FancyArrowPatch(
+            (0.93, 0.14),
+            (0.54, 0.14),
+            arrowstyle="-|>",
+            mutation_scale=10,
+            shrinkA=0,
+            shrinkB=0,
+            connectionstyle="arc3,rad=-0.13",
+            color="#29465b",
+            linewidth=1,
+        )
+    )
     ax.text(
-        0.5,
-        0.93,
-        "Planning, predictive control, and guarded deployment pipeline",
+        0.74,
+        -0.015,
+        "state feedback",
         ha="center",
-        fontsize=9,
+        fontsize=7,
     )
     _save(fig, output / "system_overview.pdf")
 
