@@ -320,9 +320,6 @@ controller:
     urdf: {}
 ```
 
-Isaac-specific camera and video definitions live in `config/sensor/cameras.yaml`
-and `config/sim/isaac_sim.yaml`.
-
 ## Online nvblox Simulation
 
 `online_nvblox_sim` drives rendered-depth integration for

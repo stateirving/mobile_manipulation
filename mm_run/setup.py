@@ -16,18 +16,10 @@ setup(
             "share/" + package_name + "/launch",
             [p for p in glob("launch/*") if isfile(p)],
         ),
-        ("share/" + package_name + "/nodes", [p for p in glob("nodes/*") if isfile(p)]),
-        ("share/" + package_name + "/rviz", glob("rviz/*")),
         ("share/" + package_name + "/config/controller", glob("config/controller/*")),
         ("share/" + package_name + "/config/robot", glob("config/robot/*")),
         ("share/" + package_name + "/config/scene", glob("config/scene/*")),
-        ("share/" + package_name + "/config/sensor", glob("config/sensor/*")),
         ("share/" + package_name + "/config/sim", glob("config/sim/*")),
-        ("share/" + package_name + "/config/teleop", glob("config/teleop/*")),
-        (
-            "share/" + package_name + "/config/test_experiment",
-            glob("config/test_experiment/*"),
-        ),
         ("share/" + package_name + "/config", glob("config/*.yaml")),
         ("share/" + package_name + "/config", glob("config/*.md")),
         (
@@ -50,9 +42,7 @@ setup(
         "console_scripts": [
             "experiment=scripts.experiment:main",
             "sim_ros=nodes.sim_ros:main",
-            "isaac_sim_ros=nodes.isaac_sim_ros:main",
             "mpc_ros=nodes.mpc_ros:main",
-            "planner_test_ros=nodes.planner_test_ros:main",
             "stretch_command_adapter=nodes.stretch_command_adapter:main",
             "stretch_wbmpc_shadow=nodes.stretch_wbmpc_shadow:main",
             "plot_real_base_path=scripts.plot_real_base_path:main",

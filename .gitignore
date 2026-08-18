@@ -30,7 +30,8 @@ results/*
 # Raw experiment arrays exceed GitHub's per-file limit and remain local.
 results/report_experiments/**/raw/data.npz
 
-# Keep only compact ESDF grids needed by checked-in ESDF MPC demos.
+# Runtime outputs stay local. Keep only the compact ESDF grid needed by the
+# checked-in ESDF MPC demos.
 !mm_run/results/
 mm_run/results/**
 !mm_run/results/nvblox_esdf/
@@ -40,6 +41,13 @@ mm_run/results/nvblox_esdf/esdf_test_room_full_2cm_dense/**
 !mm_run/results/nvblox_esdf/esdf_test_room_full_2cm_dense/2026-06-15_12-32-10/
 mm_run/results/nvblox_esdf/esdf_test_room_full_2cm_dense/2026-06-15_12-32-10/**
 !mm_run/results/nvblox_esdf/esdf_test_room_full_2cm_dense/2026-06-15_12-32-10/esdf_grid.npz
+
+# Local-only experiment records and runtime logs.
+/mm_run/results/nvblox_esdf/real_bag/
+/mm_run/results/nvblox_esdf/stretch_teleop/
+/mm_run/results/model_audit/
+/mm_run/results/real_command/
+/mm_run/results/real_state/
 
 # Downloaded upstream repositories/assets used for conversion.
 third_party/
@@ -60,14 +68,24 @@ install_*/
 .mypy_cache/
 .ipynb_checkpoints/
 
-# Local validation tests for the nonholonomic dynamics changes
+# Local validation tests for the nonholonomic dynamics changes.
 /mm_control/test/test_nonholonomic_dynamics.py
 /mm_simulator/test/test_acceleration_command.py
 
-# One-off real-hardware validation tools and reports. Keep the reusable
-# state/command adapters under mm_run/stretch_runtime tracked.
+# Local-only experiment configurations and one-off analysis tools.
+/mm_run/config/test_experiments/
+/mm_run/scripts/export_base_navigation_esdf.py
+/mm_run/scripts/patch_esdf_free_corridor.py
+/mm_utils/scripts/plot_logs.py
+/mm_utils/src/mm_utils/plotting/
+
+# Real-deployment validation tools and reports stay local. Keep the reusable
+# state/command adapters and shadow runner tracked.
 /mm_run/config/real_state_bridge.md
+/mm_run/config/stretch_esdf_sim_real_commissioning.yaml
+/mm_run/config/stretch_wbmpc_sim_esdf_real_test.yaml
 /mm_run/config/stretch_*probe_real.yaml
+/mm_run/launch/stretch_sim_esdf_real_test.launch.py
 /mm_run/nodes/stretch_*_probe.py
 /mm_run/nodes/stretch_*_test.py
 /mm_run/nodes/stretch_base_motion_test.py
