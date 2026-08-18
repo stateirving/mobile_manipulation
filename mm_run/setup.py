@@ -34,6 +34,8 @@ setup(
     ],
     install_requires=["setuptools"],
     zip_safe=True,
+    author="Benjamin Bogenberger, Xiaochen Miao",
+    author_email="benjamin.bogenberger@tum.de, xiaochen.miao@tum.de",
     maintainer="benni",
     maintainer_email="benjamin.bogenberger@tum.de",
     description="Mobile manipulation run/launch package",

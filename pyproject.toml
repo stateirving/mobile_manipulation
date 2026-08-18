@@ -1,6 +1,7 @@
 [project]
 authors = [
     { name = "Benjamin Bogenberger", email = "benjamin.bogenberger@tum.de" },
+    { name = "Xiaochen Miao", email = "xiaochen.miao@tum.de" },
 ]
 dependencies = ["pyb-utils>=2.4.2,<3", "xacrodoc>=1.3.1,<2", "ompl>=2.0.1,<3"]
 name = "mobile_manipulation"

@@ -5,6 +5,8 @@
   <version>0.0.0</version>
   <description>Mobile manipulation simulation package</description>
   <maintainer email="benjamin.bogenberger@tum.de">benni</maintainer>
+  <author email="benjamin.bogenberger@tum.de">Benjamin Bogenberger</author>
+  <author email="xiaochen.miao@tum.de">Xiaochen Miao</author>
   <license>MIT</license>
 
   <test_depend>ament_copyright</test_depend>
