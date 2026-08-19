@@ -437,6 +437,17 @@ State and input box bounds are hard, whereas collision avoidance enters through
 the soft cost $J_{\mathrm{obs}}$.  Consequently, the OCP alone does not provide
 a hard collision-safety guarantee.
 
+\begin{figure*}[!t]
+  \centering
+  \includegraphics[width=\textwidth]{figures/ros2_node_topic_graph.pdf}
+  \caption{Platform-abstract ROS~2 nodes and data flow for real-robot execution.
+  The upper path carries feedback into WB-MPC, and the lower path returns the
+  deadline-stamped command envelope.  Red hardware outputs exist only with
+  \texttt{execute=true}; diagnostic topics and driver-mode service calls are
+  omitted for legibility.}
+  \label{fig:ros2-graph}
+\end{figure*}
+
 \subsection{Task-Conditioned Reference Generation}
 
 The task manager maintains an ordered sequence of base and end-effector tasks
@@ -469,172 +480,109 @@ the mobile base and manipulator through whole-body optimal control.  Residual
 masks set irrelevant coordinates to zero weight.  Once the active task remains
 within its configured position and orientation tolerances for the hold period,
 the manager advances to the next task.
-
 \section{System Implementation}
 
-\subsection{Software Architecture}
+This section describes the execution framework and adaptation strategy
+developed for real-robot deployment.
 
-The ROS~2 workspace is divided into five packages.  \texttt{mm\_plan}
-contains the task manager and OMPL base/EE planners.  \texttt{mm\_control}
-builds robot-dimensioned symbolic kinematics, selected base dynamics, costs,
-constraints, ESDF queries, and generated acados solvers.  \texttt{mm\_simulator}
-provides PyBullet mappings for nonholonomic and omnidirectional bases.
-\texttt{mm\_run} composes generic controller and scene YAML with a selected
-robot profile, and contains experiment runners, logging, and real adapters.
-\texttt{mm\_utils} supplies configuration parsing, geometry, and plotting.
+\subsection{ROS~2 Nodes and Topic Topology}
 
-\subsection{OMPL Planning and Task Configuration}
+Figure~\ref{fig:ros2-graph} abstracts the real-robot execution path into a
+driver, a command adapter, and a WB-MPC runner.  The
+\texttt{robot\_command\_adapter} is the only application node connected to the
+robot driver.  It subscribes to odometry, joint feedback, the global-to-base
+transform, and the driver mode and safety states.  Valid temporally aligned
+base and joint samples are combined into a named
+\texttt{sensor\_msgs/JointState} on
+\texttt{/wbmpc/state}.  Positions and velocities use the controller ordering,
+and the header stamp and frame identify the source time and global frame used
+by the controller.
 
-Both trials contain a base goal at $[2,0,0]$ followed by three Cartesian
-end-effector goals.  Their
-$y$ and $z$ coordinates are $[-0.5,0.9]$, $[-0.5,0.4]$, and $[0.5,0.4]$~m;
-the $x$ coordinate is 3.0~m for Stretch and 3.5~m for the longer mobile UR10.
-Orientation weights are zero for these position tasks.  Base planning uses
-RRT* in $SE(2)$, while end-effector planning uses RRTConnect in a bounded
-Cartesian space.  Paths are simplified and sampled at 0.1~s.  Nominal
-interpolation speeds are 0.25~m/s for base translation and 0.12~m/s for
-Cartesian motion; planning budgets and workspace bounds remain configurable.
+The \texttt{wbmpc\_runner} subscribes to this normalized state interface.  It
+owns the task manager, OMPL planners, and WB-MPC instance; the ESDF supplies
+queries to both planning and control.  A worker thread starts planning and
+optimization at 7~Hz so that state callbacks and the command publisher do not
+block on a solve.  A separate 20-Hz timer samples the most recent valid
+velocity trajectory, converts it to the driver's coordinate representation,
+and publishes \texttt{/wbmpc/velocity\_command}.  The serialized envelope
+contains the velocity vector, solver generation, validity flag, source-state
+stamp, plan origin, and an absolute monotonic validity deadline.  The runner
+and adapter publish JSON status records on \texttt{/wbmpc/status} and
+\texttt{/robot\_command\_adapter/status} for logging and diagnosis.
 
-Planner footprint radii, sampled heights, tool radius, and extra clearance are
-also profile-specific.  Queries outside the grid or touching any unobserved
-interpolation corner are invalid.  A previous valid path can be retained
-after a failed replan; unknown space is never silently accepted.
+The adapter consumes the envelope and, in execute mode, publishes base velocity
+on \texttt{/cmd\_vel} and a position-oriented joint command on
+\texttt{/joint\_position\_cmd} at 10~Hz. Consequently, the optimizer never owns a
+driver topic directly, and all feedback validation, command conversion,
+deadline enforcement, and driver-mode service calls remain at one ROS~2
+boundary.
 
-\subsection{Configuration and Portability Contract}
+\subsection{Forward Prediction and Deadline Hold}
 
-Portability is implemented as composition rather than a single universal
-driver.  A top-level experiment profile includes a generic simulator profile,
-an MPC profile, a scene, and one robot description.  Recursive parsing produces
-one expanded dictionary before any planner, model, or simulator object is
-created.  Consequently, the same values define both the symbolic controller
-and the simulated plant, while the expanded YAML archived with a run records
-the effective configuration after all includes and overrides.
+In simulation, the solver and simulator run sequentially in a blocking loop,
+so the simulated robot state does not evolve while the optimization is in
+progress.  In real-robot deployment, however, the solver runs concurrently
+with the continuously moving robot, making compensation for this motion
+necessary.
 
-Table~\ref{tab:reuse-boundary} separates reusable mechanisms from data or code
-that must be supplied for a new platform.  Changing the number of arm joints
-or collision spheres changes generated acados dimensions, so a solver must be
-regenerated; this is expected specialization, not a change to the OCP
-construction algorithm.  Conversely, a URDF alone is insufficient: joint
-ordering, bounds, base semantics, collision primitives, task-space frames, and
-command extraction must agree across the boundary.
+The initial state used by the MPC is measured before optimization and does not
+account for the robot's motion during computation.  Consequently, by the time
+the optimized command reaches the robot, it is based on an outdated state.  The
+runner can compensate by advancing the measured state over
+\begin{equation}
+\Delta t_{\mathrm{pred}}
+ = a_{\mathrm{state}}+\hat{t}_{\mathrm{solve}}+t_{\mathrm{act}},
+\label{eq:forward-prediction-time}
+\end{equation}
+where $a_{\mathrm{state}}$ is the source age of the synchronized feedback,
+$\hat{t}_{\mathrm{solve}}$ is an online estimate of planning and optimization
+time, and $t_{\mathrm{act}}$ is the configured dispatch and actuation latency.
+After each successful cycle, the computation-time estimate is updated as
+\begin{equation}
+\hat{t}_{\mathrm{solve}}^{+}
+=\operatorname{clip}\!\left((1-\alpha)\hat{t}_{\mathrm{solve}}
++\alpha t_{\mathrm{solve}},t_{\min},t_{\max}\right).
+\label{eq:solver-time-adaptation}
+\end{equation}
+where $t_{\mathrm{solve}}$ is the solve time measured in the current cycle,
+$\hat{t}_{\mathrm{solve}}$ is its estimate before the update, and the superscript
+$+$ denotes the updated estimate.  The adaptation factor $\alpha\in[0,1]$
+weights the latest measurement, while $t_{\min}$ and $t_{\max}$ bound the
+updated estimate.  The current configuration sets $\alpha=0.10$, initializes
+the estimate at 60~ms, clips it to $[20,120]$~ms, adds 50~ms actuation latency,
+and rejects a prediction interval above 300~ms.
 
-\begin{table}[t]
-  \caption{Reuse Boundary for a New Mobile Manipulator}
-  \label{tab:reuse-boundary}
-  \centering
-  \scriptsize
-  \setlength{\tabcolsep}{3pt}
-  \begin{tabular}{@{}p{0.18\columnwidth}p{0.35\columnwidth}p{0.37\columnwidth}@{}}
-    \toprule
-    Layer & Shared mechanism & Platform specialization \\
-    \midrule
-    Robot model & Pinocchio/CasADi model builder & URDF, joints, links, limits, base type \\
-    Planning & OMPL task and ESDF callbacks & goals, bounds, footprint, speeds \\
-    WB-MPC & OCP, costs, constraints, solver gate & weights, horizon, spheres, clearance \\
-    Simulation & loop, logging, task dispatch & home state and base input mapping \\
-    Hardware & velocity envelope and safety policy & feedback, driver, topics, ownership \\
-    \bottomrule
-  \end{tabular}
-\end{table}
+The initial condition imposed on the MPC is therefore
+\begin{align}
+\vect{x}_{0}^{\mathrm{MPC}}
+&=\Phi_{\Delta t_{\mathrm{pred}}}
+ \!\left(\vect{x}_{\mathrm{meas}},\vect{u}_{\mathrm{last}}\right),
+\label{eq:mpc-predicted-initial-state}\\
+\vect{x}_{\mathrm{meas}}
+&=\begin{bmatrix}\vect{q}_{\mathrm{meas}}^{\top}&
+\vect{v}_{\mathrm{meas}}^{\top}\end{bmatrix}^{\!\top}.
+\nonumber
+\end{align}
+where $\vect{u}_{\mathrm{last}}$ is the most recently published acceleration and
+$\Phi_{\tau}$ denotes propagation over duration $\tau$ using the same discrete
+robot dynamics and state/input bounds as the OCP.  Without forward prediction,
+$\vect{x}_{0}^{\mathrm{MPC}}=\vect{x}_{\mathrm{meas}}$.  The controller plans and
+solves from this initial state and the corresponding future task time.
 
-The offline ESDF loader reads axes, distance, gradient, and validity arrays
-from NPZ.  Batch trilinear interpolation returns a distance and gradient only
-when the query is inside the grid and all corners are valid.  The same object
-is passed into the task planner and controller, preventing disagreement about
-unknown space.  An online nvblox backend has the same query API, but it was not
-used in the reported experiment.
+Command validity is bounded independently of solver termination.  The deadline
+of each optimization cycle also limits the lifetime of the active command.  If
+no replacement is available before this deadline, the runner invalidates the
+active plan and issues a zero-velocity envelope.  A late solution can be
+admitted under the configured policy, but its time origin and validity interval
+are reset to its completion time; an expired command interval is never revived.
 
-\subsection{Solver Execution and Output Selection}
-
-The SQP solver, implemented through
-acados~\cite{verschueren2022acados}, uses partial-condensing HPIPM with up to
-500 nonlinear and 100 QP iterations.  A maximum-iteration status is accepted
-only if the candidate is finite, every candidate ESDF query is valid, and its
-minimum margin is nonnegative; otherwise the controller emits a zero-velocity
-fallback and clears the warm start.  This candidate-level acceptance test
-supplements, but does not turn the soft collision cost into, a formal hard
-safety guarantee.
-
-The optimizer returns both acceleration $\bar{\vect{u}}$ and predicted
-velocity $\bar{\vect{v}}$.  Command extraction is configurable: the Stretch
-profile interpolates the predicted velocity trajectory, whereas the mobile
-UR10 trial integrates acceleration.  The real Stretch adapter, not the generic
-optimizer, applies physical-channel acceleration slew limits.
-
-\subsection{Platform-Specific Coordinate and Command Mapping}
-
-Stretch exposes one aggregate wrist-extension actuator, while its URDF uses
-four equal virtual segments to reproduce geometry.  Reduction maps their mean
-to $q_a$; expansion repeats $q_a$ four times.  Thus an 8-D optimizer vector is
-expanded to the ordered 11-D boundary
-\begin{multline}
-[x,y,\theta,q_l,q_{a3},q_{a2},q_{a1},q_{a0},\\
-q_{wy},q_{wp},q_{wr}].
-\end{multline}
-This is a representation map, not four independent motor commands.  The
-mobile UR10 profile instead exposes its six arm joints directly, giving nine
-coordinates including the planar base; it requires no mimic reduction.
-
-Before sending a base command, the adapter rotates $[v_x,v_y]$ into the body
-frame, verifies that the projected lateral component is small, and publishes
-only forward speed and yaw rate.  Arm velocities are integrated into the
-driver's full 10-D SG3 position message.  Uncontrolled head and gripper fields
-retain measured positions; base increments in that message remain zero because
-base motion uses \texttt{/stretch/cmd\_vel}.  This real command mapping belongs
-to the Stretch integration, whereas planning, ESDF queries, cost construction,
-and the MPC loop are shared.  Figure~\ref{fig:mimic-mapping} summarizes that
-separation.
-
-\begin{figure}[t]
-  \centering
-  \includegraphics[width=\linewidth]{figures/coordinate_mapping.pdf}
-  \caption{The shared algorithm is specialized through robot profiles and an
-  explicit platform boundary.}
-  \label{fig:mimic-mapping}
-\end{figure}
-
-\subsection{Current Real Stretch Pipeline}
-
-The real state side fuses \texttt{/odom}, named
-\texttt{/stretch/joint\_states}, and sparse map localization.  A global
-keyframe establishes a map-to-odometry anchor; 30-Hz odometry propagates the
-pose between anchors.  Joint and base samples must advance together and have
-at most 5~ms timestamp skew before the adapter publishes the named 11-position
-and 11-velocity \texttt{/wbmpc/state}.  World-frame base velocity is used to
-match the optimizer state.
-
-The runner solves at 7~Hz and publishes an 11-D velocity envelope at 20~Hz.
-Besides the vector, the envelope includes a generation number, validity flag,
-reason, state timestamp, monotonic plan origin, and absolute validity deadline.
-The adapter converts this internal request into a 10-Hz Twist and full SG3
-position target only after explicit hardware enablement.
-
-\subsection{Runtime Safety Boundary}
-
-The command adapter starts in \emph{shadow}; in this mode it does not even
-create the two hardware command publishers.  Explicit execute mode requires a
-fresh exactly-zero request, fresh synchronized feedback, navigation mode,
-homed state, released runstop, inactive streaming-position mode, and zero
-other command publishers.  These are preconditions for creating physical
-outputs, not merely diagnostic warnings.
-
-During execution, a 50-Hz watchdog compares local monotonic receive time with
-the envelope deadline.  A solver overrun, fallback, or temporarily missing
-plan causes \emph{hold}: zero base speed plus a measured-position arm hold.
-A fresh valid plan can recover.  Stale transport or state, invalid frame or
-timestamp, lateral/mimic projection error, excessive following error, device
-mode change, control-period violation, or competing command owner causes a
-\emph{latched} stop.  A latch repeatedly sends zero/hold and attempts to
-deactivate streaming position; restart and a new preflight are required.
-Figure~\ref{fig:safety-states} shows this separation.
-
-\begin{figure}[t]
-  \centering
-  \includegraphics[width=\linewidth]{figures/safety_states.pdf}
-  \caption{Simplified command-adapter state machine.  Holds are recoverable;
-  hard validation or ownership faults latch.}
-  \label{fig:safety-states}
-\end{figure}
+The hardware adapter independently checks the envelope deadline using a
+monotonic clock.  This check ensures that a timeout produces zero base velocity
+and an arm position hold even if the optimization thread stalls.  A fresh valid
+command automatically releases this recoverable hold.  In contrast, violations
+of state integrity, command mapping, device mode, or command ownership trigger a
+latched stop that requires a restart and new preflight before execution can
+resume.
 
 \section{Experimental Evaluation}
 

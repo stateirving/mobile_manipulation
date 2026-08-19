@@ -1,0 +1,242 @@
+digraph ros2_graph {
+  graph [
+    layout=neato,
+    bgcolor="white",
+    margin=0.02,
+    pad=0.18,
+    overlap=true,
+    inputscale=72,
+    splines=line,
+    outputorder=edgesfirst,
+    fontname="Helvetica"
+  ];
+  node [
+    shape=box,
+    style="rounded,filled",
+    fontname="Helvetica",
+    fontsize=12,
+    penwidth=1.2,
+    pin=true
+  ];
+  edge [
+    color="#34495e",
+    fontname="Helvetica",
+    fontsize=10,
+    arrowsize=0.75,
+    penwidth=1.2
+  ];
+
+  robot_header [
+    shape=plain,
+    style="",
+    label=<<B>ROBOT / EXTERNAL</B>>,
+    pos="95,420!"
+  ];
+  adapter_header [
+    shape=plain,
+    style="",
+    label=<<B>COMMAND ADAPTER</B>>,
+    pos="410,420!"
+  ];
+  runner_header [
+    shape=plain,
+    style="",
+    label=<<B>WB-MPC RUNNER</B>>,
+    pos="760,420!"
+  ];
+
+  localization [
+    label="Localization",
+    color="#31546f",
+    fillcolor="#eef4fb",
+    width=1.75,
+    height=0.48,
+    pos="80,335!"
+  ];
+  driver [
+    label="robot_driver",
+    color="#31546f",
+    fillcolor="#eef4fb",
+    width=1.75,
+    height=0.48,
+    pos="80,150!"
+  ];
+  hardware [
+    label="Robot Hardware",
+    color="#31546f",
+    fillcolor="#eef4fb",
+    width=1.75,
+    height=0.55,
+    pos="80,70!"
+  ];
+
+  fusion [
+    label="State Validation and Fusion\nmap pose + odom + joints",
+    color="#47745b",
+    fillcolor="#edf8f1",
+    width=2.55,
+    height=1.05,
+    pos="395,310!"
+  ];
+  fusion_tf_port [
+    shape=point,
+    label="",
+    style=invis,
+    width=0,
+    height=0,
+    pos="303,335!"
+  ];
+  fusion_feedback_port [
+    shape=point,
+    label="",
+    style=invis,
+    width=0,
+    height=0,
+    pos="303,300!"
+  ];
+  safety [
+    label="Safety Command Core | 10 Hz\nframe/coordinate mapping + limits",
+    color="#47745b",
+    fillcolor="#edf8f1",
+    width=2.65,
+    height=0.78,
+    pos="395,150!"
+  ];
+  preflight [
+    label="Execute Preflight\ncommand-mode lifecycle",
+    color="#47745b",
+    fillcolor="#f5fbf7",
+    width=1.80,
+    height=0.68,
+    pos="335,220!"
+  ];
+  watchdog [
+    label="Deadline Watchdog\n50 Hz",
+    color="#47745b",
+    fillcolor="#f5fbf7",
+    width=1.65,
+    height=0.68,
+    pos="475,220!"
+  ];
+
+  mpc [
+    label="TaskManager + OMPL + ESDF\nacados WB-MPC | 7 Hz",
+    color="#9b6b24",
+    fillcolor="#fff7e8",
+    width=2.55,
+    height=0.78,
+    pos="760,310!"
+  ];
+  sampler [
+    label="Velocity-Trajectory Sampling | 20 Hz\ndriver-coordinate envelope",
+    color="#9b6b24",
+    fillcolor="#fff7e8",
+    width=2.75,
+    height=0.78,
+    pos="760,150!"
+  ];
+  esdf [
+    shape=cylinder,
+    style="filled",
+    label="ESDF",
+    color="#8064a2",
+    fillcolor="#f2edf8",
+    width=1.25,
+    height=0.58,
+    pos="760,375!"
+  ];
+
+  tf_topic [
+    shape=plain,
+    style="",
+    label="/tf",
+    fontname="Helvetica-Bold",
+    fontsize=11.5,
+    pos="215,349!"
+  ];
+  feedback_topic [
+    shape=plain,
+    style="",
+    label="/odom\n/joint_states",
+    fontname="Helvetica-Bold",
+    fontsize=11,
+    pos="217.5,318!"
+  ];
+  state_topic [
+    shape=plain,
+    style="",
+    label="/wbmpc/state\nnamed q + v",
+    fontname="Helvetica-Bold",
+    fontsize=11.5,
+    pos="598,324!"
+  ];
+  velocity_topic [
+    shape=plain,
+    style="",
+    label="/wbmpc/\nvelocity_command\n+ generation\ndeadline",
+    fontname="Helvetica-Bold",
+    fontsize=11,
+    fontcolor="#7a500d",
+    pos="598,180!"
+  ];
+  command_topic [
+    shape=plain,
+    style="",
+    label="execute only\n/cmd_vel\n/joint_\nposition_cmd",
+    fontname="Helvetica-Bold",
+    fontsize=11,
+    fontcolor="#853232",
+    pos="217.5,185!"
+  ];
+  driver_feedback_out [shape=point, label="", style=invis, width=0, height=0, pos="80,168!"];
+  feedback_route_high [shape=point, label="", style=invis, width=0, height=0, pos="80,300!"];
+  driver_command_in [shape=point, label="", style=invis, width=0, height=0, pos="143,150!"];
+  driver_hardware_command [shape=point, label="", style=invis, width=0, height=0, pos="65,133!"];
+  hardware_command_in [shape=point, label="", style=invis, width=0, height=0, pos="65,90!"];
+  hardware_feedback_out [shape=point, label="", style=invis, width=0, height=0, pos="95,90!"];
+  driver_hardware_feedback [shape=point, label="", style=invis, width=0, height=0, pos="95,133!"];
+  safety_preflight_port [shape=point, label="", style=invis, width=0, height=0, pos="335,178!"];
+  safety_watchdog_port [shape=point, label="", style=invis, width=0, height=0, pos="475,178!"];
+  robot_bottom_pad [shape=point, label="", style=invis, width=0, height=0, pos="95,40!"];
+  adapter_bottom_pad [shape=point, label="", style=invis, width=0, height=0, pos="410,40!"];
+  runner_bottom_pad [shape=point, label="", style=invis, width=0, height=0, pos="760,40!"];
+
+  subgraph cluster_robot {
+    graph [style="rounded,dashed", color="#8a98a5", penwidth=1.0, margin=18];
+    robot_header;
+    localization;
+    driver;
+    hardware;
+    robot_bottom_pad;
+  }
+  subgraph cluster_adapter {
+    graph [style="rounded,dashed", color="#8a98a5", penwidth=1.0, margin=18];
+    adapter_header;
+    fusion;
+    safety;
+    preflight;
+    watchdog;
+    adapter_bottom_pad;
+  }
+  subgraph cluster_runner {
+    graph [style="rounded,dashed", color="#8a98a5", penwidth=1.0, margin=18];
+    runner_header;
+    esdf;
+    mpc;
+    sampler;
+    runner_bottom_pad;
+  }
+
+  localization -> fusion_tf_port;
+  driver_feedback_out -> feedback_route_high [arrowhead=none, color="#31546f"];
+  feedback_route_high -> fusion_feedback_port [color="#31546f"];
+  fusion -> mpc;
+  esdf -> mpc [color="#8064a2"];
+  mpc -> sampler;
+  sampler -> safety [color="#9b6b24"];
+  preflight -> safety_preflight_port [color="#47745b"];
+  watchdog -> safety_watchdog_port [color="#47745b"];
+  safety -> driver_command_in [color="#a33f3f", penwidth=2.4];
+  driver_hardware_command -> hardware_command_in [color="#a33f3f", penwidth=1.8];
+  hardware_feedback_out -> driver_hardware_feedback [color="#31546f"];
+}
