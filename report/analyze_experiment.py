@@ -446,39 +446,58 @@ def plot_platform_tracking(
     ur10: np.lib.npyio.NpzFile,
     output: Path,
 ) -> None:
-    fig, axes = plt.subplots(2, 2, figsize=(7.15, 4.7))
-    for row, (name, data) in enumerate((("Stretch", stretch), ("Mobile UR10", ur10))):
+    fig, axes = plt.subplots(1, 2, figsize=(7.15, 2.65), sharey=True)
+    platform_data = (
+        (
+            "Stretch",
+            stretch,
+            np.array([[3.0, -0.5, 0.9], [3.0, -0.5, 0.4], [3.0, 0.5, 0.4]]),
+        ),
+        (
+            "Mobile UR10",
+            ur10,
+            np.array([[3.5, -0.5, 0.85], [3.5, -0.5, 0.4], [3.5, 0.5, 0.4]]),
+        ),
+    )
+    target_labels = ("Target 1", "Target 2", "Target 3")
+    for axis, (name, data, targets) in zip(axes, platform_data):
         base_count = data["r_bw_w_ds"].shape[0]
-        axes[row, 0].plot(
-            data["r_bw_w_ds"][:, 0],
-            data["r_bw_w_ds"][:, 1],
-            "--",
-            label="reference",
-        )
-        axes[row, 0].plot(
-            data["r_bw_ws"][:base_count, 0],
-            data["r_bw_ws"][:base_count, 1],
-            label="measured",
-        )
-        axes[row, 0].set(
-            xlabel="$x$ (m)",
-            ylabel="$y$ (m)",
-            title=f"{name}: base task",
-        )
-        axes[row, 0].axis("equal")
-        axes[row, 0].grid(alpha=0.25)
-        axes[row, 0].legend(frameon=False, fontsize=8)
-
         ee_error = np.linalg.norm(
             data["r_ew_ws"][base_count:] - data["r_ew_w_ds"], axis=1
         )
-        axes[row, 1].plot(data["ts"][base_count:], 100 * ee_error)
-        axes[row, 1].set(
-            xlabel="simulation time (s)",
-            ylabel="position error (cm)",
-            title=f"{name}: EE reference error",
+        ee_time = data["ts"][base_count:] - data["ts"][base_count]
+        axis.plot(ee_time, 100 * ee_error, linewidth=1.5)
+
+        # A new target becomes active when the continuous reference trajectory
+        # reaches its closest sample to the preceding task target.
+        reference = data["r_ew_w_ds"]
+        target_starts = [0.0]
+        for target in targets[:-1]:
+            closest_index = int(np.argmin(np.linalg.norm(reference - target, axis=1)))
+            target_starts.append(float(ee_time[closest_index]))
+        target_ends = (*target_starts[1:], float(ee_time[-1]))
+        for index, (start, end, label) in enumerate(
+            zip(target_starts, target_ends, target_labels)
+        ):
+            axis.axvspan(start, end, color="tab:blue", alpha=0.025 * (index % 2))
+            if index > 0:
+                axis.axvline(start, color="0.35", linestyle="--", linewidth=0.9)
+            axis.text(
+                (start + end) / 2,
+                0.96,
+                label,
+                transform=axis.get_xaxis_transform(),
+                ha="center",
+                va="top",
+                fontsize=7,
+            )
+        axis.set(
+            xlabel="EE-task elapsed time (s)",
+            title=name,
         )
-        axes[row, 1].grid(alpha=0.25)
+        axis.grid(alpha=0.25)
+    axes[0].set_ylabel("EE position error (cm)")
+    fig.suptitle("Time-resolved end-effector tracking error", fontsize=11)
     fig.tight_layout()
     _save(fig, output / "platform_tracking.pdf")
 
@@ -489,39 +508,86 @@ def plot_platform_timing_clearance(
     output: Path,
 ) -> None:
     fig, axes = plt.subplots(2, 2, figsize=(7.15, 4.7))
-    for row, (name, data) in enumerate((("Stretch", stretch), ("Mobile UR10", ur10))):
-        timing_ms = data["controller_run_time"] * 1e3
+    platform_data = (
+        (
+            "Stretch",
+            stretch,
+            np.array([[3.0, -0.5, 0.9], [3.0, -0.5, 0.4], [3.0, 0.5, 0.4]]),
+        ),
+        (
+            "Mobile UR10",
+            ur10,
+            np.array([[3.5, -0.5, 0.85], [3.5, -0.5, 0.4], [3.5, 0.5, 0.4]]),
+        ),
+    )
+    for row, (name, data, targets) in enumerate(platform_data):
+        timing_ms = data["mpc_time_ocp_solves"] * 1e3
         axes[row, 0].hist(
             timing_ms,
-            bins=np.linspace(0, 800, 41),
+            bins=np.linspace(0, 800, 81),
             color="tab:blue" if row == 0 else "#72b7b2",
             alpha=0.8,
         )
         axes[row, 0].axvline(
-            120, color="tab:red", linestyle="--", linewidth=1, label="120 ms reference"
+            120,
+            color="tab:red",
+            linestyle="--",
+            linewidth=1,
+            label="120 ms controller window",
         )
         axes[row, 0].set(
-            xlabel="controller time (ms)",
+            xlabel="OCP solver time (ms)",
             ylabel="cycles",
-            title=f"{name}: runtime distribution",
+            title=f"{name}: solver-time distribution",
             xlim=(0, 800),
         )
+        axes[row, 0].set_xticks([0, 50, 100, 150, 200, 400, 600, 800])
+        axes[row, 0].set_xticks(np.arange(25, 200, 25), minor=True)
+        axes[row, 0].tick_params(axis="x", which="major", labelsize=7, labelrotation=45)
+        for label in axes[row, 0].get_xticklabels():
+            label.set_horizontalalignment("right")
+        axes[row, 0].tick_params(axis="x", which="minor", length=2.5)
         axes[row, 0].grid(axis="y", alpha=0.25)
         axes[row, 0].legend(frameon=False, fontsize=8)
 
         valid = data["mpc_esdf_node0_valids"]
         margins = np.where(valid, data["mpc_esdf_node0_marginss"], np.nan)
         axes[row, 1].plot(data["ts"], 100 * np.nanmin(margins, axis=1))
-        axes[row, 1].axhline(
-            0, color="tab:red", linestyle="--", linewidth=1, label="configured boundary"
-        )
+        axes[row, 1].axhline(0, color="tab:red", linestyle="--", linewidth=1)
+
+        base_count = data["r_bw_w_ds"].shape[0]
+        reference = data["r_ew_w_ds"]
+        ee_start = float(data["ts"][base_count])
+        task_starts = [ee_start]
+        for target in targets[:-1]:
+            closest_index = int(np.argmin(np.linalg.norm(reference - target, axis=1)))
+            task_starts.append(float(data["ts"][base_count + closest_index]))
+        phase_starts = [float(data["ts"][0]), *task_starts]
+        phase_ends = [*phase_starts[1:], float(data["ts"][-1])]
+        phase_labels = ("Base", "T1", "T2", "T3")
+        for index, (start, end, label) in enumerate(
+            zip(phase_starts, phase_ends, phase_labels)
+        ):
+            axes[row, 1].axvspan(
+                start, end, color="tab:blue", alpha=0.025 * (index % 2)
+            )
+            if index > 0:
+                axes[row, 1].axvline(start, color="0.35", linestyle="--", linewidth=0.9)
+            axes[row, 1].text(
+                (start + end) / 2,
+                0.96,
+                label,
+                transform=axes[row, 1].get_xaxis_transform(),
+                ha="center",
+                va="top",
+                fontsize=7,
+            )
         axes[row, 1].set(
             xlabel="simulation time (s)",
             ylabel="minimum margin (cm)",
             title=f"{name}: executed-state margin",
         )
         axes[row, 1].grid(alpha=0.25)
-        axes[row, 1].legend(frameon=False, fontsize=8)
     fig.tight_layout()
     _save(fig, output / "platform_timing_clearance.pdf")
 

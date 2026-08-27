@@ -110,9 +110,9 @@ planner:
     #   ee_pose: [1.0, 0.0, 0.9, 0.0, 0.0, -0.0708]
 
 
-    # - defaults: base
-    #   name: "OMPL Base Goal"
-    #   base_pose: [2.0, -2.0, 0.0]
+    - defaults: base
+      name: "OMPL Base Goal"
+      base_pose: [2.0, -2.0, 0.0]
 
     - defaults: base
       name: "OMPL Base Work Area"

@@ -104,10 +104,4 @@ S.~Karaman and E.~Frazzoli, ``Sampling-based algorithms for optimal motion
   planning,'' \emph{The International Journal of Robotics Research}, vol.~30,
   no.~7, pp. 846--894, 2011.
 
-\bibitem{verschueren2022acados}
-R.~Verschueren, G.~Frison, D.~Kouzoupis, J.~Frey, N.~van Duijkeren, A.~Zanelli,
-  B.~Novoselnik, T.~Albin, R.~Quirynen, and M.~Diehl, ``acados---a modular
-  open-source framework for fast embedded optimal control,'' \emph{Mathematical
-  Programming Computation}, vol.~14, pp. 147--183, 2022.
-
 \end{thebibliography}

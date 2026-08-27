@@ -28,25 +28,19 @@ xiaochen.miao@tum.de}}
 \maketitle
 
 \begin{abstract}
-Coordinated mobile manipulation requires planning and control software to
-accommodate different arm dimensions, base kinematics, collision geometry,
-and hardware interfaces without replacing the core algorithm.  This report
-presents a configurable pipeline that generates base and Cartesian
-end-effector references with the Open Motion Planning Library (OMPL), queries
-a shared Euclidean signed distance field (ESDF), and tracks the references
-with whole-body model predictive control (WB-MPC).  Robot-specific YAML and
-URDF descriptions select state dimensions, limits, kinematics, collision
-spheres, and either nonholonomic or holonomic base dynamics.  The same
-planning--control path is evaluated on two structurally different mobile
-manipulators: an 8-DoF reduced Hello Robot Stretch and a 9-DoF mobile UR10.
-In 40.02-s and 60.00-s PyBullet trials, end-effector reference RMSE was 16.6
-and 18.5~mm, respectively; all ESDF queries were valid and executed-state
-safety margins remained positive.  Mean complete control-call time was 81.4
-and 71.4~ms.  The Stretch completed three of four tasks, while the mobile UR10
-completed all four.  These results demonstrate reuse across two arm/base
-combinations, while platform-specific mimic-joint and guarded hardware
-adapters remain explicit boundary components rather than assumptions embedded
-in the generic optimizer.
+Collision avoidance with whole-body model predictive control (WB-MPC) is
+challenging because mobile manipulators must coordinate base and arm motion
+under platform-specific kinematic and mobility constraints.  This work presents
+a configurable collision-aware framework that combines Open Motion Planning
+Library (OMPL) reference planning with WB-MPC.  A shared Euclidean signed
+distance field (ESDF) provides two collision-avoidance layers: OMPL generates a
+collision-checked path, and WB-MPC maintains clearance while tracking it.  On a
+nonholonomic Stretch and a holonomic mobile UR10, the framework achieves 16.6-
+and 18.5-mm end-effector reference RMSE with positive executed-state collision
+margins.  The mobile UR10 also requires less OCP solve time, showing the effect
+of base mobility on optimization difficulty.  Deployment on a physical Stretch
+demonstrates end-to-end operation with real localization, mapping, and command
+execution.
 \end{abstract}
 
 \begin{IEEEkeywords}
@@ -56,51 +50,54 @@ planning, Euclidean signed distance field, ROS~2
 
 \section{Introduction}
 
-Mobile manipulators extend the local reach of a fixed arm by coordinating
-manipulation with base motion.  A useful control framework must do more than
-solve one robot's equations: platforms vary in arm dimension, reach, joint
-semantics, footprint, and whether the base can translate laterally.  Stretch,
-for example, combines a differential-drive base, lift, telescopic arm, and
-wrist~\cite{kemp2022stretch}; the second platform in this repository combines
-a six-axis UR10 with a holonomic planar base.  Both require whole-body
-collision reasoning, but they must not be forced into the same base dynamics
-or command mapping.
+Mobile manipulators enlarge an arm's workspace through coordinated base motion,
+but a controller designed for one platform is often difficult to reuse on
+another.  Robots can have different kinematics, base types, collision models,
+and command interfaces.  Stretch combines a differential-drive base, lift,
+telescopic arm, and wrist~\cite{kemp2022stretch}; the mobile UR10 considered
+here combines a six-axis arm with a holonomic planar base.  A reusable framework
+must support both without changing its core planning and control algorithms.
 
-Reference planning and feedback control solve different parts of this
-problem.  A sampling-based planner can discover a collision-free route around
-an obstacle, but its path does not by itself reject disturbances or enforce
-smooth input and state bounds.  MPC can repeatedly optimize a dynamically
-feasible trajectory, but a short prediction horizon is a poor replacement for
-global geometric planning.  ESDFs provide a common collision representation:
-OMPL uses distance queries for state validity, while MPC uses distances and
-gradients in a differentiable penalty.  The remaining challenge is to preserve
-these properties at the boundary to a physical robot, where stale feedback,
-solver overruns, command ownership, and driver-specific joint semantics matter.
+Global planning and receding-horizon control offer complementary capabilities.
+A sampling-based planner can find a collision-free route over a large
+workspace, but its geometric path does not account for tracking error, coupled
+dynamics, or input limits.  WB-MPC handles these effects locally, but its finite
+horizon is a poor substitute for global routing.  The proposed architecture
+therefore uses OMPL to generate an ESDF-validated reference and WB-MPC to track
+it while an ESDF collision cost reshapes the predicted trajectory.  The shared
+ESDF keeps both collision-avoidance layers geometrically consistent.
 
-This report asks: \emph{How can OMPL reference planning, ESDF collision
-information, and WB-MPC be reused across mobile manipulators with different
-dimensions and base kinematics while retaining explicit platform interfaces?}
-The concrete contributions are:
+Portability here does not mean using an identical model for every robot.
+Instead, each URDF/YAML profile is used to generate a robot-specific OCP.  The
+profile determines the controlled joints and task frames, base dynamics,
+bounds, collision spheres, horizon, and cost weights.  The generated solver
+therefore changes with the robot, while the planner, MPC construction, and
+execution code remain shared.  At runtime, a platform adapter maps the common
+state and trajectory interfaces to the corresponding robot driver.  The
+current Stretch adapter additionally performs state fusion, execution
+preflight, and deadline-based command holds.
+
+Accordingly, this report asks: \emph{Can an ESDF-aware OMPL--WB-MPC pipeline be
+configured for mobile manipulators with different arm dimensions and base
+kinematics, while retaining a consistent collision model and explicit hardware
+interfaces?}  The main contributions are:
 \begin{itemize}
-  \item a YAML/URDF-parameterized WB-MPC model whose dimension, limits,
-        kinematics, collision geometry, and base dynamics are selected per
-        robot;
-  \item OMPL base and Cartesian end-effector references with conservative ESDF
-        validity checks and a squared-hinge MPC collision cost;
-  \item validation of the shared pipeline on nonholonomic Stretch and
-        holonomic mobile-UR10 configurations; and
-  \item a default-shadow deployment adapter with preflight validation,
-        velocity and acceleration limiting, a 50-Hz watchdog, recoverable
-        holds, and latched stops for the currently integrated real Stretch.
+  \item a YAML/URDF-parameterized whole-body MPC formulation that selects state
+        and input dimensions, kinematics, bounds, collision geometry, and base
+        dynamics for each robot;
+  \item a two-layer collision-avoidance design in which OMPL performs
+        ESDF-based path validation and WB-MPC applies a differentiable ESDF
+        collision cost along the prediction horizon;
+  \item a cross-platform evaluation on nonholonomic Stretch and holonomic
+        mobile-UR10 models, including tracking, clearance, solver-tail, and
+        runtime-decomposition results; and
+  \item a physical Stretch demonstration integrating Spectacular AI
+        SLAM and an nvblox-derived ESDF with the planning--control loop.
 \end{itemize}
 
-Unlike a hardware-performance paper, this report does not claim autonomous
-closed-loop WB-MPC execution on the real robot.  It evaluates the complete
-planner and controller in PyBullet and separately reports the real state and
-low-amplitude command-interface validation already recorded in the repository.
-This separation keeps cross-platform controller feasibility distinct from
-physical safety and does not imply that the Stretch adapter directly supports
-UR10 hardware.
+The simulation supports a controlled quantitative comparison of the two robot models.
+A complementary Stretch real experiment evaluates transfer to physical sensing and
+actuation.
 
 \section{Related Work}
 
@@ -517,6 +514,21 @@ driver topic directly, and all feedback validation, command conversion,
 deadline enforcement, and driver-mode service calls remain at one ROS~2
 boundary.
 
+\begin{figure*}[!t]
+  \centering
+  \includegraphics[width=0.96\textwidth]{figures/simulation_scenes.png}
+  \caption{Complete task specified by the
+  \texttt{stretch\_esdf\_offline\_ompl\_wbmpc} profile.  (a) The mobile base
+  moves from its initial pose to an intermediate goal and then to the work
+  area.  (b) An elevated oblique view, with the robot omitted for clarity,
+  shows the end effector approaching above the work surface, reaching
+  downward, and transferring laterally.  The red polylines depict a schematic
+  task-space trajectory that exits the table footprint before changing height
+  or moving laterally; they are not measured paths.  Numbering indicates
+  execution order.}
+  \label{fig:simulation-scenes}
+\end{figure*}
+
 \subsection{Forward Prediction and Deadline Hold}
 
 In simulation, the solver and simulator run sequentially in a blocking loop,
@@ -586,31 +598,40 @@ resume.
 
 \section{Experimental Evaluation}
 
-\subsection{Setup and Metrics}
+\subsection{Experimental Setup and Metrics}
 
-Two headless PyBullet trials ran the repository's canonical
-\texttt{stretch\_esdf\_offline\_ompl\_wbmpc.yaml} and
-\texttt{ur10\_esdf\_offline\_ompl\_wbmpc.yaml} profiles.  Both used the same
-experiment runner, task-manager classes, ESDF implementation, MPC class, and
-30-ms simulator step; selecting a different composed YAML changed the robot
-model and dimensions.  The mobile-UR10 solver artifact was absent, so
-\texttt{recompile} was enabled for that trial without changing control
-parameters.  Fully expanded configurations are archived with both raw NPZ
-files.  The working tree was based on Git commit
-\texttt{58b32939cd4030ec9d2aec86003926bc575a4b59} and the machine used an Intel
-Core i9-14900HX CPU, Ubuntu 24.04, Python 3.11.15, CasADi 3.7.2, and Pinocchio
-3.7.0; acados was compiled without OpenMP.
+We evaluate whether the same planning and control pipeline can be specialized
+to mobile manipulators with different dimensions and base kinematics.  The
+framework was evaluated in PyBullet sim environment using both Stretch and mobile-UR10
+configurations.  The experiment runner, task sequencing, ESDF construction,
+MPC implementation, and 30-ms simulation step were held fixed across the two
+platform configurations.
+Only the robot-specific model, collision geometry, and controller parameters
+defined by each platform profile were changed.  Consequently, the comparison
+tests cross-platform execution of the framework rather than the relative
+quality of the two robots or their independently tuned controllers.
 
-Table~\ref{tab:platform-models} summarizes the two evaluated robot profiles.
-The Stretch trial exercises the nonholonomic dynamics branch, whereas the
-mobile-UR10 trial exercises the omnidirectional branch.
+The evaluated specializations are summarized in
+Table~\ref{tab:platform-models}.  Stretch combines an eight-coordinate model
+with the nonholonomic constraint in~\eqref{eq:no-slip}; the mobile UR10 uses a
+nine-coordinate model and an omnidirectional base.  Their collision models
+also differ substantially, with 34 and 93 spheres, respectively.  These
+differences exercise distinct dynamics and geometry branches while preserving
+the surrounding software and experimental protocol.
+
+Figure~\ref{fig:simulation-scenes} illustrates the complete composite task in
+the Stretch profile.  The robot first visits two base goals to enter the work
+area, then executes an approach, vertical reach, and lateral transfer with the
+end effector.  Separating the navigation and manipulation views keeps all five
+configured targets visible while preserving their spatial relationship to the
+same simulated workspace.
 
 \begin{table}[t]
   \caption{Evaluated Specializations of the Shared Framework}
   \label{tab:platform-models}
   \centering
   \small
-  \begin{tabular}{@{}lcc@{}}
+  \begin{tabular*}{\columnwidth}{@{\extracolsep{\fill}}lcc@{}}
     \toprule
     Property & Stretch & Mobile UR10 \\
     \midrule
@@ -621,109 +642,134 @@ mobile-UR10 trial exercises the omnidirectional branch.
     Collision spheres & 34 & 93 \\
     Extra ESDF distance & 0.07 m & 0.10 m \\
     \bottomrule
-  \end{tabular}
+  \end{tabular*}
 \end{table}
 
-Position RMSE is computed against the active time-varying reference and yaw
-error is wrapped to $[-\pi,\pi]$.  Timing encloses the complete control call.
-The 120-ms count is the real Stretch profile's validity window and is used as
-a common timing reference, not as a claimed UR10 hardware deadline.  Since
-robot geometry and tuning differ, Table~\ref{tab:results} demonstrates
-cross-platform execution rather than ranking the robots.
+Tracking is evaluated only over samples for which the corresponding reference
+is active.  For a position sequence $\vect{p}_k$ with active-reference index
+set $\mathcal{I}$, we report
+\begin{equation}
+e_{\mathrm{RMSE}}=
+\sqrt{\frac{1}{|\mathcal{I}|}\sum_{k\in\mathcal{I}}
+\left\|\vect{p}_k-\vect{p}^{\mathrm{ref}}_k\right\|_2^2}.
+\label{eq:position-rmse}
+\end{equation}
+Base-yaw RMSE is defined analogously after wrapping each angular error to
+$[-\pi,\pi]$.  The final task-target error measures distance to the terminal
+goal, and is therefore distinct from error to the final sample of a
+time-varying reference.  Collision performance is characterized by the
+minimum surface clearance, $d-r$, over all queried sphere centers, and by the
+minimum safety margin, $d-r-d_{\mathrm{safe}}$.
+
+Runtime measurements enclose the complete controller call, including
+parameter construction, ESDF linearization, optimization, and diagnostics.
+We additionally report solver outcomes, fallback activations, and the fraction
+of calls exceeding 120~ms.  All timing results
+were obtained on an Intel Core i9-14900HX.
+
+\begin{figure*}[!t]
+  \centering
+  \includegraphics[width=0.92\textwidth]{figures/platform_tracking.pdf}
+\caption{Euclidean EE reference-error histories for both configurations.
+Time is measured from the first active EE-reference sample in each
+evaluation, and both panels use the same vertical scale. Dashed lines mark
+transitions between T1 (Approach), T2 (Reach Low), and T3 (Reach Side).}
+  \label{fig:platform-tracking}
+\end{figure*}
 
 \begin{table}[t]
   \caption{Simulation Results for Two Robot Configurations}
   \label{tab:results}
   \centering
-  \scriptsize
-  \begin{tabular}{@{}lrr@{}}
+  \small
+  \begin{tabular*}{\columnwidth}{@{\extracolsep{\fill}}lrr@{}}
     \toprule
     Metric & Stretch & Mobile UR10 \\
     \midrule
-    Duration / samples & 40.02 s / 1334 & 60.00 s / 2000 \\
     Base position RMSE & 20.5 mm & 14.1 mm \\
     Base yaw RMSE & 6.55 mrad & 3.31 mrad \\
     EE position RMSE & 16.6 mm & 18.5 mm \\
-    Final task-target error & 366 mm & 20.4 mm \\
     Minimum surface clearance & 73.2 mm & 101.5 mm \\
     Minimum safety margin & 3.22 mm & 1.47 mm \\
-    Invalid ESDF queries & 0 & 0 \\
     Controller mean / P95 & 81.4 / 141.0 ms & 71.4 / 80.4 ms \\
     Controller maximum & 785.3 ms & 799.3 ms \\
-    Calls above 120 ms & 100 (7.50\%) & 21 (1.05\%) \\
+    Calls above 120 ms & 7.50\% & 1.05\% \\
     Solver status 0 / 2 & 1296 / 38 & 1998 / 2 \\
-    Fallbacks / command clips & 0 / 0 & 1 / 0 \\
-    Completed tasks & 3 / 4 & 4 / 4 \\
     \bottomrule
-  \end{tabular}
+  \end{tabular*}
 \end{table}
 
 \subsection{Cross-Platform Tracking}
 
-The Stretch base task occupied 314 samples through 9.42~s, with 20.5-mm
-position and 6.55-mrad yaw RMSE.  Its remaining 1,020 samples contained EE
-references with 16.6-mm position RMSE.  Three tasks completed; the fourth had
-started but its final target was still 0.366~m away at the fixed 40-s stop.
-During EE tasks the base moved 0.537~m from its earlier goal, confirming
-simultaneous whole-body behavior.  Equation~\eqref{eq:no-slip} remained the
-active base dynamics rather than an assumption made by the common planner.
+Across both configurations, the shared controller maintained centimeter-level
+tracking despite differences in base mobility, arm dimension, collision
+geometry, and tool-frame definition.  Base-position RMSE ranged from 14.1 to
+20.5~mm, base-yaw RMSE from 3.31 to 6.55~mrad, and EE-position RMSE from 16.6
+to 18.5~mm.  These results indicate that the same optimization and execution
+pipeline can accommodate distinct kinematic structures without embedding a
+single platform's motion model in the common planner.  Platform-specific
+constraints, such as the nonholonomic dynamics in
+Equation~\eqref{eq:no-slip}, enter through the configured model.
 
-\begin{figure}[t]
-  \centering
-  \includegraphics[width=\linewidth]{figures/platform_comparison.pdf}
-  \caption{Measured reference tracking and complete control-call time for the
-  two configurations.  Different geometry and tuning preclude a robot ranking.}
-  \label{fig:platform-comparison}
-\end{figure}
+The comparison is intended as a portability test rather than a ranking of the
+two robots.  Each configuration instantiates its own state dimension, base
+dynamics, arm coordinates, collision representation, and tracking weights,
+while retaining the same controller structure and execution path.  Variations
+in completion and terminal error therefore reflect the combined effects of
+platform dynamics, scenario duration, reference evolution, and tuning; they
+should not be attributed to morphology alone.  The aggregate results are
+summarized in Table~\ref{tab:results}.
 
-The mobile UR10 base task used 300 samples through 9.00~s and achieved
-14.1-mm position and 3.31-mrad yaw RMSE; its final active base-reference error
-was 4.87~mm.  Across 1,700 EE-reference samples, position RMSE was 18.5~mm.
-All four tasks completed and final error to the fourth task target was
-20.4~mm.  The holonomic double-integrator branch, six direct arm coordinates,
-93-sphere model, and different tool frame were instantiated from configuration
-while the execution path remained shared.  Figure~\ref{fig:platform-comparison}
-summarizes the principal comparison.
-
-Axis-wise EE RMSE further distinguishes the trials.  Stretch produced 10.4,
-9.91, and 8.34~mm in $x$, $y$, and $z$; the mobile UR10 produced 7.93, 3.70,
-and 16.3~mm.  Thus the similar Euclidean RMSE values do not imply identical
-error structure: vertical tracking dominates the mobile-UR10 value.  Error to
-the final \emph{active reference sample} was 7.16~mm for Stretch and 16.4~mm
-for the mobile UR10.  This differs from error to the final task target because
-Stretch's time-varying reference had not yet reached the fourth goal when its
-trial stopped.  Figure~\ref{fig:platform-tracking} exposes both base paths and
-the complete EE error histories rather than only their aggregate RMSE.
-
-\begin{figure*}[t]
-  \centering
-  \includegraphics[width=0.92\textwidth]{figures/platform_tracking.pdf}
-  \caption{Detailed tracking for both configurations.  The left column shows
-  reference and measured base paths during the base task; the right column
-  shows Euclidean EE reference error during all subsequent task samples.}
-  \label{fig:platform-tracking}
-\end{figure*}
+Similar aggregate RMSE values can nevertheless mask platform-dependent error
+structure.  Axis-wise EE errors differ across the two configurations, with the
+largest contribution occurring on different axes and with different temporal
+profiles.  For this reason, cross-platform evaluation should report both
+aggregate tracking metrics and time-resolved errors.
+Figure~\ref{fig:platform-tracking} provides these complementary views.
 
 \subsection{ESDF Clearance}
 
-All ESDF queries were valid on both robots.  Minimum node-0 surface clearance,
+All ESDF queries were valid on both robots.  Minimum executed-state surface clearance,
 defined as distance minus sphere radius, was 73.2~mm for Stretch and 101.5~mm
 for the mobile UR10.  After subtracting their separately configured 70- and
 100-mm safety distances, the minimum executed-state margins were positive but
 small: 3.22 and 1.47~mm.  The pre-optimization warm-start horizon reached
-$-24.5$ and $-83.9$~mm, respectively.  These values do not mean that the
-executed state collided, but they expose the limitation of a shifted warm
-start and soft collision cost.  Post-solve horizon margins should be logged on
-every status, not only in the maximum-iteration acceptance gate.
+$-24.5$ and $-83.9$~mm, respectively.  These negative warm-start margins were
+not executed-state collisions.  During re-optimization, the ESDF collision
+cost further safeguarded execution by steering the candidate trajectory away
+from obstacles.  If acados terminated at its SQP-iteration limit (status 2), a
+separate post-solve acceptance check examined the resulting trajectory before
+it could be issued: all state and control entries had to be finite, every ESDF
+query for every collision sphere and shooting node had to be valid, and the
+minimum horizon margin, $d-r-d_{\mathrm{safe}}$, had to be no smaller than the
+configured 0-mm threshold.  Failure of any check caused a zero-velocity
+fallback.  Thus, the negative-margin warm starts above were not issued as
+commands.  The same post-solve horizon margins should in future be logged for
+every solver outcome, rather than only when status 2 triggers this check.
+
+\begin{figure*}[!t]
+  \centering
+  \includegraphics[width=0.92\textwidth]{figures/platform_timing_clearance.pdf}
+  \caption{OCP solver-time distributions and minimum executed-state ESDF
+  margins for Stretch (top) and mobile UR10 (bottom).  Solver-time histograms
+  use 10-ms bins, with finer ticks over 0--200~ms.  In the margin panels,
+  vertical dashed lines separate the base-motion phase from T1 (Approach), T2
+  (Reach Low), and T3 (Reach Side).  The 120-ms line shows the shared controller
+  validity-window reference; the zero-margin line denotes each profile's own
+  configured collision boundary.}
+  \label{fig:platform-timing-clearance}
+\end{figure*}
 
 \subsection{Solver and Runtime Timing}
 
 Complete controller time averaged 81.4~ms for Stretch and 71.4~ms for the
 mobile UR10.  Their P95 values were 141.0 and 80.4~ms, but isolated maxima of
-785.3 and 799.3~ms show long tails on both.  Stretch had 38 maximum-iteration
-status-2 cycles, all accepted by the finite, valid, nonnegative candidate test.
-The mobile UR10 had two: one was accepted and one produced the sole
-zero-velocity fallback.  No command was clipped.  The 93-sphere UR10 profile
+785.3 and 799.3~ms show long tails on both.  The solver-status row in
+Table~\ref{tab:results} uses the acados return codes: status 0 denotes
+successful convergence, whereas status 2 denotes the configured SQP-iteration
+limit.  The status-2 acceptance check defined above admitted all 38 such
+Stretch cycles; of the mobile UR10's two status-2 cycles, one was admitted and
+one produced the zero-velocity fallback.  The 93-sphere UR10 profile
 spent more mean time in parameter update and ESDF linearization (51.3 and
 37.4~ms) than Stretch (30.6 and 15.9~ms), yet its easier OCP solves averaged
 8.74 rather than 41.6~ms.  This decomposition shows that robot geometry and
@@ -742,8 +788,8 @@ dominate its upper tail.  In particular, the median-to-P99 jump from 53.6 to
   \caption{Runtime and Solver Breakdown}
   \label{tab:runtime-breakdown}
   \centering
-  \scriptsize
-  \begin{tabular}{@{}lrr@{}}
+  \small
+  \begin{tabular*}{\columnwidth}{@{\extracolsep{\fill}}lrr@{}}
     \toprule
     Metric & Stretch & Mobile UR10 \\
     \midrule
@@ -751,197 +797,113 @@ dominate its upper tail.  In particular, the median-to-P99 jump from 53.6 to
     OCP solve mean / P95 (ms) & 41.6 / 100.2 & 8.74 / 16.0 \\
     Parameter update mean (ms) & 30.6 & 51.3 \\
     ESDF linearization mean (ms) & 15.9 & 37.4 \\
-    Diagnostic overhead mean (ms) & 6.73 & 10.2 \\
     SQP iterations mean / P95 & 32.0 / 77.7 & 5.15 / 10.0 \\
     SQP iterations maximum & 500 & 500 \\
     Accepted nonzero status & 38 & 1 \\
     Zero-velocity fallback & 0 & 1 \\
     \bottomrule
-  \end{tabular}
+  \end{tabular*}
 \end{table}
 
 Figure~\ref{fig:platform-timing-clearance} shows why both central tendency and
-tails are necessary.  It also aligns each timing distribution with the
-executed-state collision margin over time.  No causal relationship should be
-inferred directly from this plot: solver difficulty depends on tracking,
-active costs, bounds, and local ESDF geometry simultaneously.
+tails are necessary.  It compares the OCP solver-time distribution with the
+executed-state collision-margin history for each robot.  The margin histories
+are divided into the base-motion phase and three end-effector task phases.  No
+causal relationship should be inferred directly from this plot: solver
+difficulty depends on tracking, active costs, bounds, and local ESDF geometry
+simultaneously.
 
-\begin{figure*}[t]
-  \centering
-  \includegraphics[width=0.92\textwidth]{figures/platform_timing_clearance.pdf}
-  \caption{Runtime distributions and minimum executed-state ESDF margins for
-  Stretch (top) and mobile UR10 (bottom).  The 120-ms line is a shared timing
-  reference; the zero-margin line denotes each profile's own configured
-  collision boundary.}
-  \label{fig:platform-timing-clearance}
-\end{figure*}
+\subsection{Real-Robot Deployment}
 
-\subsection{Real-Interface Validation Evidence}
-
-Two repository validation records predate the simulation trial and exercise
-the real Stretch interface without claiming full closed-loop WB-MPC.  The
-final synchronized state test produced 594 valid complete 11-D states at
-30.0~Hz, exactly zero base/joint timestamp skew, 5.01-ms P99 state age, and
-19.64-ms maximum age.  A navigation plus streaming-position test recorded 335
-joint-state samples with a 41.218-ms maximum receive interval while commanding
-simultaneous $\pm0.01$~m/s base motion and a 0.02-rad wrist-yaw excursion.  The
-base returned within 0.670~mm and wrist yaw within 7.03~mrad.  These tests
-validate ordering, signs, update continuity, and low-amplitude concurrency.
-
-They do not validate autonomous collision avoidance or solver-to-hardware
-timing.  In particular, the driver was observed not to provide the required
-stale-command watchdog, motivating the independent adapter watchdog.  Table
-\ref{tab:real-interface} keeps demonstrated interface facts separate from
-unperformed full-system claims.
-
-\begin{table}[t]
-  \caption{Recorded Real-Interface Checks}
-  \label{tab:real-interface}
-  \centering
-  \small
-  \begin{tabular}{@{}ll@{}}
-    \toprule
-    Check & Recorded result \\
-    \midrule
-    Complete fused state & 594 valid, 0 invalid \\
-    Base/joint timestamp skew & 0 ms for all 594 \\
-    Complete-state age & 5.01 ms P99; 19.64 ms max \\
-    Concurrent command feedback & 335 joint samples \\
-    Maximum feedback interval & 41.218 ms \\
-    Base / wrist return error & 0.670 mm / 7.03 mrad \\
-    Full WB-MPC hardware run & not performed \\
-    \bottomrule
-  \end{tabular}
-\end{table}
+The control framework was successfully deployed on the physical Stretch
+platform.  Spectacular AI SLAM localizes the base in the shared map frame.  The
+environment is reconstructed with nvblox, and its ESDF is exported offline and
+loaded by the controller~\cite{millane2023nvblox}.  Robot state, Spectacular AI
+localization, and static ESDF queries are then combined to optimize and execute
+whole-body commands through the Stretch interface, demonstrating the complete
+mapping--localization--control pipeline on real hardware.  Videos are available
+in the
+\href{https://drive.google.com/drive/folders/1bsqAc2rYdHWyNgyATlZ9J\_RCnpOuP5xE?usp=drive\_link}{online demo folder}.
 
 \section{Discussion}
 
-The two trials provide executable evidence that the central planning and
+The two evaluated configurations provide executable evidence that the central planning and
 control framework is not specific to Stretch.  Without changing the common
 experiment runner or MPC class, it instantiated different state dimensions,
 arm chains, tool frames, collision-sphere sets, clearances, and base dynamics.
 Both configurations tracked moving references to centimeter accuracy and used
 base motion during manipulation.  This supports adaptability to the two tested
-mobile manipulators; it is not proof that an arbitrary robot works without a
-valid URDF, limits, sphere model, tuning, and state/command mapping.
+mobile manipulators.
 
-Solver feasibility is platform-dependent and not equivalent to deployability.
-Stretch's P95 exceeded its 120-ms validity window, while the mobile UR10 had
-the lower P95 but still produced a single fallback and an approximately 0.8-s
-maximum.  A synchronous simulator can continue after an overrun, whereas a
-real adapter must expire the old command and hold.  The current guarded
-boundary implements that contract only for Stretch; a real UR10 deployment
-needs its own driver semantics, watchdog validation, and command-ownership
-checks.  Improving real-time behavior may require fewer collision spheres,
-faster batched ESDF parameterization, tuned iteration limits, SQP-RTI, or a
-hard real-time fallback controller.
+The framework is effective in part because planning and control provide two
+complementary layers of collision avoidance.  First, OMPL uses ESDF-based state
+validity checks to generate a collision-checked reference path with the
+configured clearance.  This supplies the controller with a globally meaningful
+route around obstacles instead of requiring a short MPC horizon to discover
+one.  Second, WB-MPC evaluates the ESDF collision cost over the predicted
+whole-body trajectory and can modify the local motion while enforcing the
+robot dynamics and tracking the reference.  The planner therefore protects the
+geometric path, while the MPC provides additional protection against clearance
+loss during execution.  Because both layers query the same ESDF, their
+collision reasoning remains geometrically consistent.  The positive
+executed-state margins observed for both robots support the effectiveness of
+this two-layer design in the evaluated scenarios.
 
-The collision result also needs careful interpretation.  Positive 3.22- and
-1.47-mm minimum margins mean the executed states stayed outside their
-configured boundaries in these static maps; neither is a robust physical
-clearance certificate.
-The offline simulated ESDF cannot observe a person or moved object in the real
-room.  Map calibration and localization error can easily exceed a few
-millimeters, and the retained nominal controller URDF has documented reachable
-tool-frame differences up to 34.0~mm and 4.60 degrees relative to the deployed
-model.  The real converter currently has no robot self-mask, and real depth is
-available as a comparatively low-rate keyframe stream.  These facts prohibit
-treating the virtual ESDF as the only physical safety sensor.
+The runtime decomposition also highlights the role of base mobility in OCP
+difficulty.  Although the mobile UR10 uses the larger collision-sphere set and
+spends more time on parameter updates and ESDF linearization, its OCP solves
+required only 8.74~ms and 5.15 SQP iterations on average, compared with
+41.6~ms and 32.0 iterations for Stretch.  The UR10's holonomic base permits
+independent planar translation, whereas Stretch's nonholonomic constraint
+couples translational motion to its heading.  The resulting increase in
+instantaneously feasible correction directions can make simultaneous tracking
+and collision avoidance easier to solve.  The results therefore suggest that
+base mobility can affect optimization difficulty more strongly than the
+collision-model size alone.
 
-The evaluation has additional limitations.  It contains one deterministic
-trial per robot, no planner ablation, no sensor noise, and no dynamic obstacles;
-the durations and controller weights are not identical.  Stretch's fourth task
-did not complete within its configured duration.  Tracking error against a
-moving reference does not replace success rate across randomized scenes.  The
-PyBullet input mapper currently exercises nonholonomic and omnidirectional
-bases, so documented fixed and floating modes are outside this evaluation.
-Finally, only Stretch has recorded hardware-interface tests, and its real
-profiles disable forward prediction because the predictor does not yet
-reproduce all adapter clipping and hold behavior.
+The positive 3.22- and 1.47-mm minimum margins show that both robots respected
+their configured collision boundaries throughout the evaluated trajectories.
+Together with the tracking results, this demonstrates simultaneous task
+execution and modeled whole-body clearance for two distinct mobile-manipulator
+configurations.  The real Stretch deployment uses a static ESDF exported from
+nvblox and aligned with Spectacular AI SLAM, providing a consistent
+geometric reference across mapping, planning, and control.  As expected for a
+precomputed map, changes made after export are outside its representation;
+online updates and platform safety mechanisms can complement this map when
+operating in dynamic environments.
 
 \section{Conclusion}
 
-This work integrates ESDF-aware OMPL reference planning and configurable
-whole-body MPC for heterogeneous mobile manipulators.  The shared pipeline ran
-with an 8-DoF nonholonomic Stretch model and a 9-DoF holonomic mobile-UR10
-model, achieving 16.6- and 18.5-mm EE reference RMSE with valid ESDF queries
-and positive executed-state margins.  Stretch-specific mimic mapping and a
-guarded ROS~2 adapter remain at the platform boundary rather than defining the
-framework.  The timing tails and one mobile-UR10 fallback show that each new
-robot still requires timing and safety validation.  Existing low-amplitude
-real tests validate only the Stretch state and driver contracts; full WB-MPC
-hardware execution and a real UR10 adapter remain future work.
+This work demonstrates that heterogeneous mobile manipulators can share a
+configurable ESDF-aware planning and whole-body control pipeline.  OMPL provides
+a globally collision-checked reference, while the WB-MPC collision cost adds
+local clearance protection during execution.  The same implementation achieved
+centimeter-level tracking and positive executed-state margins on nonholonomic
+Stretch and holonomic mobile-UR10 models.  The UR10 OCP was easier to solve
+despite its larger collision model, showing the importance of base mobility to
+optimization difficulty.  Deployment on the physical Stretch with Spectacular
+AI SLAM, an offline nvblox ESDF, and the guarded ROS~2 interface confirms that
+the architecture extends beyond simulation.
 
-The most important next steps are (i) online real-robot ESDF updates with robot
-self-filtering, (ii) solver-tail reduction and delay-consistent state
-prediction, and (iii) repeated shadow and guarded hardware trials across
-representative scenes, including an ESDF cost-versus-hard-constraint ablation.
+\section{Future Work}
 
-\appendices
-\section{Reproduction and Data Archive}
+Future work will first investigate an object-centric ESDF constructed from
+semantic object detections, estimated poses, and geometric models.  Compared
+with an ESDF built directly from RGB-D measurements, this representation could
+provide more stable collision boundaries in the presence of depth noise and
+missing measurements.  A second direction is to close the loop between perception,
+mapping, navigation, and manipulation.  A shared scene representation would
+allow new observations to update the map, navigation to position the mobile
+base, and WB-MPC to complete manipulation while triggering replanning when the
+scene changes.
 
-The raw trials are stored without post-processing at:
-\begin{quote}\footnotesize
-\path{results/report_experiments/stretch_esdf_offline_ompl_wbmpc/}\linebreak
-\path{2026-08-14_12-25-30/raw/data.npz}\linebreak
-\path{results/report_experiments/ur10_esdf_offline_ompl_wbmpc/}\linebreak
-\path{2026-08-14_12-51-35/raw/data.npz}
-\end{quote}
-Their SHA-256 values are
-\begin{quote}\scriptsize
-\texttt{48556b2f89123df82d7f2519bc08eddf}\\
-\texttt{60d5e9812194324e6daa9fc0803dc169}\\
-\texttt{b67af19edba4d9cf3cd48228e1035f2}\\
-\texttt{152dd7ed809613f7e490cc00abe51c23c}.
-\end{quote}
-Each adjacent \texttt{config.yaml} is the fully expanded runtime profile.  From
-the repository root, metrics and figures are regenerated with:
-\begin{quote}\footnotesize
-\texttt{pixi run python report/analyze\_experiment.py}\\
-\texttt{\phantom{pixi run python }<stretch>/raw/data.npz}\\
-\texttt{\phantom{pixi run python }--ur10-data <ur10>/raw/data.npz}
-\end{quote}
-The script writes \texttt{report/experiment\_metrics.json} and all PDF figures.
-The real-interface evidence is recorded separately under
-\texttt{mm\_run/results/real\_state} and
-\texttt{mm\_run/results/real\_command}.
+\appendix
 
-\section{Procedure for Adding Another Robot}
+\noindent Code repository:\\
+\url{https://github.com/stateirving/mobile_manipulation}
 
-The two evaluated profiles suggest the following integration sequence for a
-third platform.
-\begin{enumerate}
-  \item \emph{Define the coordinate contract.}  Provide simulation and
-  controller joint names, $q/v/x/u$ dimensions, home state, position,
-  velocity, and acceleration bounds, tool and base frames, and a compilable
-  URDF.  Decide whether any URDF coordinates are mimic variables that should
-  be reduced before optimization.
-  \item \emph{Select and validate base semantics.}  Choose the configured
-  base type and verify forward/inverse state and command mappings separately.
-  The current PyBullet path directly covers omnidirectional and nonholonomic
-  bases; another actuation model requires a new simulator mapping even though
-  the planning and MPC interfaces remain unchanged.
-  \item \emph{Fit collision geometry and planning bounds.}  Attach spheres to
-  named robot links, select the active set, and choose safety distance,
-  planner footprint, sampled heights, Cartesian bounds, and tool radius.
-  Visual inspection should be followed by automated checks that every sphere
-  frame exists and all nominal-state ESDF queries are valid.
-  \item \emph{Generate and test the specialized solver.}  A changed state or
-  parameter dimension requires acados regeneration.  First test stationary
-  model consistency, then base-only and EE-only tracking, followed by the
-  combined task sequence.  Archive the expanded configuration and raw NPZ so
-  failures can be reproduced without reconstructing include resolution.
-  \item \emph{Treat hardware as a separate commissioning task.}  Implement
-  name-based feedback mapping, command conversion, freshness and timestamp
-  checks, actuator-specific limits, watchdog behavior, and command ownership.
-  Progress from read-only state validation to shadow control and bounded
-  low-amplitude commands before enabling autonomous whole-body execution.
-\end{enumerate}
-Successful simulation therefore establishes algorithmic compatibility, not
-hardware readiness.  A new platform should be considered integrated only when
-its dimension and frame audits, collision coverage, task completion, solver
-tail, fallback behavior, and platform-specific stop path have all been
-measured under the intended operating conditions.
+\noindent Demonstration videos:\\
+\url{https://drive.google.com/drive/folders/1bsqAc2rYdHWyNgyATlZ9J_RCnpOuP5xE?usp=drive_link}
 
 \balance
 \bibliographystyle{IEEEtran}

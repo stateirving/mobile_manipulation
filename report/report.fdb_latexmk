@@ -1,14 +1,15 @@
 # Fdb version 4
-["bibtex report"] 1787062823.53575 "report.aux" "report.bbl" "report" 1787062824.00978 0
+["bibtex report"] 1787815086.33061 "report.aux" "report.bbl" "report" 1787815276.35339 0
   "./references.bib" 1787050468.61498 7748 c683f657ce90e9370a3b6ea64ca38954 ""
   "/usr/share/texlive/texmf-dist/bibtex/bst/ieeetran/IEEEtran.bst" 1440712899 57748 7c8250ecf02814ce6ddc0cdbb63df1dd ""
-  "report.aux" 1787062823.93601 10670 88a73951566dbf7371e5c0ddda060a8a "pdflatex"
+  "report.aux" 1787815276.29829 11237 6010dd747d8cce376fe705d2b75c6eb5 "pdflatex"
   (generated)
   "report.bbl"
   "report.blg"
   (rewritten before read)
-["pdflatex"] 1787062823.55183 "report.tex" "report.pdf" "report" 1787062824.00997 0
+["pdflatex"] 1787815275.86812 "/home/miao/repo/mobile_manipulation/report/report.tex" "report.pdf" "report" 1787815276.3535 0
   "/etc/texmf/web2c/texmf.cnf" 1783277313.14133 475 c0e671620eb5563b2130f56340a5fde8 ""
+  "/home/miao/repo/mobile_manipulation/report/report.tex" 1787815275.87805 47130 bf62d147e8132c17dda79a42341ba166 ""
   "/usr/share/texlive/texmf-dist/fonts/enc/dvips/base/8r.enc" 1165713224 4850 80dc9bab7f31fb78a000ccfed0e27cab ""
   "/usr/share/texlive/texmf-dist/fonts/map/fontname/texfonts.map" 1577235249 3524 cb3e574dea2d1052e39280babc910dc8 ""
   "/usr/share/texlive/texmf-dist/fonts/tfm/adobe/courier/pcrr7t.tfm" 1136768653 960 379cc0019370a9e0208a0a3f949f847a ""
@@ -146,16 +147,15 @@
   "/usr/share/texmf/web2c/texmf.cnf" 1707919699 40399 f2c302f7d2af602abb742093540a5834 ""
   "/var/lib/texmf/fonts/map/pdftex/updmap/pdftex.map" 1783277373.86644 128028 f533b797fba58d231669ea19e894e23e ""
   "/var/lib/texmf/web2c/pdftex/pdflatex.fmt" 1783277394 6800788 19f92e3a2217e64f3fed0828d7a906a5 ""
-  "figures/coordinate_mapping.pdf" 1787050468.61398 14256 69dd68eb9d402af1d46feab05bcad219 ""
-  "figures/platform_comparison.pdf" 1787050468.61398 12497 f9eddcfdad18c1b12c6dcfb911be79ad ""
-  "figures/platform_timing_clearance.pdf" 1787050468.61398 20263 44b4465ee55fa181d4bffc955c975d25 ""
-  "figures/platform_tracking.pdf" 1787050468.61398 23919 c73608b4e5070acc2730ce376c138287 ""
-  "figures/safety_states.pdf" 1787050468.61398 12518 280a023eba8889b0d9d2b7033e40fcbc ""
+  "figures/platform_timing_clearance.pdf" 1787759465.65779 23375 1483c763dc9f311c2b4c8fec10b594eb ""
+  "figures/platform_tracking.pdf" 1787754586.38175 19278 18713569f6dc86738ddbf8e392c7ca55 ""
+  "figures/ros2_node_topic_graph.pdf" 1787157770.59358 38822 b93094d80ce7e7f2fbd9dace9cb2afad ""
+  "figures/simulation_scenes.png" 1787753451.31125 226236 d2a38304b99241124e8f668190cf7a87 ""
   "figures/system_overview.pdf" 1787062556.26502 22565 f25096c7c7e65e49bc378de66cddadcb ""
-  "report.aux" 1787062823.93601 10670 88a73951566dbf7371e5c0ddda060a8a "pdflatex"
-  "report.bbl" 1787062823.548 5136 976b5e2760b639067f289b7d1427bc73 "bibtex report"
-  "report.out" 1787062823.93601 6054 f9fa39993ecdbfb7834f662055ab283d "pdflatex"
-  "report.tex" 1787062818.39693 51172 954ae9e493c30550b3b48f097c39c042 ""
+  "report.aux" 1787815276.29829 11237 6010dd747d8cce376fe705d2b75c6eb5 "pdflatex"
+  "report.bbl" 1787815086.34642 4811 901e190a6c9e1eb095d854ddbbb93e52 "bibtex report"
+  "report.out" 1787815276.29929 4527 bfee9eaf0cacb1388645ba48f106af86 "pdflatex"
+  "report.tex" 1787815275.87805 47130 bf62d147e8132c17dda79a42341ba166 ""
   (generated)
   "report.aux"
   "report.log"
